@@ -194,15 +194,10 @@
 
         <!-- 커밋 버튼: PrimaryButton 과 동일하되 라운드만 절반(10→5) -->
         <Style x:Key="CommitButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
-            <Setter Property="IsTabStop" Value="True"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="5" Padding="16,0">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5" Padding="16,0">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                               TextElement.Foreground="{TemplateBinding Foreground}"/>
                         </Border>
@@ -227,217 +222,12 @@
                 </Setter.Value>
             </Setter>
         </Style>
-
-        <!-- Git 패널 내부 탐색: 자주 전환하는 화면이라 움직임 없이 배경·전경만 즉시 바꾼다. -->
-        <Style x:Key="GitModeButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Cursor" Value="Arrow"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="IsTabStop" Value="True"/>
-            <Setter Property="Height" Value="29"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="7" Padding="6,0">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-                            </Trigger>
-                            <Trigger Property="Tag" Value="active">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource TextBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.35"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="GitFilterButton" TargetType="Button" BasedOn="{StaticResource GitModeButton}">
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="FontSize" Value="{DynamicResource Fs11}"/>
-        </Style>
-
-        <!-- 우측 보조 패널 목록은 선택 시 배경만 강조한다. -->
-        <Style x:Key="GitListItem" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-            <Setter Property="Cursor" Value="Arrow"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="Margin" Value="4,1"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="7">
-                            <ContentPresenter/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="GitSmallActionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Cursor" Value="Arrow"/>
-            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Padding" Value="10,0"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="FontSize" Value="{DynamicResource Fs11}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.4"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </UserControl.Resources>
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="46"/>
-            <RowDefinition Height="38"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-
-        <!-- Orca식 branch context: 현재 브랜치와 비교 기준을 모든 Git 화면에서 고정 노출. -->
-        <Border Grid.Row="0" Background="{DynamicResource PanelBrush}"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <Grid Margin="10,0,8,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="18"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Grid Grid.Column="0" Width="15" Height="15" VerticalAlignment="Center">
-                    <Path x:Name="HeaderBranchIcon" Data="{StaticResource IconGitBranch}"
-                          Style="{StaticResource LucideIcon}" Width="15" Height="15"
-                          Stroke="{DynamicResource TextMutedBrush}"/>
-                    <Ellipse x:Name="HeaderSpinner" Width="14" Height="14" Visibility="Collapsed"
-                             models:SpinnerActivator.Track="True"
-                             Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.8"
-                             StrokeDashArray="14 100" StrokeDashCap="Round"
-                             RenderTransformOrigin="0.5,0.5">
-                        <Ellipse.RenderTransform>
-                            <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                        </Ellipse.RenderTransform>
-                    </Ellipse>
-                </Grid>
-                <StackPanel Grid.Column="1" Margin="6,0,8,0" VerticalAlignment="Center">
-                    <TextBlock x:Name="BranchContextText" Text="Git 저장소 없음"
-                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock x:Name="BranchMetaText" Text="프로젝트를 선택하세요"
-                               Margin="0,2,0,0" FontSize="{DynamicResource Fs11}"
-                               Foreground="{DynamicResource TextMutedBrush}" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
-                <Button x:Name="RefreshAllBtn" Grid.Column="2" Click="RefreshAll_Click"
-                        Style="{StaticResource IconButton}" Width="24" Height="24" Padding="4"
-                        ToolTip="새로 고침 (F5)">
-                    <Path Data="{StaticResource IconRefresh}" Style="{StaticResource LucideButtonIcon}"
-                          Width="13" Height="13"/>
-                </Button>
-                <Button x:Name="OpenRepositoryBtn" Grid.Column="3" Click="OpenRepository_Click"
-                        Margin="2,0,0,0" Style="{StaticResource IconButton}" Width="24" Height="24" Padding="4"
-                        ToolTip="원격 저장소 열기">
-                    <Path Data="{StaticResource IconExternalLink}" Style="{StaticResource LucideButtonIcon}"
-                          Width="13" Height="13"/>
-                </Button>
-            </Grid>
-        </Border>
-
-        <Border Grid.Row="1" Background="{DynamicResource PanelBrush}"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <Grid Margin="8,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Button x:Name="ChangesModeBtn" Grid.Column="0" Click="GitMode_Click"
-                        Style="{StaticResource GitModeButton}" Tag="active" ToolTip="작업 트리 변경 사항">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Data="{StaticResource IconGitCompare}" Style="{StaticResource LucideButtonIcon}"
-                              Width="12" Height="12" Margin="0,0,4,0"/>
-                        <TextBlock x:Name="ChangesModeText" Text="변경" FontSize="{DynamicResource Fs12}"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="HistoryModeBtn" Grid.Column="1" Click="GitMode_Click"
-                        Style="{StaticResource GitModeButton}" ToolTip="현재 브랜치 커밋 내역">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Data="{StaticResource IconGitCommit}" Style="{StaticResource LucideButtonIcon}"
-                              Width="12" Height="12" Margin="0,0,4,0"/>
-                        <TextBlock Text="커밋" FontSize="{DynamicResource Fs12}"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="PullRequestsModeBtn" Grid.Column="2" Click="GitMode_Click"
-                        Style="{StaticResource GitModeButton}" ToolTip="GitHub pull request">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Data="{StaticResource IconGitPullRequest}" Style="{StaticResource LucideButtonIcon}"
-                              Width="12" Height="12" Margin="0,0,4,0"/>
-                        <TextBlock x:Name="PullRequestsModeText" Text="PR" FontSize="{DynamicResource Fs12}"/>
-                    </StackPanel>
-                </Button>
-            </Grid>
-        </Border>
-
-        <Grid x:Name="ChangesView" Grid.Row="2">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
 
         <!-- 두 트리를 각각 유한 높이 영역에 두어 TreeView 내부 ScrollViewer(가상화)가 동작하게 한다.
              바깥 ScrollViewer/StackPanel(무한높이)에 넣으면 UI 가상화가 꺼져 변경 파일 전부를 매 레이아웃
@@ -575,19 +365,37 @@
         <Border x:Name="GitControlBar" Grid.Row="1" Visibility="Collapsed" Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="8">
             <StackPanel>
-                <!-- 브랜치 문맥은 상단에 고정하고, 하단에는 원격 액션만 둔다. -->
+                <!-- 동기화 헤더: 브랜치 + ↓N ↑N + fetch/pull/push/sync 아이콘 -->
                 <Grid Margin="2,0,0,6">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="원격" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextMutedBrush}" FontSize="{DynamicResource Fs11}"/>
+                    <Grid Grid.Column="0" Width="14" Height="14" VerticalAlignment="Center" Margin="0,2,0,0">
+                        <Path x:Name="BranchIcon" Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
+                              Style="{StaticResource LucideIcon}" Stroke="{DynamicResource TextMutedBrush}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- 원격 작업 진행 중엔 브랜치 아이콘 자리에 스피너 -->
+                        <Ellipse x:Name="BranchSpinner" Width="14" Height="14" Visibility="Collapsed"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 models:SpinnerActivator.Track="True"
+                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                 StrokeDashArray="15 100" StrokeDashCap="Round"
+                                 RenderTransformOrigin="0.5,0.5">
+                            <Ellipse.RenderTransform>
+                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                    </Grid>
+                    <TextBlock x:Name="BranchText" Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextBrush}" FontSize="{DynamicResource Fs12}"/>
                     <!-- fetch(점선 아래 화살표)를 맨 왼쪽으로. 원격 작업 버튼은 동일 크기. -->
-                    <Button x:Name="FetchBtn" Grid.Column="1" Click="Fetch_Click"
+                    <Button x:Name="FetchBtn" Grid.Column="2" Click="Fetch_Click"
                             Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="원격 정보 가져오기">
                         <!-- 좁은 fetch(점선 아래 화살표) — 세로 꽉·가로 좁게 직접 그림 -->
                         <Path Data="M6 1 V13.5 M2.5 9.5 L6 13.5 L9.5 9.5"
@@ -596,7 +404,7 @@
                               Width="14" Height="14"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
-                    <Button x:Name="PullBtn" Grid.Column="2" Click="Pull_Click" Margin="2,0,0,0"
+                    <Button x:Name="PullBtn" Grid.Column="3" Click="Pull_Click" Margin="2,0,0,0"
                             Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="원격 변경 동기화">
                         <!-- 좁은 arrow-down(pull) -->
                         <Path Data="M6 2 V14 M2.5 10 L6 14 L9.5 10"
@@ -604,7 +412,7 @@
                               Width="14" Height="14"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
-                    <Button x:Name="PushBtn" Grid.Column="3" Click="Push_Click" Margin="2,0,0,0"
+                    <Button x:Name="PushBtn" Grid.Column="4" Click="Push_Click" Margin="2,0,0,0"
                             Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="원격 저장소에 푸시">
                         <!-- 좁은 arrow-up(push) -->
                         <Path Data="M6 14 V2 M2.5 6 L6 2 L9.5 6"
@@ -612,7 +420,7 @@
                               Width="14" Height="14"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
-                    <Button x:Name="SyncBtn" Grid.Column="4" Click="Sync_Click" Margin="2,0,0,0"
+                    <Button x:Name="SyncBtn" Grid.Column="5" Click="Sync_Click" Margin="2,0,0,0"
                             Style="{StaticResource IconButton}" Width="24" Height="24" Padding="4"
                             ToolTip="동기화(가져오기 후 푸시)">
                         <Path Data="{StaticResource IconRefresh}" Width="12" Height="12" Stretch="Uniform"
@@ -654,581 +462,9 @@
 
                 <!-- 커밋 버튼(전체 폭) -->
                 <Button x:Name="CommitBtn" Content="✓ 커밋" Click="Commit_Click" Margin="0,6,0,0"
-                        Style="{StaticResource CommitButton}" Height="32" IsEnabled="False"
-                        HorizontalAlignment="Stretch" FontSize="{DynamicResource Fs13}"/>
+                        Style="{StaticResource CommitButton}" Height="30" IsEnabled="False"
+                        HorizontalAlignment="Stretch" FontSize="{DynamicResource Fs12}"/>
             </StackPanel>
         </Border>
-        </Grid>
-
-        <!-- 현재 브랜치 커밋 내역. 검색은 이미 읽은 목록을 즉시 필터링하고, 세부 파일은 선택 시 로드. -->
-        <Grid x:Name="HistoryView" Grid.Row="2" Visibility="Collapsed">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-
-            <Border Grid.Row="0" Margin="8,8,8,4" Height="35"
-                    Background="{DynamicResource PanelSoftBrush}"
-                    BorderThickness="1" CornerRadius="8">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsKeyboardFocused, ElementName=HistorySearchBox}" Value="True">
-                                <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <Path Grid.Column="0" Data="{StaticResource IconSearch}" Style="{StaticResource LucideIcon}"
-                          Width="13" Height="13" Margin="10,0,0,0" Stroke="{DynamicResource TextMutedBrush}"/>
-                    <Grid Grid.Column="1">
-                        <TextBox x:Name="HistorySearchBox" Margin="7,0,0,0" Padding="0"
-                                 Background="Transparent" BorderThickness="0" VerticalContentAlignment="Center"
-                                 FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"
-                                 SelectionBrush="{DynamicResource PrimaryBrush}" SelectionOpacity="0.35"
-                                 AutomationProperties.Name="커밋 내역 검색"
-                                 CaretBrush="{DynamicResource TextBrush}" TextChanged="HistorySearch_TextChanged"/>
-                        <TextBlock Text="메시지, 작성자 또는 SHA 검색" Margin="7,0,0,0" VerticalAlignment="Center"
-                                   IsHitTestVisible="False" FontSize="{DynamicResource Fs13}"
-                                   TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource TextMutedBrush}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Text, ElementName=HistorySearchBox}" Value="">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Grid>
-                    <Button Grid.Column="2" Click="ClearHistorySearch_Click" Width="20" Height="20" Margin="0,0,8,0"
-                            Padding="4" ToolTip="검색 지우기">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Text, ElementName=HistorySearchBox}" Value="">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <Path Data="{StaticResource IconX}" Style="{StaticResource LucideButtonIcon}" Width="10" Height="10"/>
-                    </Button>
-                </Grid>
-            </Border>
-
-            <Border x:Name="HistoryStatusBanner" Grid.Row="1" Margin="8,2,8,4" Padding="8,7"
-                    Background="{DynamicResource PanelSoftBrush}" BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="1" CornerRadius="7" Visibility="Collapsed">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Path Data="{StaticResource IconTriangleAlert}" Style="{StaticResource LucideIcon}"
-                              Width="12" Height="12" Margin="0,1,6,0" Stroke="{DynamicResource DangerBrush}"
-                              VerticalAlignment="Top"/>
-                        <TextBlock x:Name="HistoryStatusText" Grid.Column="1" Text="커밋 내역을 새로 고치지 못했습니다."
-                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
-                                   TextWrapping="Wrap"/>
-                    </Grid>
-                    <Button Grid.Row="1" Content="다시 시도" Click="HistoryRetry_Click"
-                            Style="{StaticResource GitSmallActionButton}" Height="24" Padding="7,0"
-                            Margin="18,6,0,0" HorizontalAlignment="Left"/>
-                </Grid>
-            </Border>
-
-            <Grid Grid.Row="2" ClipToBounds="True">
-                <ListBox x:Name="CommitList" Background="Transparent" BorderThickness="0"
-                         AutomationProperties.Name="커밋 내역"
-                         ItemContainerStyle="{StaticResource GitListItem}"
-                         SelectionChanged="CommitList_SelectionChanged"
-                         VirtualizingStackPanel.IsVirtualizing="True"
-                         VirtualizingPanel.VirtualizationMode="Recycling"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate DataType="{x:Type models:GitCommitEntry}">
-                            <Grid Margin="9,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="28"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid Grid.Column="0" Width="24" Height="24" VerticalAlignment="Top">
-                                    <Border CornerRadius="12" Background="{DynamicResource PanelSoftBrush}"
-                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                                        <TextBlock Text="{Binding AuthorInitial}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   FontSize="{DynamicResource Fs10}" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                    </Border>
-                                    <Ellipse x:Name="HeadDot" Width="7" Height="7" HorizontalAlignment="Right" VerticalAlignment="Top"
-                                             Fill="{DynamicResource PrimaryBrush}" Stroke="{DynamicResource PanelBrush}" StrokeThickness="1"
-                                             Visibility="Collapsed"/>
-                                </Grid>
-                                <StackPanel Grid.Column="1" Margin="3,0,0,0">
-                                    <TextBlock Text="{Binding Subject}" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"
-                                               ToolTip="{Binding Subject}" v:RowToolTip.ShowWhenTrimmed="True"/>
-                                    <Grid Margin="0,4,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding ShortSha}" FontFamily="Consolas" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding AuthorName}" Margin="8,0,6,0"
-                                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Grid.Column="2" Text="{Binding RelativeTime}" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                    </Grid>
-                                    <Border x:Name="MergeBadge" Margin="0,6,0,0" Padding="6,2" HorizontalAlignment="Left"
-                                            CornerRadius="5" Background="{DynamicResource PanelSoftBrush}" Visibility="Collapsed">
-                                        <TextBlock Text="merge" FontSize="{DynamicResource Fs10}"
-                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                    </Border>
-                                </StackPanel>
-                            </Grid>
-                            <DataTemplate.Triggers>
-                                <DataTrigger Binding="{Binding IsHead}" Value="True">
-                                    <Setter TargetName="HeadDot" Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding IsMerge}" Value="True">
-                                    <Setter TargetName="MergeBadge" Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </DataTemplate.Triggers>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <StackPanel x:Name="HistoryEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Margin="24" Visibility="Collapsed">
-                    <Path Data="{StaticResource IconGitCommit}" Style="{StaticResource LucideIcon}"
-                          Width="26" Height="26" Stroke="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="HistoryEmptyTitle" Text="커밋 내역이 없습니다" Margin="0,12,0,0"
-                               FontSize="{DynamicResource Fs16}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"
-                               TextAlignment="Center" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="HistoryEmptyDescription" Text="첫 커밋을 만들면 여기에 표시됩니다."
-                               Margin="0,5,0,0" TextAlignment="Center" TextWrapping="Wrap"
-                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                    <Button x:Name="HistoryEmptyActionBtn" Content="다시 시도" Click="HistoryRetry_Click"
-                            Style="{StaticResource CommitButton}" Height="32" MinWidth="110"
-                            FontSize="{DynamicResource Fs13}" Margin="0,12,0,0" Visibility="Collapsed"/>
-                </StackPanel>
-
-                <Grid x:Name="HistoryLoadingOverlay" Background="{DynamicResource PanelBrush}" Visibility="Collapsed">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Ellipse Width="36" Height="36" models:SpinnerActivator.Track="True"
-                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="3"
-                                 StrokeDashArray="28 10" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
-                            <Ellipse.RenderTransform>
-                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                            </Ellipse.RenderTransform>
-                        </Ellipse>
-                        <TextBlock Text="커밋 내역을 불러오는 중…" Margin="0,10,0,0"
-                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                    </StackPanel>
-                </Grid>
-            </Grid>
-
-            <Border x:Name="CommitDetailPanel" Grid.Row="3" MaxHeight="230"
-                    Background="{DynamicResource PanelSoftBrush}" BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="0,1,0,0">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="Visibility" Value="Visible"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding SelectedItem, ElementName=CommitList}" Value="{x:Null}">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="10,9" DataContext="{Binding SelectedItem, ElementName=CommitList}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding StatsText}" FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource TextMutedBrush}"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
-                                <Ellipse Width="12" Height="12" Margin="0,0,5,0"
-                                         models:SpinnerActivator.Track="True"
-                                         Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.8"
-                                         StrokeDashArray="12 100" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5"
-                                         Visibility="{Binding IsDetailsLoading, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
-                                    <Ellipse.RenderTransform>
-                                        <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                                    </Ellipse.RenderTransform>
-                                </Ellipse>
-                                <Button x:Name="OpenCommitBtn" Tag="{Binding Sha}" Click="OpenCommit_Click"
-                                        Style="{StaticResource IconButton}" Width="20" Height="20" Padding="4"
-                                        ToolTip="GitHub에서 커밋 열기">
-                                    <Path Data="{StaticResource IconExternalLink}" Style="{StaticResource LucideButtonIcon}"
-                                          Width="10" Height="10"/>
-                                </Button>
-                            </StackPanel>
-                        </Grid>
-                        <Grid Margin="0,7,0,0"
-                              Visibility="{Binding HasDetailsError, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding DetailsError}" FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap"
-                                       VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="재시도" Tag="{Binding}"
-                                    Click="RetryCommitDetails_Click" Style="{StaticResource GitSmallActionButton}"
-                                    Height="24" Padding="7,0" Margin="8,0,0,0"/>
-                        </Grid>
-                        <TextBlock Text="{Binding DetailBody}" Margin="0,7,0,0" TextWrapping="Wrap"
-                                   FontSize="{DynamicResource Fs12}" LineHeight="18"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   Visibility="{Binding HasDetailBody, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                        <ItemsControl ItemsSource="{Binding Files}" Margin="0,7,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type models:GitCommitFile}">
-                                    <Grid Margin="0,2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding Path}" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"
-                                                   ToolTip="{Binding Path}" v:RowToolTip.ShowWhenTrimmed="True"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding ChangeText}" Margin="8,0,0,0"
-                                                   FontFamily="Consolas" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock Text="{Binding MoreFilesText}" Margin="0,5,0,0"
-                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
-                                   Visibility="{Binding HasMoreFiles, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
-
-            <Button x:Name="HistoryLoadMoreBtn" Grid.Row="4" Content="이전 커밋 더 보기"
-                    Click="HistoryLoadMore_Click" Style="{StaticResource GitSmallActionButton}"
-                    Margin="8,6,8,8" HorizontalAlignment="Stretch" Visibility="Collapsed"/>
-        </Grid>
-
-        <!-- GitHub PR: 열린/완료/전체 필터, checks·review 상태, 선택 상세와 웹 연결. -->
-        <Grid x:Name="PullRequestsView" Grid.Row="2" Visibility="Collapsed">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-
-            <Border Grid.Row="0" Margin="8,8,8,4" Height="35"
-                    Background="{DynamicResource PanelSoftBrush}"
-                    BorderThickness="1" CornerRadius="8">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsKeyboardFocused, ElementName=PullRequestSearchBox}" Value="True">
-                                <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <Path Grid.Column="0" Data="{StaticResource IconSearch}" Style="{StaticResource LucideIcon}"
-                          Width="13" Height="13" Margin="10,0,0,0" Stroke="{DynamicResource TextMutedBrush}"/>
-                    <Grid Grid.Column="1">
-                        <TextBox x:Name="PullRequestSearchBox" Margin="7,0,0,0" Padding="0"
-                                 Background="Transparent" BorderThickness="0" VerticalContentAlignment="Center"
-                                 FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"
-                                 SelectionBrush="{DynamicResource PrimaryBrush}" SelectionOpacity="0.35"
-                                 AutomationProperties.Name="PR 검색"
-                                 CaretBrush="{DynamicResource TextBrush}" TextChanged="PullRequestSearch_TextChanged"/>
-                        <TextBlock Text="제목, 번호 또는 브랜치 검색" Margin="7,0,0,0" VerticalAlignment="Center"
-                                   IsHitTestVisible="False" FontSize="{DynamicResource Fs13}"
-                                   TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource TextMutedBrush}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Text, ElementName=PullRequestSearchBox}" Value="">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Grid>
-                    <Button Grid.Column="2" Click="ClearPullRequestSearch_Click" Width="20" Height="20" Margin="0,0,8,0"
-                            Padding="4" ToolTip="검색 지우기">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Text, ElementName=PullRequestSearchBox}" Value="">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <Path Data="{StaticResource IconX}" Style="{StaticResource LucideButtonIcon}" Width="10" Height="10"/>
-                    </Button>
-                </Grid>
-            </Border>
-
-            <Grid Grid.Row="1" Margin="8,2,8,5">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Button x:Name="OpenPrFilterBtn" Grid.Column="0" Content="열림" CommandParameter="open"
-                        Click="PrFilter_Click" Style="{StaticResource GitFilterButton}" Tag="active"/>
-                <Button x:Name="CompletedPrFilterBtn" Grid.Column="1" Content="완료" CommandParameter="completed"
-                        Click="PrFilter_Click" Style="{StaticResource GitFilterButton}" Margin="3,0"/>
-                <Button x:Name="AllPrFilterBtn" Grid.Column="2" Content="전체" CommandParameter="all"
-                        Click="PrFilter_Click" Style="{StaticResource GitFilterButton}"/>
-            </Grid>
-
-            <Border x:Name="PullRequestStatusBanner" Grid.Row="2" Margin="8,0,8,5" Padding="8,7"
-                    Background="{DynamicResource PanelSoftBrush}" BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="1" CornerRadius="7" Visibility="Collapsed">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Path Data="{StaticResource IconTriangleAlert}" Style="{StaticResource LucideIcon}"
-                              Width="12" Height="12" Margin="0,1,6,0" Stroke="{DynamicResource DangerBrush}"
-                              VerticalAlignment="Top"/>
-                        <TextBlock x:Name="PullRequestStatusText" Grid.Column="1" Text="PR을 새로 고치지 못했습니다."
-                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
-                                   TextWrapping="Wrap"/>
-                    </Grid>
-                    <Button x:Name="PullRequestStatusActionBtn" Grid.Row="1" Content="다시 시도"
-                            Click="PullRequestEmptyAction_Click" Style="{StaticResource GitSmallActionButton}"
-                            Height="24" Padding="7,0" Margin="18,6,0,0" HorizontalAlignment="Left"/>
-                </Grid>
-            </Border>
-
-            <Grid Grid.Row="3" ClipToBounds="True">
-                <ListBox x:Name="PullRequestList" Background="Transparent" BorderThickness="0"
-                         AutomationProperties.Name="Pull request 목록"
-                         ItemContainerStyle="{StaticResource GitListItem}"
-                         SelectionChanged="PullRequestList_SelectionChanged"
-                         VirtualizingStackPanel.IsVirtualizing="True"
-                         VirtualizingPanel.VirtualizationMode="Recycling"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate DataType="{x:Type models:GitPullRequestItem}">
-                            <StackPanel Margin="9,8">
-                                <TextBlock Text="{Binding Title}" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding Title}" v:RowToolTip.ShowWhenTrimmed="True"/>
-                                <Grid Margin="0,5,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding NumberText}" FontFamily="Consolas"
-                                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Border Grid.Column="1" Margin="7,0,0,0" Padding="5,1" CornerRadius="5"
-                                            Background="{DynamicResource PanelSoftBrush}">
-                                        <TextBlock x:Name="PrStateText" Text="{Binding StateText}"
-                                                   FontSize="{DynamicResource Fs10}" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource PrimaryBrush}"/>
-                                    </Border>
-                                    <TextBlock Grid.Column="2" Text="{Binding AuthorText}" Margin="7,0,6,0"
-                                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
-                                               TextTrimming="CharacterEllipsis"/>
-                                </Grid>
-                                <Grid Margin="0,5,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding BranchText}" FontFamily="Consolas" FontSize="{DynamicResource Fs11}"
-                                               Foreground="{DynamicResource TextMutedBrush}" TextTrimming="CharacterEllipsis"/>
-                                    <StackPanel x:Name="CheckGroup" Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
-                                        <Ellipse x:Name="CheckDot" Width="7" Height="7" Margin="0,0,4,0"
-                                                 Fill="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                        <TextBlock Text="{Binding ChecksText}" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                            <DataTemplate.Triggers>
-                                <DataTrigger Binding="{Binding IsDraft}" Value="True">
-                                    <Setter TargetName="PrStateText" Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding IsMerged}" Value="True">
-                                    <Setter TargetName="PrStateText" Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding IsClosed}" Value="True">
-                                    <Setter TargetName="PrStateText" Property="Foreground" Value="{DynamicResource DangerBrush}"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding ChecksState}" Value="{x:Static models:PullRequestChecksState.Passing}">
-                                    <Setter TargetName="CheckDot" Property="Fill" Value="{DynamicResource SuccessBrush}"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding ChecksState}" Value="{x:Static models:PullRequestChecksState.Pending}">
-                                    <Setter TargetName="CheckDot" Property="Fill" Value="{DynamicResource WarningBrush}"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding ChecksState}" Value="{x:Static models:PullRequestChecksState.Failing}">
-                                    <Setter TargetName="CheckDot" Property="Fill" Value="{DynamicResource DangerBrush}"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding ChecksState}" Value="{x:Static models:PullRequestChecksState.None}">
-                                    <Setter TargetName="CheckGroup" Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </DataTemplate.Triggers>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <StackPanel x:Name="PullRequestEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Margin="24" Visibility="Collapsed">
-                    <Path Data="{StaticResource IconGitPullRequest}" Style="{StaticResource LucideIcon}"
-                          Width="28" Height="28" Stroke="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="PullRequestEmptyTitle" Text="열린 PR이 없습니다" Margin="0,12,0,0"
-                               FontSize="{DynamicResource Fs16}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"
-                               TextAlignment="Center" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="PullRequestEmptyDescription" Text="완료 또는 전체 필터에서 이전 PR도 볼 수 있습니다."
-                               Margin="0,5,0,0" TextAlignment="Center" TextWrapping="Wrap"
-                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                    <Button x:Name="PullRequestEmptyActionBtn" Content="GitHub에서 보기"
-                            Click="PullRequestEmptyAction_Click" Style="{StaticResource CommitButton}"
-                            Margin="0,12,0,0" MinWidth="110" Height="32" FontSize="{DynamicResource Fs13}"/>
-                </StackPanel>
-
-                <Grid x:Name="PullRequestLoadingOverlay" Background="{DynamicResource PanelBrush}" Visibility="Collapsed">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Ellipse Width="36" Height="36" models:SpinnerActivator.Track="True"
-                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="3"
-                                 StrokeDashArray="28 10" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
-                            <Ellipse.RenderTransform>
-                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                            </Ellipse.RenderTransform>
-                        </Ellipse>
-                        <TextBlock Text="PR 상태를 불러오는 중…" Margin="0,10,0,0"
-                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                    </StackPanel>
-                </Grid>
-            </Grid>
-
-            <Border x:Name="PullRequestDetailPanel" Grid.Row="4" MaxHeight="230"
-                    Background="{DynamicResource PanelSoftBrush}" BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="0,1,0,0">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="Visibility" Value="Visible"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding SelectedItem, ElementName=PullRequestList}" Value="{x:Null}">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="10,9" DataContext="{Binding SelectedItem, ElementName=PullRequestList}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock Text="{Binding BranchText}" FontFamily="Consolas"
-                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
-                                           TextTrimming="CharacterEllipsis"/>
-                                <TextBlock Text="{Binding ChangeText}" Margin="0,4,0,0"
-                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
-                            </StackPanel>
-                            <Button Grid.Column="1" Tag="{Binding Url}" Click="OpenPullRequest_Click"
-                                    Style="{StaticResource GitSmallActionButton}" Padding="8,0" ToolTip="GitHub에서 PR 열기">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="열기"/>
-                                    <Path Data="{StaticResource IconExternalLink}" Style="{StaticResource LucideButtonIcon}"
-                                          Width="11" Height="11" Margin="5,0,0,0"/>
-                                </StackPanel>
-                            </Button>
-                        </Grid>
-                        <Grid Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding ReviewText}" FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource TextBrush}"/>
-                            <TextBlock Grid.Column="1" Text="{Binding ChecksText}" TextAlignment="Right"
-                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
-                        </Grid>
-                        <Grid Margin="0,9,0,0"
-                              Visibility="{Binding HasDetailsError, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding DetailsError}" FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap"
-                                       VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="재시도" Tag="{Binding}"
-                                    Click="RetryPullRequestDetails_Click" Style="{StaticResource GitSmallActionButton}"
-                                    Height="24" Padding="7,0" Margin="8,0,0,0"/>
-                        </Grid>
-                        <Ellipse Width="12" Height="12" Margin="0,9,0,0" HorizontalAlignment="Left"
-                                 models:SpinnerActivator.Track="True"
-                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.8"
-                                 StrokeDashArray="12 100" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5"
-                                 Visibility="{Binding IsDetailsLoading, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
-                            <Ellipse.RenderTransform>
-                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                            </Ellipse.RenderTransform>
-                        </Ellipse>
-                        <TextBlock Text="{Binding Body}" Margin="0,9,0,0" TextWrapping="Wrap"
-                                   FontSize="{DynamicResource Fs12}" LineHeight="18" Foreground="{DynamicResource TextBrush}"
-                                   Visibility="{Binding HasBody, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                        <TextBlock Text="설명이 없습니다." Margin="0,9,0,0"
-                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
-                                   Visibility="{Binding HasNoBody, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
-        </Grid>
     </Grid>
 </UserControl>

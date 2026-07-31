@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -11,13 +10,10 @@ using DevezCode.Services;
 
 namespace DevezCode.Views;
 
-/// <summary>우측 Git 허브 — 변경 검토·커밋·동기화와 커밋 내역·GitHub PR 탐색.</summary>
+/// <summary>우측 Git SCM 패널 — staged/unstaged 목록 + 커밋박스 + fetch/pull/push/sync.</summary>
 public partial class GitScmView : UserControl
 {
     private enum GitOperation { Stage, Unstage, Discard, Commit, Fetch, Pull, Push }
-    private enum GitPanelMode { Changes, History, PullRequests }
-    private enum PullRequestFilter { Open, Completed, All }
-    private const int HistoryPageSize = 60;
 
     /// <summary>파일 행 클릭 → 중앙에 diff 탭 열기 요청.(repo, relPath, staged)</summary>
     public event Action<string, string, bool>? DiffFileActivated;
@@ -36,43 +32,10 @@ public partial class GitScmView : UserControl
     private BranchState _branch = new();
     private readonly ObservableCollection<GitChange> _staged = new();
     private readonly ObservableCollection<GitChange> _unstaged = new();
-    private readonly List<GitCommitEntry> _commits = new();
-    private readonly ObservableCollection<GitCommitEntry> _visibleCommits = new();
-    private readonly List<GitPullRequestItem> _pullRequests = new();
-    private readonly ObservableCollection<GitPullRequestItem> _visiblePullRequests = new();
-    private GitPanelMode _panelMode;
-    private PullRequestFilter _pullRequestFilter;
-    private GitHubLoadState _pullRequestLoadState = GitHubLoadState.Ready;
-    private string? _originWebUrl;
-    private bool _historyLoaded;
-    private bool _historyLoading;
-    private bool _historyHasMore;
-    private bool _historyLoadFailed;
-    private string _historyLoadMessage = "";
-    private bool _pullRequestsLoaded;
-    private bool _pullRequestsLoading;
-    private string _pullRequestLoadMessage = "";
-    private int _repoVersion;
 
     public GitScmView()
     {
         InitializeComponent();
-        CommitList.ItemsSource = _visibleCommits;
-        PullRequestList.ItemsSource = _visiblePullRequests;
-        HistorySearchBox.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key != Key.Escape) return;
-            HistorySearchBox.Clear();
-            e.Handled = true;
-        };
-        PullRequestSearchBox.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key != Key.Escape) return;
-            PullRequestSearchBox.Clear();
-            e.Handled = true;
-        };
-        PreviewKeyDown += GitScmView_PreviewKeyDown;
-        SizeChanged += (_, _) => UpdatePullRequestFilterLabels();
         _repoRefreshTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(450)
@@ -139,33 +102,6 @@ public partial class GitScmView : UserControl
     {
         if (string.Equals(_repo, path, StringComparison.OrdinalIgnoreCase)) return;
         _repo = path;
-        _repoVersion++;
-        HistorySearchBox.Clear();
-        PullRequestSearchBox.Clear();
-        _pullRequestFilter = PullRequestFilter.Open;
-        _branch = new BranchState();
-        _originWebUrl = null;
-        _staged.Clear();
-        _unstaged.Clear();
-        StagedTree.ItemsSource = null;
-        UnstagedTree.ItemsSource = null;
-        EmptyText.Visibility = Visibility.Visible;
-        _historyLoaded = false;
-        _historyHasMore = false;
-        _historyLoadFailed = false;
-        _historyLoadMessage = "";
-        _pullRequestsLoaded = false;
-        _pullRequestLoadState = GitHubLoadState.Ready;
-        _pullRequestLoadMessage = "";
-        _commits.Clear();
-        _visibleCommits.Clear();
-        _pullRequests.Clear();
-        _visiblePullRequests.Clear();
-        CommitList.SelectedItem = null;
-        PullRequestList.SelectedItem = null;
-        UpdateButtons();
-        ApplyHistoryFilter();
-        ApplyPullRequestFilter();
         SetupRepoWatchers(path);
     }
 
@@ -178,7 +114,6 @@ public partial class GitScmView : UserControl
         }
 
         _refreshInProgress = true;
-        UpdateHeaderLoading();
         try
         {
             do
@@ -191,7 +126,6 @@ public partial class GitScmView : UserControl
         finally
         {
             _refreshInProgress = false;
-            UpdateHeaderLoading();
         }
     }
 
@@ -202,43 +136,28 @@ public partial class GitScmView : UserControl
         if (string.IsNullOrEmpty(repo) || !Directory.Exists(repo) || !await GitService.IsRepoAsync(repo))
         {
             if (!string.Equals(_repo, repo, StringComparison.OrdinalIgnoreCase)) return;
-            _branch = new BranchState();
-            _originWebUrl = null;
             _staged.Clear(); _unstaged.Clear();
             StagedTree.ItemsSource = null;
             UnstagedTree.ItemsSource = null;
             EmptyText.Visibility = Visibility.Visible;
             UpdateButtons();
-            ApplyHistoryFilter();
-            ApplyPullRequestFilter();
             return;
         }
 
         // git status가 index stat 캐시를 갱신하며 watcher를 재발화할 수 있다.
         _ignoreGitMetadataUntilUtc = DateTime.UtcNow.AddSeconds(2);
-        var statusTask = GitService.StatusAsync(repo);
-        var branchTask = GitService.BranchStateAsync(repo);
-        var originTask = GitService.GetOriginWebUrlAsync(repo);
-        await Task.WhenAll(statusTask, branchTask, originTask);
-        var st = await statusTask;
-        var branch = await branchTask;
-        var origin = await originTask;
+        var st = await GitService.StatusAsync(repo);
+        var branch = await GitService.BranchStateAsync(repo);
         _ignoreGitMetadataUntilUtc = DateTime.UtcNow.AddSeconds(1);
         if (!string.Equals(_repo, repo, StringComparison.OrdinalIgnoreCase)) return;
 
         _branch = branch;
-        _originWebUrl = origin;
         _staged.Clear(); foreach (var c in st.Staged) _staged.Add(c);
         _unstaged.Clear(); foreach (var c in st.Unstaged) _unstaged.Add(c);
         StagedTree.ItemsSource = BuildTree(st.Staged, repo, isStaged: true);
         UnstagedTree.ItemsSource = BuildTree(st.Unstaged, repo, isStaged: false);
         EmptyText.Visibility = st.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         UpdateButtons();
-
-        if (_panelMode == GitPanelMode.History && !_historyLoaded)
-            await LoadHistoryAsync(reset: true);
-        else if (_panelMode == GitPanelMode.PullRequests && !_pullRequestsLoaded)
-            await LoadPullRequestsAsync(force: true);
     }
 
     private void SetupRepoWatchers(string? repo)
@@ -319,7 +238,6 @@ public partial class GitScmView : UserControl
     private void GitMetadataWatcher_Changed(object sender, FileSystemEventArgs e)
     {
         if (DateTime.UtcNow < _ignoreGitMetadataUntilUtc || !IsRelevantGitMetadata(e.FullPath)) return;
-        _historyLoaded = false;
         ScheduleRepoRefresh();
     }
 
@@ -432,533 +350,12 @@ public partial class GitScmView : UserControl
         ChangesHeaderRow.Visibility = _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         UnstagedTreeHost.Visibility = _unstaged.Count > 0 && !_unstagedCollapsed ? Visibility.Visible : Visibility.Collapsed;
 
-        BranchContextText.Text = _branch.Branch ?? "Git 저장소 없음";
-        if (_branch.Branch == null)
-        {
-            BranchMetaText.Text = string.IsNullOrEmpty(_repo) ? "프로젝트를 선택하세요" : "현재 폴더에서 저장소를 찾지 못했습니다";
-        }
-        else
-        {
-            var meta = new List<string>();
-            if (!string.IsNullOrEmpty(_branch.BaseBranch)
-                && !string.Equals(_branch.BaseBranch, _branch.Branch, StringComparison.OrdinalIgnoreCase))
-                meta.Add($"→ {_branch.BaseBranch}");
-            else if (!string.IsNullOrEmpty(_branch.Upstream))
-                meta.Add(_branch.Upstream);
-            else
-                meta.Add("원격에 게시되지 않음");
-            if (_branch.Behind > 0) meta.Add($"↓{_branch.Behind}");
-            if (_branch.Ahead > 0) meta.Add($"↑{_branch.Ahead}");
-            BranchMetaText.Text = string.Join("  ", meta);
-        }
-
-        OpenRepositoryBtn.IsEnabled = !_busy && !string.IsNullOrEmpty(_originWebUrl);
-        OpenCommitBtn.IsEnabled = !string.IsNullOrEmpty(_originWebUrl);
-        ChangesModeText.Text = "변경";
-        UpdatePullRequestModeLabel();
-        UpdateHeaderLoading();
-    }
-
-    private void UpdateHeaderLoading()
-    {
-        var loading = _busy || _refreshInProgress || _historyLoading || _pullRequestsLoading;
-        HeaderSpinner.Visibility = loading ? Visibility.Visible : Visibility.Collapsed;
-        HeaderBranchIcon.Visibility = loading ? Visibility.Collapsed : Visibility.Visible;
-        RefreshAllBtn.IsEnabled = !loading && !string.IsNullOrEmpty(_repo);
-        HistoryLoadMoreBtn.IsEnabled = !_historyLoading;
-    }
-
-    private void UpdatePullRequestModeLabel()
-    {
-        PullRequestsModeText.Text = "PR";
-    }
-
-    private void GitMode_Click(object sender, RoutedEventArgs e)
-    {
-        var mode = ReferenceEquals(sender, HistoryModeBtn)
-            ? GitPanelMode.History
-            : ReferenceEquals(sender, PullRequestsModeBtn)
-                ? GitPanelMode.PullRequests
-                : GitPanelMode.Changes;
-        SwitchGitMode(mode);
-    }
-
-    private void GitScmView_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.F5)
-        {
-            RefreshAll_Click(RefreshAllBtn, new RoutedEventArgs());
-            e.Handled = true;
-            return;
-        }
-        if (e.Key != Key.F || (Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
-        var searchBox = _panelMode == GitPanelMode.History
-            ? HistorySearchBox
-            : _panelMode == GitPanelMode.PullRequests
-                ? PullRequestSearchBox
-                : null;
-        if (searchBox == null) return;
-        searchBox.Focus();
-        searchBox.SelectAll();
-        e.Handled = true;
-    }
-
-    private void SwitchGitMode(GitPanelMode mode)
-    {
-        _panelMode = mode;
-        ChangesView.Visibility = mode == GitPanelMode.Changes ? Visibility.Visible : Visibility.Collapsed;
-        HistoryView.Visibility = mode == GitPanelMode.History ? Visibility.Visible : Visibility.Collapsed;
-        PullRequestsView.Visibility = mode == GitPanelMode.PullRequests ? Visibility.Visible : Visibility.Collapsed;
-        ChangesModeBtn.Tag = mode == GitPanelMode.Changes ? "active" : null;
-        HistoryModeBtn.Tag = mode == GitPanelMode.History ? "active" : null;
-        PullRequestsModeBtn.Tag = mode == GitPanelMode.PullRequests ? "active" : null;
-        _ = EnsureModeContentAsync();
-    }
-
-    private async Task EnsureModeContentAsync()
-    {
-        if (string.IsNullOrEmpty(_repo)) return;
-        if (_branch.Branch == null)
-        {
-            await RefreshAsync();
-            return;
-        }
-
-        if (_panelMode == GitPanelMode.History && !_historyLoaded)
-            await LoadHistoryAsync(reset: true);
-        else if (_panelMode == GitPanelMode.PullRequests && !_pullRequestsLoaded)
-            await LoadPullRequestsAsync(force: true);
-    }
-
-    private async void RefreshAll_Click(object sender, RoutedEventArgs e)
-    {
-        if (_panelMode == GitPanelMode.History) _historyLoaded = false;
-        if (_panelMode == GitPanelMode.PullRequests) _pullRequestsLoaded = false;
-        await RefreshAsync();
-    }
-
-    private void OpenRepository_Click(object sender, RoutedEventArgs e)
-        => TryOpenHttp(_originWebUrl);
-
-    private async Task LoadHistoryAsync(bool reset)
-    {
-        if (_historyLoading || string.IsNullOrEmpty(_repo)) return;
-        var repo = _repo;
-        var version = _repoVersion;
-        _historyLoading = true;
-        _historyLoadFailed = false;
-        _historyLoadMessage = "";
-        if (reset && _commits.Count == 0)
-            HistoryLoadingOverlay.Visibility = Visibility.Visible;
-        HistoryEmptyState.Visibility = Visibility.Collapsed;
-        HistoryStatusBanner.Visibility = Visibility.Collapsed;
-        UpdateHeaderLoading();
-
-        try
-        {
-            var page = await GitService.CommitHistoryAsync(repo, reset ? 0 : _commits.Count, HistoryPageSize);
-            if (version != _repoVersion || !string.Equals(repo, _repo, StringComparison.OrdinalIgnoreCase)) return;
-            if (!page.Ok)
-            {
-                _historyLoadFailed = true;
-                _historyLoadMessage = page.Error;
-                return;
-            }
-            if (reset) _commits.Clear();
-            var known = _commits.Select(item => item.Sha).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var commit in page.Commits)
-                if (known.Add(commit.Sha)) _commits.Add(commit);
-            _historyHasMore = page.HasMore;
-            _historyLoaded = true;
-            ApplyHistoryFilter();
-        }
-        finally
-        {
-            _historyLoading = false;
-            HistoryLoadingOverlay.Visibility = Visibility.Collapsed;
-            ApplyHistoryFilter();
-            UpdateHeaderLoading();
-            if (version != _repoVersion && _panelMode == GitPanelMode.History)
-                _ = EnsureModeContentAsync();
-        }
-    }
-
-    private void ApplyHistoryFilter()
-    {
-        if (CommitList == null) return;
-        var selectedSha = (CommitList.SelectedItem as GitCommitEntry)?.Sha;
-        var query = HistorySearchBox?.Text?.Trim() ?? "";
-        IEnumerable<GitCommitEntry> filtered = _commits;
-        if (query.Length > 0)
-        {
-            filtered = filtered.Where(item =>
-                item.Subject.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || item.AuthorName.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || item.ShortSha.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || item.Sha.Contains(query, StringComparison.OrdinalIgnoreCase));
-        }
-
-        _visibleCommits.Clear();
-        foreach (var commit in filtered) _visibleCommits.Add(commit);
-        CommitList.SelectedItem = selectedSha == null
-            ? null
-            : _visibleCommits.FirstOrDefault(item => item.Sha.Equals(selectedSha, StringComparison.OrdinalIgnoreCase));
-
-        var showingStaleResults = _historyLoadFailed && _commits.Count > 0;
-        HistoryStatusBanner.Visibility = showingStaleResults ? Visibility.Visible : Visibility.Collapsed;
-        HistoryStatusText.Text = string.IsNullOrWhiteSpace(_historyLoadMessage)
-            ? "커밋 내역을 새로 고치지 못해 기존 목록을 표시합니다."
-            : $"{_historyLoadMessage} 기존 목록을 표시합니다.";
-
-        var empty = !_historyLoading && _visibleCommits.Count == 0;
-        HistoryEmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
-        HistoryEmptyActionBtn.Visibility = Visibility.Collapsed;
-        if (empty)
-        {
-            if (string.IsNullOrEmpty(_repo) || _branch.Branch == null)
-            {
-                HistoryEmptyTitle.Text = "Git 저장소가 없습니다";
-                HistoryEmptyDescription.Text = "Git 프로젝트를 선택하면 커밋 내역을 볼 수 있습니다.";
-            }
-            else if (_historyLoadFailed && _commits.Count == 0)
-            {
-                HistoryEmptyTitle.Text = "커밋 내역을 불러오지 못했습니다";
-                HistoryEmptyDescription.Text = _historyLoadMessage;
-                HistoryEmptyActionBtn.Visibility = Visibility.Visible;
-            }
-            else if (query.Length > 0)
-            {
-                HistoryEmptyTitle.Text = "검색 결과가 없습니다";
-                HistoryEmptyDescription.Text = "다른 메시지, 작성자 또는 SHA로 검색해 보세요.";
-            }
-            else
-            {
-                HistoryEmptyTitle.Text = "커밋 내역이 없습니다";
-                HistoryEmptyDescription.Text = "첫 커밋을 만들면 여기에 표시됩니다.";
-            }
-        }
-        HistoryLoadMoreBtn.Visibility = _historyLoaded && _historyHasMore && query.Length == 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-    }
-
-    private void HistorySearch_TextChanged(object sender, TextChangedEventArgs e) => ApplyHistoryFilter();
-
-    private void ClearHistorySearch_Click(object sender, RoutedEventArgs e)
-    {
-        HistorySearchBox.Clear();
-        HistorySearchBox.Focus();
-    }
-
-    private async void HistoryLoadMore_Click(object sender, RoutedEventArgs e)
-        => await LoadHistoryAsync(reset: false);
-
-    private async void HistoryRetry_Click(object sender, RoutedEventArgs e)
-        => await LoadHistoryAsync(reset: true);
-
-    private async void CommitList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CommitList.SelectedItem is not GitCommitEntry commit
-            || commit.DetailsLoaded
-            || commit.IsDetailsLoading)
-            return;
-
-        await LoadCommitDetailsAsync(commit);
-    }
-
-    private async void RetryCommitDetails_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.Tag is GitCommitEntry commit)
-            await LoadCommitDetailsAsync(commit);
-    }
-
-    private async Task LoadCommitDetailsAsync(GitCommitEntry commit)
-    {
-        if (commit.IsDetailsLoading || string.IsNullOrEmpty(_repo)) return;
-
-        var repo = _repo;
-        var version = _repoVersion;
-        commit.BeginDetails();
-        var details = await GitService.CommitDetailsAsync(repo, commit.Sha);
-        if (version != _repoVersion || !string.Equals(repo, _repo, StringComparison.OrdinalIgnoreCase)) return;
-        if (!details.Ok)
-        {
-            commit.FailDetails();
-            return;
-        }
-        commit.ApplyDetails(TrimCommitSubject(details.Body, commit.Subject), details.Files);
-    }
-
-    private static string TrimCommitSubject(string body, string subject)
-    {
-        body = body.Replace("\r\n", "\n").Trim();
-        if (body.Equals(subject, StringComparison.Ordinal)) return "";
-        if (body.StartsWith(subject + "\n", StringComparison.Ordinal))
-            return body[(subject.Length + 1)..].Trim();
-        return body;
-    }
-
-    private async Task LoadPullRequestsAsync(bool force)
-    {
-        if (_pullRequestsLoading || string.IsNullOrEmpty(_repo) || (_pullRequestsLoaded && !force)) return;
-        var repo = _repo;
-        var version = _repoVersion;
-        _pullRequestsLoading = true;
-        _pullRequestLoadState = GitHubLoadState.Ready;
-        _pullRequestLoadMessage = "";
-        if (_pullRequests.Count == 0)
-            PullRequestLoadingOverlay.Visibility = Visibility.Visible;
-        PullRequestEmptyState.Visibility = Visibility.Collapsed;
-        PullRequestStatusBanner.Visibility = Visibility.Collapsed;
-        UpdateHeaderLoading();
-
-        try
-        {
-            var result = await GitHubService.PullRequestsAsync(repo);
-            if (version != _repoVersion || !string.Equals(repo, _repo, StringComparison.OrdinalIgnoreCase)) return;
-            _pullRequestLoadState = result.State;
-            _pullRequestLoadMessage = result.Message;
-            if (result.State == GitHubLoadState.Ready)
-            {
-                _pullRequests.Clear();
-                _pullRequests.AddRange(result.PullRequests
-                    .OrderByDescending(item => string.Equals(item.HeadRefName, _branch.Branch, StringComparison.OrdinalIgnoreCase))
-                    .ThenByDescending(item => item.UpdatedAt));
-                _pullRequestsLoaded = true;
-            }
-            else
-            {
-                _pullRequestsLoaded = false;
-            }
-            ApplyPullRequestFilter();
-            UpdatePullRequestModeLabel();
-        }
-        finally
-        {
-            _pullRequestsLoading = false;
-            PullRequestLoadingOverlay.Visibility = Visibility.Collapsed;
-            ApplyPullRequestFilter();
-            UpdateHeaderLoading();
-            if (version != _repoVersion && _panelMode == GitPanelMode.PullRequests)
-                _ = EnsureModeContentAsync();
-        }
-    }
-
-    private void ApplyPullRequestFilter()
-    {
-        if (PullRequestList == null) return;
-        var selectedNumber = (PullRequestList.SelectedItem as GitPullRequestItem)?.Number;
-        var query = PullRequestSearchBox?.Text?.Trim() ?? "";
-        IEnumerable<GitPullRequestItem> filtered = _pullRequests;
-        filtered = _pullRequestFilter switch
-        {
-            PullRequestFilter.Open => filtered.Where(item => item.IsOpen),
-            PullRequestFilter.Completed => filtered.Where(item => !item.IsOpen),
-            _ => filtered,
-        };
-        if (query.Length > 0)
-        {
-            filtered = filtered.Where(item =>
-                item.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || item.NumberText.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || item.AuthorLogin.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || item.HeadRefName.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || item.BaseRefName.Contains(query, StringComparison.OrdinalIgnoreCase));
-        }
-
-        _visiblePullRequests.Clear();
-        foreach (var pullRequest in filtered) _visiblePullRequests.Add(pullRequest);
-        PullRequestList.SelectedItem = selectedNumber.HasValue
-            ? _visiblePullRequests.FirstOrDefault(item => item.Number == selectedNumber.Value)
-            : null;
-
-        UpdatePullRequestFilterLabels();
-        OpenPrFilterBtn.Tag = _pullRequestFilter == PullRequestFilter.Open ? "active" : null;
-        CompletedPrFilterBtn.Tag = _pullRequestFilter == PullRequestFilter.Completed ? "active" : null;
-        AllPrFilterBtn.Tag = _pullRequestFilter == PullRequestFilter.All ? "active" : null;
-        UpdatePullRequestStatusBanner();
-        UpdatePullRequestEmptyState(query);
-    }
-
-    private void UpdatePullRequestStatusBanner()
-    {
-        var showingStaleResults = _pullRequestLoadState != GitHubLoadState.Ready && _pullRequests.Count > 0;
-        PullRequestStatusBanner.Visibility = showingStaleResults ? Visibility.Visible : Visibility.Collapsed;
-        if (!showingStaleResults) return;
-
-        PullRequestStatusText.Text = string.IsNullOrWhiteSpace(_pullRequestLoadMessage)
-            ? "PR을 새로 고치지 못해 기존 목록을 표시합니다."
-            : $"{_pullRequestLoadMessage} 기존 목록을 표시합니다.";
-        PullRequestStatusActionBtn.Visibility = Visibility.Visible;
-        PullRequestStatusActionBtn.Content = _pullRequestLoadState switch
-        {
-            GitHubLoadState.CliMissing => "설치 안내",
-            GitHubLoadState.AuthenticationRequired => "로그인 명령 복사",
-            GitHubLoadState.UnsupportedRemote => "확인",
-            _ => "다시 시도",
-        };
-        if (_pullRequestLoadState == GitHubLoadState.UnsupportedRemote)
-            PullRequestStatusActionBtn.Visibility = Visibility.Collapsed;
-    }
-
-    private void UpdatePullRequestFilterLabels()
-    {
-        if (OpenPrFilterBtn == null) return;
-        var showCounts = ActualWidth >= 250;
-        var openCount = _pullRequests.Count(item => item.IsOpen);
-        var completedCount = _pullRequests.Count - openCount;
-        OpenPrFilterBtn.Content = showCounts && openCount > 0 ? $"열림 {openCount}" : "열림";
-        CompletedPrFilterBtn.Content = showCounts && completedCount > 0 ? $"완료 {completedCount}" : "완료";
-        AllPrFilterBtn.Content = showCounts && _pullRequests.Count > 0 ? $"전체 {_pullRequests.Count}" : "전체";
-    }
-
-    private void UpdatePullRequestEmptyState(string query)
-    {
-        var empty = !_pullRequestsLoading && _visiblePullRequests.Count == 0;
-        PullRequestEmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
-        if (!empty) return;
-
-        PullRequestEmptyActionBtn.Visibility = Visibility.Visible;
-        var emptyState = _pullRequests.Count > 0 ? GitHubLoadState.Ready : _pullRequestLoadState;
-        switch (emptyState)
-        {
-            case GitHubLoadState.CliMissing:
-                PullRequestEmptyTitle.Text = "GitHub CLI가 필요합니다";
-                PullRequestEmptyDescription.Text = _pullRequestLoadMessage;
-                PullRequestEmptyActionBtn.Content = "설치 안내 열기";
-                break;
-            case GitHubLoadState.AuthenticationRequired:
-                PullRequestEmptyTitle.Text = "GitHub 로그인이 필요합니다";
-                PullRequestEmptyDescription.Text = "터미널에서 gh auth login을 실행한 뒤 새로 고침하세요.";
-                PullRequestEmptyActionBtn.Content = "로그인 명령 복사";
-                break;
-            case GitHubLoadState.UnsupportedRemote:
-                PullRequestEmptyTitle.Text = "GitHub 원격이 없습니다";
-                PullRequestEmptyDescription.Text = _pullRequestLoadMessage;
-                PullRequestEmptyActionBtn.Visibility = Visibility.Collapsed;
-                break;
-            case GitHubLoadState.Failed:
-                PullRequestEmptyTitle.Text = "PR을 불러오지 못했습니다";
-                PullRequestEmptyDescription.Text = _pullRequestLoadMessage;
-                PullRequestEmptyActionBtn.Content = "다시 시도";
-                break;
-            default:
-                if (query.Length > 0)
-                {
-                    PullRequestEmptyTitle.Text = "검색 결과가 없습니다";
-                    PullRequestEmptyDescription.Text = "다른 제목, 번호 또는 브랜치로 검색해 보세요.";
-                }
-                else if (_pullRequestFilter == PullRequestFilter.Open)
-                {
-                    PullRequestEmptyTitle.Text = "열린 PR이 없습니다";
-                    PullRequestEmptyDescription.Text = "완료 또는 전체 필터에서 이전 PR도 볼 수 있습니다.";
-                }
-                else if (_pullRequestFilter == PullRequestFilter.Completed)
-                {
-                    PullRequestEmptyTitle.Text = "완료된 PR이 없습니다";
-                    PullRequestEmptyDescription.Text = "병합되거나 닫힌 PR이 여기에 표시됩니다.";
-                }
-                else
-                {
-                    PullRequestEmptyTitle.Text = "PR이 없습니다";
-                    PullRequestEmptyDescription.Text = "브랜치를 푸시한 뒤 GitHub에서 PR을 만들 수 있습니다.";
-                }
-                PullRequestEmptyActionBtn.Content = "GitHub에서 보기";
-                PullRequestEmptyActionBtn.Visibility = string.IsNullOrEmpty(_originWebUrl)
-                    ? Visibility.Collapsed
-                    : Visibility.Visible;
-                break;
-        }
-    }
-
-    private void PullRequestSearch_TextChanged(object sender, TextChangedEventArgs e) => ApplyPullRequestFilter();
-
-    private async void PullRequestList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (PullRequestList.SelectedItem is not GitPullRequestItem pullRequest
-            || pullRequest.DetailsLoaded
-            || pullRequest.IsDetailsLoading)
-            return;
-
-        await LoadPullRequestDetailsAsync(pullRequest);
-    }
-
-    private async void RetryPullRequestDetails_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.Tag is GitPullRequestItem pullRequest)
-            await LoadPullRequestDetailsAsync(pullRequest);
-    }
-
-    private async Task LoadPullRequestDetailsAsync(GitPullRequestItem pullRequest)
-    {
-        if (pullRequest.IsDetailsLoading || string.IsNullOrEmpty(_repo)) return;
-
-        var repo = _repo;
-        var version = _repoVersion;
-        pullRequest.BeginDetails();
-        var details = await GitHubService.PullRequestBodyAsync(repo, pullRequest.Number);
-        if (version != _repoVersion || !string.Equals(repo, _repo, StringComparison.OrdinalIgnoreCase)) return;
-        if (details.Ok) pullRequest.ApplyBody(details.Body);
-        else pullRequest.FailDetails();
-    }
-
-    private void ClearPullRequestSearch_Click(object sender, RoutedEventArgs e)
-    {
-        PullRequestSearchBox.Clear();
-        PullRequestSearchBox.Focus();
-    }
-
-    private void PrFilter_Click(object sender, RoutedEventArgs e)
-    {
-        _pullRequestFilter = (sender as Button)?.CommandParameter?.ToString() switch
-        {
-            "completed" => PullRequestFilter.Completed,
-            "all" => PullRequestFilter.All,
-            _ => PullRequestFilter.Open,
-        };
-        ApplyPullRequestFilter();
-    }
-
-    private async void PullRequestEmptyAction_Click(object sender, RoutedEventArgs e)
-    {
-        switch (_pullRequestLoadState)
-        {
-            case GitHubLoadState.CliMissing:
-                TryOpenHttp("https://cli.github.com/");
-                break;
-            case GitHubLoadState.AuthenticationRequired:
-                try
-                {
-                    Clipboard.SetText("gh auth login");
-                    if (sender is Button actionButton) actionButton.Content = "복사됨";
-                }
-                catch { }
-                break;
-            case GitHubLoadState.Failed:
-                _pullRequestsLoaded = false;
-                await LoadPullRequestsAsync(force: true);
-                break;
-            default:
-                TryOpenHttp(string.IsNullOrEmpty(_originWebUrl) ? null : _originWebUrl.TrimEnd('/') + "/pulls");
-                break;
-        }
-    }
-
-    private void OpenPullRequest_Click(object sender, RoutedEventArgs e)
-        => TryOpenHttp((sender as FrameworkElement)?.Tag?.ToString());
-
-    private void OpenCommit_Click(object sender, RoutedEventArgs e)
-    {
-        var sha = (sender as FrameworkElement)?.Tag?.ToString();
-        if (string.IsNullOrEmpty(_originWebUrl) || string.IsNullOrWhiteSpace(sha)) return;
-        TryOpenHttp(_originWebUrl.TrimEnd('/') + "/commit/" + sha);
-    }
-
-    private static void TryOpenHttp(string? url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return;
-        try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
-        catch { }
+        var parts = new System.Collections.Generic.List<string>(2);
+        if (_branch.Behind > 0) parts.Add($"↓{_branch.Behind}");
+        if (_branch.Ahead > 0) parts.Add($"↑{_branch.Ahead}");
+        BranchText.Text = _branch.Branch == null
+            ? "(git 저장소 없음)"
+            : _branch.Branch + (parts.Count > 0 ? "  " + string.Join(" ", parts) : "");
     }
 
     private void MsgBox_PreviewKeyDown(object s, KeyEventArgs e)
@@ -1242,7 +639,6 @@ public partial class GitScmView : UserControl
         _busy = false;
         if (!r.Ok) { ShowGitFailure(GitOperation.Commit, r); UpdateButtons(); return; }
         MsgBox.Clear();
-        _historyLoaded = false;
         await RefreshAsync();
         GitStateChanged?.Invoke(_repo);
     }
@@ -1307,7 +703,7 @@ public partial class GitScmView : UserControl
             return;
         }
 
-        _busy = true; UpdateButtons();
+        _busy = true; SetSyncing(true); UpdateButtons();
         var operation = GitOperation.Pull;
         var r = await GitService.PullAsync(repo);
         if (r.Ok)
@@ -1315,8 +711,7 @@ public partial class GitScmView : UserControl
             operation = GitOperation.Push;
             r = await GitService.PushAsync(repo);
         }
-        _busy = false;
-        _historyLoaded = false;
+        _busy = false; SetSyncing(false);
         if (!r.Ok) ShowGitFailure(operation, r);
         await RefreshAsync();
         GitStateChanged?.Invoke(repo);
@@ -1449,14 +844,19 @@ public partial class GitScmView : UserControl
         bool showFailure = true)
     {
         if (_repo == null) return new GitService.GitResult(false, "", "git 저장소가 선택되지 않았습니다.");
-        _busy = true; UpdateButtons();
+        _busy = true; SetSyncing(true); UpdateButtons();   // 스피너 ON + 원격 작업 버튼 비활성화(!_busy)
         var r = await op();
-        _busy = false;
-        _historyLoaded = false;
+        _busy = false; SetSyncing(false);
         if (!r.Ok && showFailure) ShowGitFailure(operation, r);
         await RefreshAsync();
         GitStateChanged?.Invoke(_repo);
         return r;
     }
 
+    // fetch/pull/push/sync 진행 중에만 브랜치 아이콘을 스피너로 교체(커밋/스테이징은 제외).
+    private void SetSyncing(bool on)
+    {
+        BranchSpinner.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        BranchIcon.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+    }
 }
