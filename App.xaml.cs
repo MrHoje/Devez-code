@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Input;
 using System.Windows.Media;
+using DevezCode.Behaviors;
 using DevezCode.Services;
 using DevezCode.Services.Terminal;
 
@@ -134,6 +135,9 @@ public partial class App : Application
             Shutdown(exitCode);
             return;
         }
+
+        // 모든 WPF 세로 스크롤에서 작은 트랙패드 델타만 누적하고 120단위 마우스 휠은 그대로 둔다.
+        PrecisionWheelScroll.RegisterGlobally();
 
         // ContextMenu 는 우클릭으로 열되, 열린 MenuItem 은 좌클릭으로만 선택한다.
         EventManager.RegisterClassHandler(typeof(MenuItem), UIElement.PreviewMouseRightButtonDownEvent,
