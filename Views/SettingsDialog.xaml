@@ -2124,7 +2124,7 @@
                                                             <Ellipse x:Name="ThemeRadioDot_Midnight" Width="7" Height="7"
                                                                      Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
                                                         </Grid>
-                                                        <TextBlock Text="미드나이트 블루" FontSize="{DynamicResource Fs12}"
+                                                        <TextBlock Text="미드나잇" FontSize="{DynamicResource Fs12}"
                                                                    Foreground="{DynamicResource TextBrush}"/>
                                                     </StackPanel>
                                                 </Border>

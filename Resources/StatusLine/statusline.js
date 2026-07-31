@@ -1,4 +1,4 @@
-// DEVEZCODE-STATUSLINE v9 — Devez/DevezCode 공용 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+// DEVEZCODE-STATUSLINE v10 — Devez/DevezCode 공용 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
 // 두 앱(devez, DevezCode)이 같은 사용자 ~/.claude 를 공유하므로 이 파일도 공유·동일 내용으로 관리된다.
 const _fs = require("fs"), _path = require("path"), _os = require("os");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
@@ -117,12 +117,15 @@ process.stdin.on("end", () => {
 
     // 테마별 색감. statusline 은 터미널 배경 위에 그려진다.
     //   dark:    따뜻한 다크(#2A2620) 쪽 16% 블렌드 — 어두운 배경, 밝은 글자 유지.
-    //   soft/minimal(라이트): 회색으로 블렌드하면 채도가 죽어 색 구분이 뭉개진다.
+    //   soft/minimal/gray/softpink(라이트): 회색으로 블렌드하면 채도가 죽어 색 구분이 뭉개진다.
     //     대신 명도만 곱연산으로 낮춰(hue/채도 유지) 밝은 배경에서 쨍하게 구분되게 한다.
     //     액센트(ACC)는 살짝만, 일반 텍스트(TXT)는 강하게 낮춰 검정에 가깝게(soft 가 가장 진함).
-    const _light = THEME === "soft" || THEME === "minimal";
-    const VF = THEME === "soft" ? 0.80 : 0.82;         // 라이트 액센트 명도(채도 최대화 후 적용)
-    const INK = THEME === "soft" ? [22, 18, 12] : [15, 20, 34]; // 일반 텍스트 잉크색(진한 검정 계열)
+    const _light = THEME === "soft" || THEME === "minimal" || THEME === "gray" || THEME === "softpink";
+    const VF = THEME === "soft" ? 0.80 : THEME === "softpink" ? 0.78 : 0.82;
+    const INK = THEME === "soft" ? [22, 18, 12]
+      : THEME === "gray" ? [31, 41, 55]
+      : THEME === "softpink" ? [59, 41, 49]
+      : [15, 20, 34]; // 일반 텍스트 잉크색(진한 검정 계열)
     const TINT = [42, 38, 32], K = 0.16;
     const _cl = v => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
     const _esc = (r, g, b) => "\x1b[38;2;" + _cl(r) + ";" + _cl(g) + ";" + _cl(b) + "m";
@@ -144,33 +147,41 @@ process.stdin.on("end", () => {
     // 채도 최대화를 거치지 않고 지정한 색을 그대로 쓴다. fg() 의 saturate-max 는 인디고 같은
     // (R·G·B 가 가까운) 색을 순수 파랑으로 뭉개버려 다크의 톤과 너무 멀어지는 경우에 사용.
     const fgFixed = (r, g, b) => _esc(r, g, b);
+    // gray/softpink은 상태줄도 앱 팔레트의 진한 의미색을 직접 사용한다.
+    const STATUS = THEME === "gray"
+      ? { info: [50, 106, 165], accent: [118, 85, 143], warning: [161, 98, 7], success: [21, 128, 61], danger: [194, 65, 62], xhigh: [101, 73, 123] }
+      : THEME === "softpink"
+        ? { info: [50, 106, 159], accent: [132, 88, 143], warning: [154, 101, 11], success: [37, 114, 60], danger: [194, 65, 62], xhigh: [112, 70, 126] }
+        : null;
+    const semantic = (key, r, g, b, m = 1) => STATUS?.[key] ? fgFixed(...STATUS[key]) : fg(r, g, b, m);
 
     const R = "\x1b[0m";
     const MAIN   = fgText(229, 231, 235);
     const SEP    = fgText(147, 164, 184);
     const SOFT   = fgText(203, 213, 225);
-    const HAIKU  = fg(0, 255, 255);
-    const OPUS   = fg(248, 113, 113);
+    const HAIKU  = semantic("info", 0, 255, 255);
+    const OPUS   = semantic("danger", 248, 113, 113);
     // 라이트에서는 claude TUI 의 AUTO MODE(warning 토큰) 색과 동일하게 고정(테마별로 다름).
     // 다크는 기존 골드 유지.
-    const SONNET = _light
+    const SONNET = STATUS ? semantic("warning", 202, 138, 4)
+      : _light
       ? (THEME === "soft" ? fgFixed(201, 124, 26) : fgFixed(202, 138, 4))
       : fg(250, 204, 21);
-    const FABLE  = fg(232, 121, 249);
-    const CTX    = fg(52, 211, 153, 0.68); // 라이트에서 더 어두운 녹색
-    const TIME   = fg(96, 165, 250);
-    const WEEK   = fg(167, 139, 250);
+    const FABLE  = semantic("accent", 232, 121, 249);
+    const CTX    = semantic("success", 52, 211, 153, 0.68); // 라이트에서 더 어두운 녹색
+    const TIME   = semantic("info", 96, 165, 250);
+    const WEEK   = semantic("accent", 167, 139, 250);
     const TOK    = fgText(226, 232, 240);
-    const E_LOW  = fg(220, 172, 18);
-    const E_MED  = fg(63, 157, 99, 0.80);   // 라이트에서 초록 명도 낮춰 가독성(다크는 m 무시=원래색)
+    const E_LOW  = semantic("warning", 220, 172, 18);
+    const E_MED  = semantic("success", 63, 157, 99, 0.80);   // 라이트에서 더 어두운 녹색
     // high/xhigh: 다크는 원래 색 유지, 라이트만 hue 분리해 구분되게.
     // E_HIGH 는 다크의 옅은 인디고(177,185,249)와 계열을 맞추려 고정 인디고色 사용
     // (saturate-max 를 거치면 인디고가 순수 파랑으로 뭉개져 다크 톤과 너무 멀어짐).
-    const E_HIGH = _light ? fgFixed(67, 56, 202) : fg(177, 185, 249);
-    const E_XH   = _light ? fg(192, 100, 255) : fg(175, 135, 255);
-    const E_MAX  = fg(248, 113, 113);
+    const E_HIGH = STATUS ? semantic("accent", 67, 56, 202) : _light ? fgFixed(67, 56, 202) : fg(177, 185, 249);
+    const E_XH   = STATUS ? semantic("xhigh", 192, 100, 255) : _light ? fg(192, 100, 255) : fg(175, 135, 255);
+    const E_MAX  = semantic("danger", 248, 113, 113);
     // 브랜치(첫 세그먼트): 라이트에서만 시안 쪽으로 틀어 더 하늘색 느낌(다크는 기존 파랑 유지).
-    const BRANCH = _light ? fg(56, 189, 248) : fg(147, 197, 253);
+    const BRANCH = STATUS ? semantic("info", 56, 189, 248) : _light ? fg(56, 189, 248) : fg(147, 197, 253);
     const PIPE   = SEP + " | " + R;
 
     // 버전 정규식: 메이저(-마이너)? 만 잡고 날짜 접미사(-20250929 등)는 제외.
