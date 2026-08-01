@@ -1,4 +1,8 @@
-# IME 조합창 "모니터 좌상단" 고착 — 수사 진행 중 (계측 단계)
+# 터미널 "커서 관련" 버그 — IME 조합창 모니터 좌상단 고착 (예측 수정 적용, 관찰 중)
+
+> 사용자가 **"커서 관련 수정"·"커서 좌표가 안 맞음"·"텍스트 입력이 깔끔하게 안 보임"** 이라고
+> 말하면 이 문서다. 증상의 실체는 커서가 아니라 **Windows IME 조합창이 모니터 원점(0,0)에
+> 뜨는 OS 레벨 고착**이며, 수정 이력·계측 판독법·다음 단계가 모두 여기 있다.
 
 ## 증상
 
@@ -12,8 +16,36 @@
 1. **터미널 표면 재클릭으로는 복구 안 됨** — 기존 조건부 복구 `_recoverStaleImeOnPointerDown`
    이 diag.log 전체에서 **한 번도 발동한 적 없음**(`pointer-recover`/`pointer-stale` 0건).
    즉 기존 감지 조건(터미널 안 `.composition-view` 가 화면 밖/(0,0))에 **안 걸리는 다른 부류**다.
-2. **터미널 밖(WPF 영역) 클릭 → 세션 재포커스만 해결** — 웹 레이어 안의 `ta.blur()→focus()`
-   (resetImeNow)로는 안 풀리고, **실제 Win32 HWND 포커스 이동**이 있어야 풀린다.
+2. **터미널 밖(WPF 영역) 클릭 → 세션 재포커스만 해결** — 실제 Win32 HWND 포커스 이동이 있어야 풀린다.
+3. **페이지 내 blur→focus 처방으로는 불충분 확정** — `case 'focus'`(terminal.html)가 이미 모든
+   포커스 메시지에서 helper-textarea blur 경계를 만들고, 새 세션은 `initial-focus` 리셋
+   (`resetImeNow`, diag 에 기록 확인)까지 도는데도 그 경로에서 증상이 났다. 이 증상에 웹 안
+   리셋을 더 쌓는 시도는 무의미 — **수정은 Win32 층에서** 해야 한다.
+
+## 적용된 예측 수정 (2026-08-01, 시그니처 확보 전 선제 적용)
+
+`FocusTerminal()` (TerminalHostView.cs) — **2단계 Win32 포커스 바운스**:
+
+- **의심 전환 판정**: 호출 시점 Win32 포커스(`GetGUIThreadInfo`)가 `Chrome_*` 밖(=WPF 쪽에서
+  들어오는 프로그램적 전달)일 때만 발동. 이미 Chromium 안이면 기존 동작 그대로 →
+  조합 중인 터미널을 건드릴 가능성 원천 차단.
+- **바운스**: ① WPF 본체 HWND 에 `SetFocus` 로 진행 중 전이를 확정 → ② 60ms 뒤 `_webView.Focus()`.
+  수동 우회가 항상 성공하는 이유 = 두 전이가 사람 타이밍으로 분리되기 때문(코드 속도의 동시
+  전이가 IME 재부착 레이스를 만든다)이라는 가설의 재현.
+- **안전 가드**: 60ms 사이 방이 바뀌면 폐기 / `Keyboard.FocusedElement` 가 WPF TextBox 면
+  (세션 이름 변경 등) 포커스를 빼앗지 않고 폐기.
+- diag: `[ime focus-path] from=<호출자> suspect=0|1` → 250ms 뒤 `settle ... win32[...]`.
+
+**효과 판정법**(간헐 버그라 며칠 관찰 필요): diag 에 `suspect=1` 경로가 여러 번 지나갔는데
+이후 probe 라인에 `imeWnd=vis@0,0` 이 없고 사용자 체감 재발이 없으면 호전. **바운스 적용 후에도
+재발하면** 아래 에스컬레이션으로.
+
+## 에스컬레이션 예비안 (재발 시)
+
+1. `AttachThreadInput` + Chromium 자식 HWND(`Chrome_WidgetWin_1`/`Chrome_RenderWidgetHostHWND`)에
+   직접 `SetFocus` — 실클릭의 포커스 경로를 더 충실히 재현. 입력 큐 attach 는 무겁고 상대
+   스레드가 바쁘면 지연 위험 → 의심 전환 한정 + try/finally detach 필수.
+2. 바운스 지연(60ms) 증가 또는 `MoveFocus` 재호출 — 레이스 가설이 맞는데 60ms 로 부족한 경우.
 
 ## 트리거 (사용자 제보 + 구조적 예측)
 

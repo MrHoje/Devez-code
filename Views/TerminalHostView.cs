@@ -444,26 +444,68 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>프로그램적 포커스 전달 — 사용자가 터미널 표면을 직접 클릭하는 경우와 달리
     /// Win32 포커스가 WPF 쪽에 있다가 코드로 WebView2 에 넘어가는 경로다. "IME 조합창이
     /// 모니터 좌상단에 뜨는" 고착이 이 경로(새 세션 모달 닫힘·완료기록 카드 클릭 등)에서
-    /// 자주 발생한다는 제보에 따라 호출자와 250ms 후 Win32 안착 상태를 diag 에 남긴다.
-    /// 판독: .knowledge/ime-모니터좌상단-조합창-고착.md</summary>
+    /// 자주 발생한다.
+    ///
+    /// [바운스] 페이지 내 blur→focus 경계(case 'focus'/initial-focus 리셋)는 이미 이 경로 전부에
+    /// 걸려 있는데도 증상이 나므로 웹 안 처방으로는 불충분이 확정. 수동 우회("밖 클릭→터미널 클릭")가
+    /// 항상 성공하는 것은 두 포커스 전이가 사람 타이밍으로 분리되기 때문이라는 가설에 따라,
+    /// 의심 전환(현재 Win32 포커스가 Chromium 밖)일 때만 ① WPF 본체 HWND 에 SetFocus 로 전이를
+    /// 확정시키고 ② 60ms 뒤 WebView2 로 넘기는 2단계 바운스를 수행한다. 포커스가 이미 Chromium
+    /// 안이면 기존 동작 그대로(조합 중인 터미널을 건드릴 일 없음).
+    /// 계측·판독: .knowledge/ime-모니터좌상단-조합창-고착.md</summary>
     public void FocusTerminal([System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
         if (_pageReady && _activeRoomId != null)
         {
-            DevezCode.Services.DiagLog.Write($"[ime focus-path] from={caller} room={_activeRoomId}");
-            _webView?.Focus();
-            PostJson(new { type = "focus", roomId = _activeRoomId });
-            // 포커스가 실제로 어디에 안착했는지(Chromium HWND vs WPF 본체) 잠시 뒤 스냅샷.
-            // 프로그램적 전달이 IME 컨텍스트 재부착에 실패하는지 조합 없이도 관측하기 위함.
             var room = _activeRoomId;
-            _ = System.Threading.Tasks.Task.Delay(250).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
-                DevezCode.Services.DiagLog.Write($"[ime focus-path] settle room={room} " + DescribeWin32ImeState())));
+            bool suspect = false;
+            try
+            {
+                var gti = new GuiThreadInfo { cbSize = Marshal.SizeOf<GuiThreadInfo>() };
+                if (GetGUIThreadInfo(0, ref gti))
+                    suspect = !Win32ClassName(gti.hwndFocus).StartsWith("Chrome_", StringComparison.Ordinal);
+            }
+            catch { }
+            DevezCode.Services.DiagLog.Write($"[ime focus-path] from={caller} room={room} suspect={(suspect ? 1 : 0)}");
+            if (!suspect)
+            {
+                ApplyTerminalFocus(room);
+                return;
+            }
+            // 1단계 — WPF 본체에 Win32 포커스 확정(모달 닫힘 등 진행 중인 전이를 여기서 끝낸다).
+            try
+            {
+                var win = Window.GetWindow(this);
+                var hwnd = win != null ? new System.Windows.Interop.WindowInteropHelper(win).Handle : IntPtr.Zero;
+                if (hwnd != IntPtr.Zero) SetFocus(hwnd);
+            }
+            catch { }
+            // 2단계 — 한 박자 뒤 WebView2 로 전달. 그 사이 방이 바뀌었거나 사용자가 WPF 입력칸
+            // (세션 이름 변경 등)에 들어갔으면 포커스를 빼앗지 않고 폐기한다.
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                if (!_pageReady || _activeRoomId != room) return;
+                if (System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase) return;
+                ApplyTerminalFocus(room);
+            };
+            timer.Start();
         }
         else
         {
             // 첫 생성 시 WebView2 초기화가 끝나기 전 — OnPageReady 에서 적용
             _pendingFocus = true;
         }
+    }
+
+    /// <summary>실제 포커스 적용 + 250ms 후 Win32 안착 상태 스냅샷(조합 없이도 stale 관측).</summary>
+    private void ApplyTerminalFocus(string room)
+    {
+        _webView?.Focus();
+        PostJson(new { type = "focus", roomId = room });
+        _ = System.Threading.Tasks.Task.Delay(250).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
+            DevezCode.Services.DiagLog.Write($"[ime focus-path] settle room={room} " + DescribeWin32ImeState())));
     }
 
     private async Task InitWebViewAsync()
@@ -1731,6 +1773,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     [DllImport("imm32.dll")]
     private static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
+
+    /// <summary>포커스 바운스 1단계용 — 자기 스레드 큐의 창(WPF 본체)에만 사용한다.
+    /// 타 프로세스(Chromium) HWND 에는 동작하지 않음(그쪽은 _webView.Focus() 경유).</summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetFocus(IntPtr hWnd);
 
     private static string Win32ClassName(IntPtr hWnd)
     {
