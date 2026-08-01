@@ -96,7 +96,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.21.5", "2026-07-31", true, new[]
+          ("v1.21.6", "2026-08-01", true, new[]
+          {
+              "새 세션 생성이나 완료 기록 클릭 직후 한글 조합 글자가 모니터 왼쪽 위에 표시되던 문제를 개선했습니다.",
+          }),
+          ("v1.21.5", "2026-07-31", false, new[]
           {
               "앱 전체의 트랙패드·휠 스크롤 감도를 통일해 목록과 화면이 부드럽게 움직이도록 정규화했습니다.",
           }),
