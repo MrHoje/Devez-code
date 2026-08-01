@@ -17,8 +17,17 @@ if (-not $iscc) {
     exit 1
 }
 
-# 실행 중인 앱 종료(파일 잠금 방지)
-taskkill /IM DevezCode.exe /F 2>$null
+# 저장소 bin\ 실행본일 때만 정상 종료 요청(설치본 %LocalAppData% 실행은 산출물과 경로 분리 — 종료 불필요).
+# 강제 종료(taskkill /F) 금지 — CLAUDE.md 최우선 규칙. Claude 세션이 DevezCode 내부에서 이 스크립트를
+# 실행하는 경우에도 설치본은 건드리지 않으므로 세션이 끊기지 않는다.
+$binProcs = Get-Process -Name DevezCode -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$root\bin\*" }
+foreach ($p in $binProcs) {
+    $p.CloseMainWindow() | Out-Null
+    if (-not $p.WaitForExit(30000)) {
+        Write-Error "bin\ 실행본이 정상 종료되지 않아 중단합니다. 강제 종료하지 마십시오."
+        exit 1
+    }
+}
 
 # 1. Publish (single-file, framework-dependent, win-x64)
 Write-Host "`n[1/2] dotnet publish ..." -ForegroundColor Cyan
