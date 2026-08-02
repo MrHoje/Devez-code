@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="GajaeTestDoubles.cs" />
+    <Compile Include="..\..\Models\McpServer.cs" Link="Models\McpServer.cs" />
+    <Compile Include="..\..\Services\IMcpBackend.cs" Link="Services\IMcpBackend.cs" />
+    <Compile Include="..\..\Services\GajaeMcpBackend.cs" Link="Services\GajaeMcpBackend.cs" />
+  </ItemGroup>
+</Project>

@@ -1522,7 +1522,7 @@ public sealed class TerminalSessionManager
         // GJC 의 --hook/--extension 플래그는 0.11.1 에서도 미파싱(경로가 초기 프롬프트가 됨)이고
         // 파일시스템 확장 로딩 자체가 격리(quarantine)라 훅/확장 주입은 불가 — 상태는 GJC 가 직접 쓰는
         // 런타임 사이드카(<workingDir>\.gjc\_session-<id>\runtime\runtime-state.json) + 세션 JSONL 폴링으로 추적한다.
-        string sd = $"--session-dir \"{sessionDir}\"";
+        string sd = GajaeMcpBackend.AppendLaunchArgument($"--session-dir \"{sessionDir}\"");
         // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 배치(재진입 루프)로 돌아오게 한다(.exe 엔 무해).
         string cmd = sessionId != null
             ? $"call gjc {sd} -r {sessionId}\r\nif errorlevel 1 call gjc {sd}"

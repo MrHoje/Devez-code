@@ -98,7 +98,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.22.1", "2026-08-02", true, new[]
+          ("v1.22.2", "2026-08-02", true, new[]
+          {
+              "모든 지원 에이전트에서 내장 브라우저를 사용할 수 있도록 개선합니다.",
+              "Codex에서 내장 브라우저가 연결되지 않던 문제를 수정합니다.",
+              "내장 브라우저 명령 실행 중 발생하던 오류를 수정합니다.",
+          }),
+          ("v1.22.1", "2026-08-02", false, new[]
           {
               "터미널 밖 화면에서 돌아온 뒤 한글 입력 포커스가 안정적으로 복구됩니다.",
               "탭 추가 메뉴가 즉시 닫히던 문제를 수정했습니다.",

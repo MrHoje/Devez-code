@@ -14,7 +14,7 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>MCP 서버 관리 오버레이. <see cref="CloseRequested"/> 로 닫기 요청.
-/// opencode / Claude Code / Codex 세 에이전트의 MCP 설정을 탭으로 묶어 한 창에서 관리.
+/// 지원 에이전트의 MCP 설정을 탭으로 묶어 한 창에서 관리.
 /// 각 백엔드(IMcpBackend) 는 자기 설정 파일을 직접 다루고, 탭 전환 시 디스크에서 새로 읽는다.
 /// [저장] 시 현재 활성 백엔드에 다른 필드는 보존하고 mcp 섹션만 갱신.</summary>
 public partial class McpManagerDialog : UserControl
@@ -178,6 +178,9 @@ public partial class McpManagerDialog : UserControl
         "claude"   => ClaudeMcpBackend.ConfigPath,
         "codex"    => CodexMcpBackend.ConfigPath,
         "grok"     => GrokMcpBackend.ConfigPath,
+        "antigravity" => AntigravityMcpBackend.ConfigPath,
+        "kimi"     => KimiMcpBackend.ConfigPath,
+        "gajae"    => GajaeMcpBackend.ConfigPath,
         _          => null,
     };
 

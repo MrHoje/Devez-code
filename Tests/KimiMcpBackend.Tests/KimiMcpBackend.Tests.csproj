@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="TestSupport.cs" />
+    <Compile Include="..\..\Services\KimiMcpBackend.cs" Link="KimiMcpBackend.cs" />
+    <Compile Include="..\..\Services\IMcpBackend.cs" Link="IMcpBackend.cs" />
+    <Compile Include="..\..\Models\McpServer.cs" Link="McpServer.cs" />
+  </ItemGroup>
+</Project>
