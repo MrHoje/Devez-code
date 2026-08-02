@@ -147,6 +147,7 @@ public sealed class RelayConnector
         var root = doc.RootElement;
         if (!root.TryGetProperty("clientId", out var id) || !Guid.TryParse(id.GetString(), out var clientId)) return;
         var kind = root.TryGetProperty("kind", out var kindElement) ? kindElement.GetString() : null;
+        DiagLog.Write($"relay envelope: kind={kind}, knownClients={_clients.Count}");
         switch (kind)
         {
             case "join":
@@ -163,7 +164,11 @@ public sealed class RelayConnector
                 if (!_clients.TryGetValue(clientId, out var target))
                 {
                     target = new RelayClientSink(clientId, this);
-                    if (_clients.TryAdd(clientId, target)) DashboardHub.Instance.AddClient(target);
+                    if (_clients.TryAdd(clientId, target))
+                    {
+                        DiagLog.Write("relay client recovered from message");
+                        DashboardHub.Instance.AddClient(target);
+                    }
                     else if (!_clients.TryGetValue(clientId, out target)) break;
                 }
                 DashboardHub.Instance.HandleClientMessage(target, payload);

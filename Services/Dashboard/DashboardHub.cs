@@ -46,6 +46,8 @@ public sealed class DashboardHub
     public void AddClient(IClientSink client)
     {
         _clients[client.Id] = client;
+        var workspace = WorkspaceStore.LoadDashboardSnapshot();
+        DiagLog.Write($"relay dashboard join: projects={workspace.Projects.Count}, sessions={workspace.Projects.Sum(project => project.Sessions.Count)}");
         client.Queue(new { type = "hello", clientId = client.Id, controllerId = CurrentControllerId() });
         client.Queue(BuildSessionsMessage());
     }
