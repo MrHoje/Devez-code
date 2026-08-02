@@ -60,8 +60,6 @@ public partial class WorkspacePaneView : UserControl
     private IEnumerable<ProjectItem> AllProjects => ArchivedProjects == null ? Projects : Projects.Concat(ArchivedProjects);
     /// <summary>statusLine 훅이 보고한 방별 실제 model/effort 조회용(공유 서비스).</summary>
     public ModelEffortService? ModelEffort { get; set; }
-    /// <summary>비-claude 에이전트 last prompt 추적용(공유 서비스).</summary>
-    public AgentLastMessageService? AgentLastMsg { get; set; }
     /// <summary>이 세션이 다른 패널에서 활성으로 표시 중인지(셸이 주입). 프리로드에서 제외해 그 세션 ConPTY 를
     /// 표시 중인 패널이 최종 폭으로 생성하게 한다(같은 프로젝트 분할 시 폭 충돌·리플로우 방지).</summary>
     public Func<SessionItem, bool>? IsSessionActiveElsewhere { get; set; }
@@ -1071,14 +1069,15 @@ public partial class WorkspacePaneView : UserControl
 
     private void PreloadProjectSessions(ProjectItem proj, SessionItem? except)
     {
-        foreach (var s in proj.Tabs.OfType<SessionItem>())
-        {
-            if (ReferenceEquals(s, except) || s.IsEffectivelyHidden || s.IsExternal) continue;
-            if (_themeReloadRoomIds.Contains(s.Id)) continue; // 테마 종료 중 비활성 방을 백그라운드에서 되살리지 않음
-            if (IsSessionActiveElsewhere?.Invoke(s) == true) continue; // 다른 패널이 표시 중 — 그 패널이 최종 폭으로 생성
-            SettingsService.SaveClaudeCodeRoomDir(s.Id, proj.Path);
+        var sessions = proj.Tabs.OfType<SessionItem>()
+            .Where(s => !ReferenceEquals(s, except) && !s.IsEffectivelyHidden && !s.IsExternal)
+            .Where(s => !_themeReloadRoomIds.Contains(s.Id)) // 테마 종료 중 비활성 방을 백그라운드에서 되살리지 않음
+            .Where(s => IsSessionActiveElsewhere?.Invoke(s) != true) // 다른 패널이 표시 중 — 그 패널이 최종 폭으로 생성
+            .ToList();
+
+        SettingsService.SaveClaudeCodeRoomDirs(sessions.Select(s => s.Id), proj.Path);
+        foreach (var s in sessions)
             _terminal.PreloadTerminal(s.Id);
-        }
     }
 
     /// <summary>활성 프로젝트가 지정된 프로젝트면 비우고, next 가 있으면 그 프로젝트를 연다.</summary>
@@ -1453,7 +1452,7 @@ public partial class WorkspacePaneView : UserControl
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
 
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false; // 세션으로 전환 → 이전 활성 문서 해제
-        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
+        if (_activeTab is BrowserTabItem prevBrowser) DeactivateBrowserTab(prevBrowser);
         _activeTab = session; // SelectedTab DP 갱신 → 이 패널 탭바만 이 탭을 선택 강조(패널별 독립)
         _activeSession = session;
         session.IsActive = true;
@@ -1498,9 +1497,6 @@ public partial class WorkspacePaneView : UserControl
         }
 
         session.IsAlive = true;
-        var sessionAgentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-        if (sessionAgentId != "claude")
-            AgentLastMsg?.TrackSession(parent.Path, sessionAgentId);
         // 콜드(미준비) 세션: UpdateEmptyState 가 UnparkTerminalHost 로 webview 를 0×0→풀사이즈로 드러내는데,
         // 그 전에 웹 로딩 커버부터 켜야 한다. ShowTerminal 을 먼저 보내면 빠른 codex 는 커서가 한 프레임
         // 노출된 뒤 loading 메시지를 받아 스피너가 뒤늦게 뜬다. 정확한 스피너 앵커는 UpdateEmptyState 로
@@ -1565,7 +1561,7 @@ public partial class WorkspacePaneView : UserControl
         }
         if (!parent.IsExpanded) parent.IsExpanded = true;
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false;
-        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
+        if (_activeTab is BrowserTabItem prevBrowser) DeactivateBrowserTab(prevBrowser);
         _activeTab = session;
         _activeSession = session;
         session.IsActive = true;
@@ -1621,7 +1617,7 @@ public partial class WorkspacePaneView : UserControl
         ClearIsolationIfMismatch(tab);
 
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false; // 이전 활성 문서 하이라이트 해제
-        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
+        if (_activeTab is BrowserTabItem prevBrowser) DeactivateBrowserTab(prevBrowser);
         _activeTab = tab; // SelectedTab DP 갱신 → 이 패널 탭바만 이 탭을 선택 강조(패널별 독립)
         tab.IsActive = true; // 사이드바 카드 문서 하이라이트(세션 IsActive 대응)
         if (_activeSession != null) _activeSession.IsActive = false;
@@ -1648,6 +1644,15 @@ public partial class WorkspacePaneView : UserControl
         ActiveChanged?.Invoke(this);
     }
 
+    /// <summary>브라우저 탭 비활성화. 세션 전용(자동화) 탭이면 화면 밖 주차장으로 되돌려
+    /// 백그라운드에서도 페이지가 정상 크기로 렌더되게 한다(0×0 컨테이너에 남으면 스크립트 추출이 깨진다).</summary>
+    private void DeactivateBrowserTab(BrowserTabItem tab)
+    {
+        tab.IsActive = false;
+        if (tab.AutomationRoomId == null) return;
+        MainWindow.Current?.ParkAutomationBrowser(tab.Browser);
+    }
+
     private void ActivateBrowserTab(BrowserTabItem tab,
         [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
@@ -1657,7 +1662,9 @@ public partial class WorkspacePaneView : UserControl
         ClearIsolationIfMismatch(tab);
 
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false;
-        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
+        // 같은 탭 재활성화면 재주차하지 않는다(불필요한 WebView2 재부모화 = 깜빡임).
+        if (_activeTab is BrowserTabItem prevBrowser && !ReferenceEquals(prevBrowser, tab))
+            DeactivateBrowserTab(prevBrowser);
         if (_activeSession != null) _activeSession.IsActive = false;
 
         _activeTab = tab;
@@ -1670,7 +1677,9 @@ public partial class WorkspacePaneView : UserControl
         browser.StateKey = tab.PersistenceKey;
         if (!ReferenceEquals(browser.Parent, BrowserHostContainer))
         {
+            // 자동화 브라우저는 화면 밖 주차장(Panel)에 있을 수 있어 ContentControl 만 가정하면 안 된다.
             if (browser.Parent is ContentControl previousHost) previousHost.Content = null;
+            else if (browser.Parent is Panel previousPark) previousPark.Children.Remove(browser);
             if (ReferenceEquals(BrowserHostContainer.Content, browser)) BrowserHostContainer.Content = null;
             BrowserHostContainer.Content = browser;
         }
@@ -2431,7 +2440,7 @@ public partial class WorkspacePaneView : UserControl
     {
         if (_activeSession != null) _activeSession.IsActive = false;
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false;
-        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
+        if (_activeTab is BrowserTabItem prevBrowser) DeactivateBrowserTab(prevBrowser);
         _activeSession = null;
         _activeTab = null; // SelectedTab DP=null → 이 패널 탭바 선택 강조 해제
         if (FileEditorHostContainer != null) FileEditorHostContainer.Content = null;
@@ -2740,6 +2749,7 @@ public partial class WorkspacePaneView : UserControl
         int idx = parent?.Tabs.IndexOf(tab) ?? -1;
         if (ReferenceEquals(BrowserHostContainer.Content, tab.Browser))
             BrowserHostContainer.Content = null;
+        MainWindow.Current?.UnparkAutomationBrowser(tab.Browser);   // 주차장에 있던 자동화 탭 정리
         tab.Browser.DisposeAll();
         SettingsService.RemoveBrowserLastUrl(tab.PersistenceKey);
         parent?.Tabs.Remove(tab);

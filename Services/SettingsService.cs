@@ -148,6 +148,9 @@ public static class SettingsService
         public bool PromptForNewSessionName { get; set; } = false;
         // 새 브라우저 탭을 만들 때 이름 입력 팝업을 바로 표시할지 여부. 기본 false = 자동 생성 이름 사용.
         public bool PromptForNewBrowserTabName { get; set; } = false;
+        // 세션(에이전트)이 MCP 도구로 내장 브라우저를 조작할 수 있게 할지. 켜면 각 에이전트 설정에
+        // devez-browser MCP 서버를 등록한다. 기본 false = 세션은 브라우저에 접근 못 함.
+        public bool BrowserMcpEnabled { get; set; } = false;
         // 브라우저 기록이 없는 새 탭의 첫 주소. 잘못된 구버전 값은 LoadBrowserHomeUrl에서 Google로 보정한다.
         public string BrowserHomeUrl { get; set; } = "https://www.google.com";
         // URL 링크 열기 방식. 기본은 대상 프로젝트의 인앱 브라우저 새 탭.
@@ -477,7 +480,36 @@ public static class SettingsService
 
     public static void SaveClaudeCodeRoomDir(string roomId, string dir)
     {
-        lock (_lock) { Current.ClaudeCodeRoomDirs[roomId] = dir; Save(); }
+        lock (_lock)
+        {
+            if (Current.ClaudeCodeRoomDirs.TryGetValue(roomId, out var current)
+                && string.Equals(current, dir, StringComparison.Ordinal))
+                return;
+            Current.ClaudeCodeRoomDirs[roomId] = dir;
+            Save();
+        }
+    }
+
+    /// <summary>여러 방의 작업 디렉터리를 한 번에 갱신한다. 프리로드처럼 같은 경로를 반복 저장하는
+    /// 경로에서 settings.json 원자적 쓰기를 방마다 수행하지 않도록 변경분을 한 번만 저장한다.</summary>
+    public static void SaveClaudeCodeRoomDirs(IEnumerable<string> roomIds, string dir)
+    {
+        var ids = roomIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count == 0) return;
+
+        lock (_lock)
+        {
+            bool changed = false;
+            foreach (var roomId in ids)
+            {
+                if (Current.ClaudeCodeRoomDirs.TryGetValue(roomId, out var current)
+                    && string.Equals(current, dir, StringComparison.Ordinal))
+                    continue;
+                Current.ClaudeCodeRoomDirs[roomId] = dir;
+                changed = true;
+            }
+            if (changed) Save();
+        }
     }
 
     public static void RemoveClaudeCodeRoomDir(string roomId)
@@ -533,8 +565,14 @@ public static class SettingsService
 
     public static void SaveAgentForRoom(string roomId, string agentId)
     {
-        Current.RoomAgents[roomId] = agentId;
-        Save();
+        lock (_lock)
+        {
+            if (Current.RoomAgents.TryGetValue(roomId, out var current)
+                && string.Equals(current, agentId, StringComparison.Ordinal))
+                return;
+            Current.RoomAgents[roomId] = agentId;
+            Save();
+        }
     }
 
     // ── 사용자가 활성화한 에이전트 목록 ────────────────────────────
@@ -939,6 +977,9 @@ public static class SettingsService
 
     public static bool LoadPromptForNewBrowserTabName() => Current.PromptForNewBrowserTabName;
     public static void SavePromptForNewBrowserTabName(bool v) { Current.PromptForNewBrowserTabName = v; Save(); }
+
+    public static bool LoadBrowserMcpEnabled() => Current.BrowserMcpEnabled;
+    public static void SaveBrowserMcpEnabled(bool v) { Current.BrowserMcpEnabled = v; Save(); }
 
     public static string LoadBrowserHomeUrl()
         => NormalizeBrowserHomeUrl(Current.BrowserHomeUrl);

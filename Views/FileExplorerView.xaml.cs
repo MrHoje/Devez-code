@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -21,6 +23,7 @@ public partial class FileExplorerView : UserControl
     private readonly DispatcherTimer _fileSearchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _fileRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly HashSet<string> _pendingRefreshDirectories = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? _fileSearchCts;
     private bool _subscribed;
 
     /// <summary>SCM 파일 클릭 → 중앙 diff 탭 요청.(repo, relPath, staged) MainWindow 가 구독.</summary>
@@ -61,6 +64,7 @@ public partial class FileExplorerView : UserControl
         _subscribed = false;
         _fileSearchDebounceTimer.Stop();
         _fileRefreshDebounceTimer.Stop();
+        CancelFileSearch();
         DisposeFileWatcher();
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
     }
@@ -301,6 +305,7 @@ public partial class FileExplorerView : UserControl
     {
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
         {
+            CancelFileSearch();
             _rootPath = null;
             _rootNodes = null;
             DisposeFileWatcher();
@@ -434,6 +439,7 @@ public partial class FileExplorerView : UserControl
     private void ApplyFileSearchFilter()
     {
         var q = FileSearchBox?.Text?.Trim() ?? "";
+        CancelFileSearch();
         if (q.Length == 0)
         {
             Tree.ItemsSource = _rootNodes;
@@ -447,49 +453,85 @@ public partial class FileExplorerView : UserControl
             return;
         }
 
-        var results = new List<FileNode>();
-        try
-        {
-            foreach (var path in EnumerateSearchEntries(root))
-            {
-                var name = Path.GetFileName(path);
-                var relative = Path.GetRelativePath(root, path);
-                if (!name.Contains(q, StringComparison.OrdinalIgnoreCase)
-                    && !relative.Contains(q, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                results.Add(new FileNode
-                {
-                    Name = relative,
-                    FullPath = path,
-                    IsDirectory = Directory.Exists(path)
-                });
-                if (results.Count >= MaxSearchResults) break;
-            }
-        }
-        catch { /* 검색 중 접근 거부 등 무시 */ }
-
-        Tree.ItemsSource = new ObservableCollection<FileNode>(
-            results.OrderBy(n => n.IsDirectory ? 0 : 1).ThenBy(n => n.Name, StringComparer.OrdinalIgnoreCase));
+        var cts = new CancellationTokenSource();
+        _fileSearchCts = cts;
+        _ = ApplyFileSearchFilterAsync(root, q, cts);
     }
 
-    private static IEnumerable<string> EnumerateSearchEntries(string root)
+    private async Task ApplyFileSearchFilterAsync(string root, string query, CancellationTokenSource owner)
     {
+        try
+        {
+            var results = await Task.Run(() => SearchEntries(root, query, owner.Token), owner.Token);
+            if (owner.IsCancellationRequested || !ReferenceEquals(_fileSearchCts, owner)
+                || !string.Equals(_rootPath, root, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(FileSearchBox?.Text?.Trim(), query, StringComparison.Ordinal))
+                return;
+
+            Tree.ItemsSource = new ObservableCollection<FileNode>(results.Select(result => new FileNode
+            {
+                Name = result.RelativePath,
+                FullPath = result.FullPath,
+                IsDirectory = result.IsDirectory,
+            }));
+        }
+        catch (OperationCanceledException) { }
+        catch { /* 검색 중 접근 거부 등 무시 */ }
+        finally
+        {
+            if (ReferenceEquals(_fileSearchCts, owner)) _fileSearchCts = null;
+            owner.Dispose();
+        }
+    }
+
+    private sealed record FileSearchResult(string FullPath, string RelativePath, bool IsDirectory);
+
+    private static List<FileSearchResult> SearchEntries(string root, string query, CancellationToken cancellationToken)
+    {
+        var results = new List<FileSearchResult>();
         var pending = new Stack<string>();
         pending.Push(root);
         while (pending.Count > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var dir = pending.Pop();
-            IEnumerable<string> entries;
-            try { entries = Directory.EnumerateFileSystemEntries(dir).Where(p => !IsHidden(p)).ToList(); }
+            string[] entries;
+            try { entries = Directory.GetFileSystemEntries(dir); }
             catch { continue; }
 
             foreach (var entry in entries)
             {
-                yield return entry;
-                if (Directory.Exists(entry)) pending.Push(entry);
+                cancellationToken.ThrowIfCancellationRequested();
+                FileAttributes attributes;
+                try { attributes = File.GetAttributes(entry); }
+                catch { continue; }
+                if (attributes.HasFlag(FileAttributes.Hidden) || attributes.HasFlag(FileAttributes.System)) continue;
+
+                bool isDirectory = attributes.HasFlag(FileAttributes.Directory);
+                var relative = Path.GetRelativePath(root, entry);
+                if (Path.GetFileName(entry).Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || relative.Contains(query, StringComparison.OrdinalIgnoreCase))
+                {
+                    results.Add(new FileSearchResult(entry, relative, isDirectory));
+                    if (results.Count >= MaxSearchResults) break;
+                }
+
+                if (isDirectory && !attributes.HasFlag(FileAttributes.ReparsePoint)) pending.Push(entry);
             }
+            if (results.Count >= MaxSearchResults) break;
         }
+
+        return results
+            .OrderBy(result => result.IsDirectory ? 0 : 1)
+            .ThenBy(result => result.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void CancelFileSearch()
+    {
+        var cts = _fileSearchCts;
+        _fileSearchCts = null;
+        try { cts?.Cancel(); } catch { }
     }
 
     private void SetupFileWatcher(string path)
