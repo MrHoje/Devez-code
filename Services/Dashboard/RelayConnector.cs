@@ -159,8 +159,14 @@ public sealed class RelayConnector
                 if (_clients.TryRemove(clientId, out _)) DashboardHub.Instance.RemoveClient(clientId);
                 break;
             case "msg":
-                if (_clients.TryGetValue(clientId, out var target) && root.TryGetProperty("payload", out var payload))
-                    DashboardHub.Instance.HandleClientMessage(target, payload);
+                if (!root.TryGetProperty("payload", out var payload)) break;
+                if (!_clients.TryGetValue(clientId, out var target))
+                {
+                    target = new RelayClientSink(clientId, this);
+                    if (_clients.TryAdd(clientId, target)) DashboardHub.Instance.AddClient(target);
+                    else if (!_clients.TryGetValue(clientId, out target)) break;
+                }
+                DashboardHub.Instance.HandleClientMessage(target, payload);
                 break;
         }
     }
