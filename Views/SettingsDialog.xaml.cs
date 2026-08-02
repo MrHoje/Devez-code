@@ -98,7 +98,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.22.0", "2026-08-02", true, new[]
+          ("v1.22.1", "2026-08-02", true, new[]
+          {
+              "터미널 밖 화면에서 돌아온 뒤 한글 입력 포커스가 안정적으로 복구됩니다.",
+              "탭 추가 메뉴가 즉시 닫히던 문제를 수정했습니다.",
+          }),
+          ("v1.22.0", "2026-08-02", false, new[]
           {
               "세션에서 DevezCode 내장 브라우저를 열어 검색·이동·입력·본문 읽기를 할 수 있습니다.",
               "열린 브라우저 탭을 선택하거나 새 전용 탭을 만들어 사용할 수 있습니다.",
