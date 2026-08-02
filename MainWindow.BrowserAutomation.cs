@@ -72,9 +72,47 @@ public partial class MainWindow
         // 세션 서브트리 인접성(부모/자식 세션 순서)을 깨지 않도록 항상 맨 끝에 붙인다.
         proj.Tabs.Add(tab);
         proj.IsExpanded = true;
+        PlaceNewAutomationBrowserOppositeSession(proj, session, tab);
         WorkspaceStore.Save(_projects);
         DiagLog.Write($"CreateAutomationBrowser tab={tab.Id} room={roomId} project={proj.Name}");
         return await PrepareAutomationBrowserAsync(tab);
+    }
+
+    /// <summary>새 세션 전용 브라우저는 대화와 나란히 보이도록 반대쪽 패널에 배치한다.
+    /// 단일 패널이면 우측 분할을 만들고, 이미 분할돼 있으면 현재 세션의 반대 패널을 사용한다.</summary>
+    private void PlaceNewAutomationBrowserOppositeSession(ProjectItem project, SessionItem session, BrowserTabItem tab)
+    {
+        var source = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveSession, session))
+            ?? _panes.FirstOrDefault(p => p.ShowsTab(session))
+            ?? _focusedPane;
+
+        if (!_splitActive)
+        {
+            // 단일 화면의 대화를 좌측에 유지하고, 새 브라우저만 우측에 격리한다.
+            source.CoverForTransition();
+            if (ReferenceEquals(source.ActiveProject, project)) source.HideTabInPane(tab);
+            EnableSplit(animate: false, persist: false);
+            PaneB.OpenBrowserTab(tab);
+            PaneB.IsolateTab(tab);
+            project.SplitEnabled = true;
+            _focusedPane = PaneB;
+            source.RevealAfterTransition(kick: true);
+        }
+        else
+        {
+            var target = ReferenceEquals(source, LeftPane) ? RightPane : LeftPane;
+            if (ReferenceEquals(source.ActiveProject, project)) source.HideTabInPane(tab);
+
+            bool sameProject = ReferenceEquals(target.ActiveProject, project);
+            if (sameProject) target.UnhideTabInPane(tab);
+            target.OpenBrowserTab(tab);
+            if (!sameProject) target.IsolateTab(tab);
+            _focusedPane = target;
+        }
+
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+        PersistSplitState();
     }
 
     private async Task<BrowserHostView> PrepareAutomationBrowserAsync(BrowserTabItem tab)
