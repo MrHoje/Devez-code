@@ -8,7 +8,7 @@
   let toastTimer=0,fitFrame=0,viewportFrame=0;
 
   // 경로 `/app/{deviceId}` 에서 deviceId 를 읽어 릴레이의 /client/{deviceId} 로 연결한다.
-  const deviceId=decodeURIComponent(location.pathname.split('/')[2]||'');
+  const deviceId=decodeURIComponent(location.pathname.split('/')[2]||'')||new URLSearchParams(location.search).get('deviceId')||'';
 
   function toast(text){const el=$('toast');el.textContent=text;el.classList.add('on');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('on'),2200)}
   function send(msg){if(state.socket&&state.socket.readyState===WebSocket.OPEN)state.socket.send(JSON.stringify(msg))}

@@ -2,7 +2,8 @@
 
 import { DeviceHub } from './device-hub.js';
 import { handleAuthLogin, handleAuthCallback } from './auth/oauth.js';
-import { buildLogoutCookie } from './auth/session.js';
+import { buildLogoutCookie, requireSession } from './auth/session.js';
+import { getDevice } from './kv.js';
 import { handleSessionApi, handleDevicesApi, handleDeleteDevice } from './routes/devices.js';
 import { handlePairStart, handlePairPoll, handlePairApprove } from './routes/pairing.js';
 import { routeClientWs, routeDeviceWs } from './routes/ws.js';
@@ -57,11 +58,21 @@ function tooManyRequests() {
 }
 
 async function serveStatic(request, env, url) {
-  // /app/{deviceId} 는 정적 파일이 아니라 대시보드 SPA 셸(index.html)을 반환한다.
-  // deviceId는 브라우저 쪽 dashboard.js 가 location.pathname 에서 직접 읽는다.
-  if (url.pathname.startsWith('/app/') && url.pathname !== '/app/dashboard.js' && url.pathname !== '/app/dashboard.css') {
+  // /app/{deviceId} 는 정적 파일이 아니라 대시보드 SPA 셸을 반환한다.
+  // Assets가 index.html을 /app/으로 정규화해도 대상 PC를 잃지 않도록 쿼리로 전달한다.
+  if (url.pathname.startsWith('/app/') && !url.pathname.endsWith('.js') && !url.pathname.endsWith('.css')) {
     const shellUrl = new URL('/app/index.html', url);
     shellUrl.search = url.search;
+    const deviceId = url.pathname.slice('/app/'.length) || url.searchParams.get('deviceId') || '';
+    const session = await requireSession(request, env);
+    if (!session) {
+      const next = url.pathname + url.search;
+      return new Response(null, { status: 302, headers: { Location: `/auth/login?next=${encodeURIComponent(next)}` } });
+    }
+    const device = deviceId ? await getDevice(env, deviceId) : null;
+    if (!device || device.ownerSub !== session.ownerSub)
+      return new Response('forbidden', { status: 403 });
+    if (deviceId) shellUrl.searchParams.set('deviceId', deviceId);
     return env.ASSETS.fetch(new Request(shellUrl, request));
   }
   return env.ASSETS.fetch(request);
