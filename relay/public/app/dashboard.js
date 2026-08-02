@@ -62,10 +62,12 @@
   function sessionById(id){return state.sessions.find(s=>s.roomId===id)}
 
   function rememberExpansion(){
-    for(const p of state.projects)if(!state.seenProjects.has(p.path)){state.seenProjects.add(p.path);if(p.isExpanded)state.expandedProjects.add(p.path)}
-    for(const f of state.folders)if(!state.seenFolders.has(f.id)){state.seenFolders.add(f.id);if(f.isExpanded)state.expandedFolders.add(f.id)}
+    // 원격 화면에서는 데스크톱의 접힘 상태를 물려받지 않는다. 휴대폰에서 세션을 바로 찾을 수 있게
+    // 처음 받은 프로젝트·폴더·하위 세션은 모두 펼쳐서 표시한다.
+    for(const p of state.projects)if(!state.seenProjects.has(p.path)){state.seenProjects.add(p.path);state.expandedProjects.add(p.path)}
+    for(const f of state.folders)if(!state.seenFolders.has(f.id)){state.seenFolders.add(f.id);state.expandedFolders.add(f.id)}
     for(const p of state.projects)if(!state.seenHiddenProjects.has(p.path)){state.seenHiddenProjects.add(p.path);let value=p.showHiddenSessions!==false;try{const saved=localStorage.getItem('devez-dashboard-show-hidden:'+p.path);if(saved!=null)value=saved==='1'}catch(e){}state.showHiddenByProject.set(p.path,value)}
-    for(const s of state.sessions)if(!state.seenSessions.has(s.roomId)){state.seenSessions.add(s.roomId);if(s.childrenExpanded===false)state.collapsedSessions.add(s.roomId)}
+    for(const s of state.sessions)if(!state.seenSessions.has(s.roomId)){state.seenSessions.add(s.roomId)}
   }
   function makeButton(className){const b=document.createElement('button');b.type='button';b.className=className;return b}
   function renderSessions(){
