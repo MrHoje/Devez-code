@@ -99,8 +99,6 @@ public partial class MainWindow : Window
     // antigravity(agy) — hooks.json 훅(busy/waiting/conversation_id) + transcript_full.jsonl 폴링
     // (빠른 idle 확정 + lastmsg). ask_question/ask_permission 은 waiting(❗)으로 분리한다.
     private readonly AntigravityHookService _antigravityHook = new();
-    // 비-Claude 비-codex (opencode/gjc) 의 last prompt 추적. codex 는 위 훅 서비스가 처리.
-    private readonly AgentLastMessageService _agentLastMsg = new();
     // opencode — 플러그인이 lastmsg\<room>.txt 에 저장한 user prompt 를 FileSystemWatcher 로 즉시 반영 (claude 와 동일 패턴).
     private readonly OpenCodeLastMessageService _opencodeLastMsg = new();
     // opencode — 플러그인이 busy\<room>.txt 에 저장한 처리중 상태를 감시해 스피너 연동 (claude busy hook 과 동일 패턴).
@@ -346,24 +344,6 @@ public partial class MainWindow : Window
                 if (s == null) return;
                 if (!ApplyHeaderMessage(s, msg)) return;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
-            });
-
-        // 비-Claude 비-codex 에이전트(opencode/gjc) — (workingDir, lastPrompt) 이벤트로 같은 디렉터리 세션 모두 갱신.
-        _agentLastMsg.LastPromptChanged += (workingDir, sourceAgentId, msg) =>
-            Dispatcher.InvokeAsync(() =>
-            {
-                var norm = System.IO.Path.GetFullPath(workingDir).TrimEnd('\\', '/');
-                foreach (var p in _projects)
-                {
-                    var pNorm = System.IO.Path.GetFullPath(p.Path).TrimEnd('\\', '/');
-                    if (!string.Equals(pNorm, norm, StringComparison.OrdinalIgnoreCase)) continue;
-                    foreach (var s in p.Tabs.OfType<SessionItem>())
-                    {
-                        if (!AgentEventOwnership.IsMatch(s.AgentId, sourceAgentId)) continue;
-                        if (!ApplyHeaderMessage(s, msg)) continue;
-                        foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
-                    }
-                }
             });
 
         // opencode — 플러그인이 떨군 lastmsg 파일을 즉시 반영(claude 와 동일 패턴, 3초 폴링 대기 X).
@@ -760,7 +740,6 @@ public partial class MainWindow : Window
             // 헤더/스피너/대기 처리. gjc 0.11 은 transcript 를 지연 flush 하므로(수 시간 실측)
             // 폴링만으로는 busy/완료가 그만큼 늦는다 — 사이드카가 이벤트 즉시 기록이라 이를 보정.
             _gajaeLastMsg.Start();
-            _agentLastMsg.Start();
             RestoreOpenFiles();  // 직전에 열려 있던 파일 편집기 탭 복원(세션 활성화보다 먼저 → 활성 탭은 세션 유지)
             RestoreLastSession();
             WorkspaceStore.ExportSessionsIndex(_projects); // 세션 릴레이용 인덱스 시작 시 최신화
@@ -854,7 +833,6 @@ public partial class MainWindow : Window
             _opencodeLastMsg.Dispose();
             _opencodeBusy.Dispose();
             _gajaeLastMsg.Dispose();
-            _agentLastMsg.Dispose();
             FileExplorer.DisposeBrowser();
             _wakeScheduler.Dispose();
             WakeTerminal.Dispose();
@@ -3112,7 +3090,6 @@ public partial class MainWindow : Window
         pane.Projects = _projects;
         pane.ArchivedProjects = _archivedProjects;
         pane.ModelEffort = _modelEffort;
-        pane.AgentLastMsg = _agentLastMsg;
         // 다른 패널이 활성으로 보여주는 세션은 이 패널의 프리로드에서 제외한다. 같은 프로젝트를 분할하면
         // 양쪽이 같은 세션 집합을 프리로드하는데, 활성 세션을 다른 패널이 기본(전체) 폭으로 먼저 만들어버리면
         // 보여주는 패널이 최종 폭으로 reattach 하며 리플로우돼 깨진다. 활성 세션은 그 패널이 최종 폭에서 생성하게 둔다.
@@ -5540,6 +5517,7 @@ public partial class MainWindow : Window
     {
         if (subtree.Count == 0) return;
         var owners = subtree.ToDictionary(s => s, PaneFor);
+        var removedRoomIds = subtree.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
         int removedIndex = subtree.Select(project.Tabs.IndexOf).Where(i => i >= 0).DefaultIfEmpty(0).Min();
 
         // 응답 대기(❗) 중인 세션을 닫기/삭제하면 완료기록으로 내리고, 대기 플래그를 꺼 대기 카드도 즉시 제거한다.
@@ -5554,6 +5532,9 @@ public partial class MainWindow : Window
 
         foreach (var item in subtree.OrderByDescending(project.Tabs.IndexOf))
             project.Tabs.Remove(item);
+        // 세션이 사라진 뒤에도 브라우저가 해당 roomId에 묶여 있으면 다시 선택할 수도,
+        // 자동화에 사용할 수도 없는 고아 탭이 된다. 탭과 방문 기록은 보존하고 일반 탭으로 되돌린다.
+        UnbindAutomationBrowsers(removedRoomIds);
         project.NormalizeSessionTree();
 
         foreach (var pane in _panes) pane.OnSessionsRemoved(project, subtree, removedIndex);
@@ -5921,13 +5902,16 @@ public partial class MainWindow : Window
                 okLabel: "제거", danger: true, confirmText: proj.Name))
             return;
 
+        var removedRoomIds = proj.Tabs.OfType<SessionItem>().Select(session => session.Id).ToList();
         foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
             foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);
         foreach (var browser in proj.Tabs.OfType<BrowserTabItem>().ToList())
         {
+            UnparkAutomationBrowser(browser.Browser);
             browser.Browser.DisposeAll();
             SettingsService.RemoveBrowserLastUrl(browser.PersistenceKey);
         }
+        UnbindAutomationBrowsers(removedRoomIds);
 
         if (fromArchive) _archivedProjects.Remove(proj);
         else _projects.Remove(proj);

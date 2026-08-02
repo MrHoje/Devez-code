@@ -489,6 +489,10 @@ public sealed class BrowserTabItem : TabItemBase
     /// <summary>탭마다 독립 WebView2 인스턴스와 방문 기록을 가진다.</summary>
     public BrowserHostView Browser { get; init; } = new();
 
+    /// <summary>이 탭이 특정 세션(방)의 전용 자동화 브라우저면 그 roomId. 일반 탭은 null.
+    /// 세션이 MCP 브라우저 도구를 처음 쓸 때 생성되며, 비활성 동안 화면 밖에 파킹돼 백그라운드로 동작한다.</summary>
+    public string? AutomationRoomId { get; set; }
+
     private bool _isActive;
     public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
 }

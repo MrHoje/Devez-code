@@ -9,7 +9,7 @@ namespace DevezCode.Services;
 public static class WorkspaceStore
 {
     private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public bool External { get; set; } public string? ParentId { get; set; } public bool ChildrenExpanded { get; set; } = true; }
-    private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; }
+    private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; public string? AutomationRoomId { get; set; } }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
     private sealed class DocumentGroupDto { public string Id { get; set; } = ""; public string Name { get; set; } = "문서 그룹"; public bool IsExpanded { get; set; } = true; public List<string> FilePaths { get; set; } = new(); }
     private sealed class ProjectFolderDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Icon { get; set; } public int? RootOrder { get; set; } public bool IsExpanded { get; set; } = true; public string? ArchivedAt { get; set; } public bool TwoColumn { get; set; } = true; public int Column { get; set; } }
@@ -173,7 +173,7 @@ public static class WorkspaceStore
                     proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = AgentRegistry.NormalizeId(s.Agent), Hidden = s.Hidden, IsLocked = s.Locked, IsExternal = s.External, ParentSessionId = s.ParentId, AreSessionChildrenExpanded = s.ChildrenExpanded });
                 proj.NormalizeSessionTree();
                 foreach (var b in p.Browsers ?? new())
-                    proj.Tabs.Add(new BrowserTabItem { Id = b.Id, Name = string.IsNullOrWhiteSpace(b.Name) ? "웹 브라우저" : b.Name });
+                    proj.Tabs.Add(new BrowserTabItem { Id = b.Id, Name = string.IsNullOrWhiteSpace(b.Name) ? "웹 브라우저" : b.Name, AutomationRoomId = b.AutomationRoomId });
                 foreach (var f in p.Files)
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 proj.PendingOpenFiles = p.OpenFiles ?? new();   // 시작 시 RestoreFileTabs 가 1회 소비
@@ -240,6 +240,7 @@ public static class WorkspaceStore
         Browsers = p.Tabs.OfType<BrowserTabItem>().Select(b => new BrowserDto
         {
             Id = b.Id, Name = b.Name,
+            AutomationRoomId = b.AutomationRoomId,
         }).ToList(),
         Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
         // 숨김 세션 표시 여부

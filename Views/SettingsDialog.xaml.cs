@@ -37,6 +37,8 @@ public partial class SettingsDialog : UserControl
     private bool   _originalAutoLoadLastProject;
     private bool   _originalPromptForNewSessionName;
     private bool   _originalPromptForNewBrowserTabName;
+    private bool   _originalBrowserMcp;
+    private bool   _selectedBrowserMcp;
     private string _originalBrowserHomeUrl = "";
     private TerminalUrlOpenTarget _originalTerminalUrlOpenTarget;
     private bool   _originalHiddenSessionInsertionOnTop;
@@ -96,7 +98,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.21.6", "2026-08-01", true, new[]
+          ("v1.21.7", "2026-08-02", true, new[]
+          {
+              "파일 검색 중 화면 멈춤과 연속 검색 시 결과 충돌을 줄였습니다.",
+              "세션 시작 시 불필요한 설정 저장과 중복 메시지 확인 작업을 줄였습니다.",
+              "세션이 MCP 도구로 내장 브라우저를 조작할 수 있는 선택 기능을 추가했습니다.",
+              "브라우저 탭 연결·삭제·동시 호출 안정성을 개선했습니다.",
+          }),
+          ("v1.21.6", "2026-08-01", false, new[]
           {
               "새 세션 생성이나 완료 기록 클릭 직후 한글 조합 글자가 모니터 왼쪽 위에 표시되던 문제를 개선했습니다.",
           }),
@@ -540,6 +549,9 @@ public partial class SettingsDialog : UserControl
         _originalPromptForNewBrowserTabName = SettingsService.LoadPromptForNewBrowserTabName();
         _selectedPromptForNewBrowserTabName = _originalPromptForNewBrowserTabName;
         PromptForNewBrowserTabNameToggle.IsChecked = _selectedPromptForNewBrowserTabName;
+        _originalBrowserMcp = SettingsService.LoadBrowserMcpEnabled();
+        _selectedBrowserMcp = _originalBrowserMcp;
+        BrowserMcpToggle.IsChecked = _selectedBrowserMcp;
         _originalBrowserHomeUrl = SettingsService.LoadBrowserHomeUrl();
         _selectedBrowserHomeUrl = _originalBrowserHomeUrl;
         BrowserHomeUrlBox.Text = _selectedBrowserHomeUrl;
@@ -973,6 +985,11 @@ public partial class SettingsDialog : UserControl
 
     private void BrowserHomeUrlBox_TextChanged(object sender, TextChangedEventArgs e)
         => _selectedBrowserHomeUrl = BrowserHomeUrlBox.Text;
+
+    private void BrowserMcpToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedBrowserMcp = BrowserMcpToggle.IsChecked == true;
+    }
 
     private void TerminalUrlOpenTargetCombo_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -1858,6 +1875,14 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
         SettingsService.SavePromptForNewSessionName(_selectedPromptForNewSessionName);
         SettingsService.SavePromptForNewBrowserTabName(_selectedPromptForNewBrowserTabName);
+        if (_selectedBrowserMcp != _originalBrowserMcp)
+        {
+            SettingsService.SaveBrowserMcpEnabled(_selectedBrowserMcp);
+            _originalBrowserMcp = _selectedBrowserMcp;
+            // 각 에이전트 설정 파일에 devez-browser MCP 서버를 등록/제거. 이미 떠 있는 세션은
+            // 재시작해야 반영된다(에이전트가 시작 시 mcpServers 를 읽음).
+            BrowserMcpInstaller.Sync();
+        }
         SettingsService.SaveBrowserHomeUrl(_selectedBrowserHomeUrl);
         SettingsService.SaveTerminalUrlOpenTarget(_selectedTerminalUrlOpenTarget);
         if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)
