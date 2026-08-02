@@ -98,7 +98,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.21.7", "2026-08-02", true, new[]
+          ("v1.22.0", "2026-08-02", true, new[]
+          {
+              "세션에서 DevezCode 내장 브라우저를 열어 검색·이동·입력·본문 읽기를 할 수 있습니다.",
+              "열린 브라우저 탭을 선택하거나 새 전용 탭을 만들어 사용할 수 있습니다.",
+              "설정 > 브라우저에서 세션의 내장 브라우저 사용 여부를 선택할 수 있습니다.",
+              "브라우저와 파일 탐색 화면의 동작 안정성과 성능을 개선했습니다.",
+          }),
+          ("v1.21.7", "2026-08-02", false, new[]
           {
               "파일 검색 중 화면 멈춤과 연속 검색 시 결과 충돌을 줄였습니다.",
               "세션 시작 시 불필요한 설정 저장과 중복 메시지 확인 작업을 줄였습니다.",
