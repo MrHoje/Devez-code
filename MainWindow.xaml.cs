@@ -141,6 +141,21 @@ public partial class MainWindow : Window
             {
                 if (s is System.Windows.Controls.Primitives.ButtonBase b) b.Focusable = false;
             }));
+        // ③ 버튼 클릭은 WPF 본체 HWND로 포커스를 옮길 수 있다. 입력 컨트롤·오버레이가 아닌 경우
+        // 다음 입력 큐에서 활성 터미널로 돌려 Windows IME 컨텍스트가 본체에 남지 않게 한다.
+        EventManager.RegisterClassHandler(buttonBase,
+            System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+            new RoutedEventHandler((s, _) =>
+            {
+                if (s is DependencyObject d && Window.GetWindow(d) is MainWindow window)
+                    window.ScheduleTerminalFocusRestore();
+            }));
+        EventManager.RegisterClassHandler(typeof(MenuItem), MenuItem.ClickEvent,
+            new RoutedEventHandler((s, _) =>
+            {
+                if (s is DependencyObject d && Window.GetWindow(d) is MainWindow window)
+                    window.ScheduleTerminalFocusRestore();
+            }));
     }
 
     public MainWindow()
@@ -258,6 +273,7 @@ public partial class MainWindow : Window
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
         Sidebar.FilesReordered += _ => { RefreshCardGroups(); WorkspaceStore.Save(_projects); };
         Sidebar.SessionSelected        += OpenSessionFromSidebar;
+        Sidebar.TerminalFocusRestoreRequested += ScheduleTerminalFocusRestore;
         Sidebar.OpenDocSelected        += OpenDocFromSidebar;
         Sidebar.OpenDocCloseRequested  += CloseDocFromSidebar;
         Sidebar.OpenDocCloseOthersRequested += CloseOtherDocsFromSidebar;
@@ -2309,6 +2325,7 @@ public partial class MainWindow : Window
             await FreezeWorkspaceTerminalsAsync();
             change();
             UnfreezeWorkspaceTerminals();
+            ScheduleTerminalFocusRestore();
         }
         finally { _panelCoverBusy = false; }
     }
@@ -2862,6 +2879,7 @@ public partial class MainWindow : Window
     protected override void OnActivated(EventArgs e)
     {
         base.OnActivated(e);
+        ScheduleTerminalFocusRestore();
         // 창에 다시 포커스가 올 때마다 확인하되 10분 스로틀(R2 과다 조회 방지).
         if ((DateTime.UtcNow - _lastUpdateCheckUtc) > TimeSpan.FromMinutes(10))
             _ = CheckUpdateAsync();
@@ -5454,6 +5472,7 @@ public partial class MainWindow : Window
             Owner = this
         };
         dialog.ShowDialog();
+        ScheduleTerminalFocusRestore();
     }
 
     /// <summary>어느 패널에서든 숨김 graceful 종료가 끝나면 모든 패널로 중계 — 각 패널이 종료 중 생긴
@@ -6055,6 +6074,7 @@ public partial class MainWindow : Window
         SettingsHost.Children.Clear();
         ApplyTitleBarForSettings(false);
         ResumeTerminal();
+        ScheduleTerminalFocusRestore();
         // 설정의 계정 사용량에서 로그인/재연결했을 수 있으니 즉시 갱신.
         _usageApi.RefreshNow();
         _codex.RefreshNow();
@@ -6071,21 +6091,35 @@ public partial class MainWindow : Window
     private async void McpBtn_Click(object sender, RoutedEventArgs e)
     {
         await SuspendTerminalWithSnapshotAsync();
-        var dlg = new Views.McpManagerWindow { Owner = this };
-        dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
-        dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
-        dlg.Closed += (_, _) => ResumeTerminal();
-        dlg.ShowDialog();
+        try
+        {
+            var dlg = new Views.McpManagerWindow { Owner = this };
+            dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+            dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
+            dlg.ShowDialog();
+        }
+        finally
+        {
+            ResumeTerminal();
+            ScheduleTerminalFocusRestore();
+        }
     }
 
     private async void McpControlBtn_Click(object sender, RoutedEventArgs e)
     {
         await SuspendTerminalWithSnapshotAsync();
-        var dlg = new Views.McpControlWindow { Owner = this };
-        dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
-        dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
-        dlg.Closed += (_, _) => ResumeTerminal();
-        dlg.ShowDialog();
+        try
+        {
+            var dlg = new Views.McpControlWindow { Owner = this };
+            dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+            dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
+            dlg.ShowDialog();
+        }
+        finally
+        {
+            ResumeTerminal();
+            ScheduleTerminalFocusRestore();
+        }
     }
 
     /// <summary>설정 &gt; 깨우기에서 예약이 바뀌었을 때 스케줄러에 다시 읽도록 알린다.</summary>
@@ -6306,6 +6340,7 @@ public partial class MainWindow : Window
         dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
         dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
         dlg.ShowDialog();
+        ScheduleTerminalFocusRestore();
     }
 
     // ── airspace 우회 (오버레이가 뜰 때 터미널 WebView2 정지) ────────────
@@ -6330,6 +6365,22 @@ public partial class MainWindow : Window
         FileExplorer.ResumeBrowser();
         foreach (var pane in _panes) pane.ResumeTerminal();
         ResumeShellPanel();
+    }
+
+    /// <summary>터미널 밖 WPF 조작·모달 종료 뒤 활성 세션으로 포커스를 되돌린다.
+    /// 텍스트/선택 입력 중이거나 오버레이가 남아 있으면 사용자의 현재 입력을 보존한다.</summary>
+    private int _terminalFocusRestoreGeneration;
+    private void ScheduleTerminalFocusRestore()
+    {
+        var generation = ++_terminalFocusRestoreGeneration;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (generation != _terminalFocusRestoreGeneration || !IsActive
+                || _settingsView != null || _overlaySuspended || _rightOverlayOpen)
+                return;
+            if (Keyboard.FocusedElement is TextBoxBase or ComboBox) return;
+            _focusedPane?.FocusActiveSessionTerminal();
+        }), System.Windows.Threading.DispatcherPriority.Input);
     }
 
     /// <summary>하단 셸 터미널 패널(WebView2)도 스냅샷으로 대체하고 HWND 를 숨긴다.
@@ -6643,7 +6694,11 @@ public partial class MainWindow : Window
             if (solidCover) foreach (var p in covered) p.RevealAfterTransition(kick: true, bounce: true);
             else UnfreezeWorkspaceTerminals();
         }
-        finally { _fsCoverBusy = false; }
+        finally
+        {
+            _fsCoverBusy = false;
+            ScheduleTerminalFocusRestore();
+        }
     }
 
     /// <summary>전체화면 중 활성/비활성에 따라 Topmost 토글 — 다른 창으로 전환 시엔 내려서
@@ -7091,6 +7146,7 @@ public partial class MainWindow : Window
         DockFileExplorer();
         FileExplorer.Visibility = Visibility.Collapsed; // 좁은 창에서는 닫힘=숨김
         ResumeTerminalOnly();                            // 터미널 복원
+        ScheduleTerminalFocusRestore();
         UpdateUsageSidebarBorder();
         UpdatePanelToggleVisual();
     }

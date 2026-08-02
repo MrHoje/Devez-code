@@ -4319,6 +4319,14 @@ public partial class WorkspacePaneView : UserControl
         TerminalCurtain.Visibility = Visibility.Collapsed;
     }
 
+    /// <summary>오버레이 종료 뒤 활성 세션 터미널로 키보드 포커스를 안전하게 복귀시킨다.</summary>
+    public void FocusActiveSessionTerminal()
+    {
+        if (_overlaySuspended || _activeSession is not { IsExternal: false }) return;
+        Keyboard.ClearFocus();
+        _terminal.FocusTerminal();
+    }
+
     /// <summary>스냅샷만(커튼 없이) 정지 — 우측 오버레이 드로어용.
     /// anchorTopLeft=true 면 캡처 시점 크기로 좌상단 고정 → 패널이 리사이즈돼도 이미지가 같이 늘어나지 않고 잘려 보인다(분할 애니메이션용).
     /// stretchCover=true(webCover 전용)면 커버를 뷰포트에 맞춰 늘린다 — 전체화면 토글처럼 창 전체가

@@ -88,6 +88,8 @@ public partial class SidebarView : UserControl
     /// <summary>드래그로 특정 프로젝트의 바로가기 순서가 바뀐 뒤 발생(영속용).</summary>
     public event Action<ProjectItem>? FilesReordered;
     public event Action<SessionItem>? SessionSelected;
+    /// <summary>사이드바 입력 UI가 닫혀 활성 세션으로 포커스를 돌려도 되는 시점을 알린다.</summary>
+    public event Action? TerminalFocusRestoreRequested;
     /// <summary>카드의 열린 문서(파일 탭) 행 클릭 — 해당 파일 탭을 활성화(MainWindow 위임).</summary>
     public event Action<FileTabItem>? OpenDocSelected;
     /// <summary>카드 문서 우클릭 "문서 닫기" — 해당 파일 탭을 닫는다(MainWindow 위임).</summary>
@@ -578,6 +580,7 @@ public partial class SidebarView : UserControl
                 SidebarSearchBox.SelectAll();
             }), System.Windows.Threading.DispatcherPriority.Input);
         }
+        else TerminalFocusRestoreRequested?.Invoke();
     }
 
     // ── 모두 펼치기 / 접기 (devez 정합) ──────────────────────────
@@ -1055,6 +1058,7 @@ public partial class SidebarView : UserControl
                 searchBox.Focus();
                 searchBox.SelectAll();
             }), DispatcherPriority.Input);
+        else TerminalFocusRestoreRequested?.Invoke();
     }
 
     private void ProjectSessionSearchClear_Click(object sender, RoutedEventArgs e)
