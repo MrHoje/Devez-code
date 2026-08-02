@@ -22,8 +22,11 @@ public static class BrowserAutomationService
         await gate.WaitAsync();
         try
         {
-            var window = MainWindow.Current
-                ?? throw new InvalidOperationException("DevezCode 메인 창을 찾을 수 없습니다.");
+            // Application.MainWindow도 UI 스레드 소유 객체다. 백그라운드 파이프 스레드에서
+            // MainWindow.Current를 먼저 읽으면 실제 명령을 디스패치하기 전에 접근 예외가 난다.
+            var window = await OnUiAsync(() => Task.FromResult(
+                MainWindow.Current
+                ?? throw new InvalidOperationException("DevezCode 메인 창을 찾을 수 없습니다.")));
 
             switch (command)
             {

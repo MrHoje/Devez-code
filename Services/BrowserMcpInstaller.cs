@@ -53,6 +53,12 @@ public static class BrowserMcpInstaller
         {
             try
             {
+                if (backend is CodexMcpBackend codex)
+                {
+                    codex.EnsureLocalServer(ServerName, new[] { node, ScriptPath });
+                    continue;
+                }
+
                 var servers = backend.Load().Where(s => !s.IsReadOnly).ToList();
                 var existing = servers.FirstOrDefault(s =>
                     string.Equals(s.Name, ServerName, StringComparison.OrdinalIgnoreCase));
@@ -82,6 +88,12 @@ public static class BrowserMcpInstaller
         {
             try
             {
+                if (backend is CodexMcpBackend codex)
+                {
+                    codex.RemoveServer(ServerName);
+                    continue;
+                }
+
                 var servers = backend.Load().Where(s => !s.IsReadOnly).ToList();
                 int removed = servers.RemoveAll(s =>
                     string.Equals(s.Name, ServerName, StringComparison.OrdinalIgnoreCase));

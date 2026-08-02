@@ -43,18 +43,37 @@ public sealed class CodexMcpBackend : IMcpBackend
         {
             try
             {
-                using var p = Process.Start(new ProcessStartInfo
-                {
-                    FileName = "codex",
-                    Arguments = "--version",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                });
+                using var p = Process.Start(PathCommandProcess.Create("codex", new[] { "--version" }));
                 return p != null && p.WaitForExit(3000) && p.ExitCode == 0;
             }
             catch { return false; }
         }
+    }
+
+    /// <summary>앱이 소유하는 로컬 MCP 서버를 Codex CLI로 안전하게 등록한다.
+    /// config.toml 전체를 재직렬화하지 않아 Codex 고유 필드를 보존한다.</summary>
+    internal void EnsureLocalServer(string name, IReadOnlyList<string> command)
+    {
+        if (command.Count == 0) throw new ArgumentException("MCP 실행 명령이 비어 있습니다.", nameof(command));
+
+        var existing = Load().FirstOrDefault(s =>
+            string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (existing is { Type: McpServerType.Local } &&
+            existing.Command.SequenceEqual(command, StringComparer.Ordinal))
+            return;
+
+        if (existing != null) RunCli("mcp", "remove", name);
+
+        var args = new List<string> { "mcp", "add", name, "--" };
+        args.AddRange(command);
+        RunCli(args.ToArray());
+    }
+
+    /// <summary>앱이 소유하는 MCP 서버가 등록돼 있으면 Codex CLI로 제거한다.</summary>
+    internal void RemoveServer(string name)
+    {
+        if (Load().Any(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)))
+            RunCli("mcp", "remove", name);
     }
 
     /// <inheritdoc />
@@ -114,16 +133,8 @@ public sealed class CodexMcpBackend : IMcpBackend
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "codex",
-                Arguments = "mcp list",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-            };
+            var psi = PathCommandProcess.Create(
+                "codex", new[] { "mcp", "list" }, redirectOutput: true);
             using var p = Process.Start(psi);
             if (p == null) return;
             var outputTask = p.StandardOutput.ReadToEndAsync();
@@ -134,6 +145,29 @@ public sealed class CodexMcpBackend : IMcpBackend
             ParseStatusInto(servers, raw);
         }
         catch { /* 실패 시 조용히 Unknown */ }
+    }
+
+    private static void RunCli(params string[] arguments)
+    {
+        using var p = Process.Start(PathCommandProcess.Create(
+            "codex", arguments, redirectOutput: true))
+            ?? throw new InvalidOperationException("Codex CLI를 시작하지 못했습니다.");
+        var outputTask = p.StandardOutput.ReadToEndAsync();
+        var errorTask = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(15000))
+        {
+            try { p.Kill(entireProcessTree: true); } catch { }
+            throw new TimeoutException("Codex MCP 설정 명령이 제한 시간 내에 끝나지 않았습니다.");
+        }
+
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
+        if (p.ExitCode != 0)
+        {
+            var detail = string.IsNullOrWhiteSpace(error) ? output : error;
+            throw new InvalidOperationException(
+                $"Codex MCP 설정 명령이 실패했습니다(exit {p.ExitCode}): {detail.Trim()}");
+        }
     }
 
     /// <inheritdoc />
