@@ -142,20 +142,31 @@ public partial class MainWindow : Window
             {
                 if (s is System.Windows.Controls.Primitives.ButtonBase b) b.Focusable = false;
             }));
-        // ③ 버튼 클릭은 WPF 본체 HWND로 포커스를 옮길 수 있다. 입력 컨트롤·오버레이가 아닌 경우
-        // 다음 입력 큐에서 활성 터미널로 돌려 Windows IME 컨텍스트가 본체에 남지 않게 한다.
-        EventManager.RegisterClassHandler(buttonBase,
-            System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+        // 컨텍스트 메뉴는 열린 동안 포커스를 유지하고, 완전히 닫힌 뒤에만 터미널 복귀를 예약한다.
+        // 버튼 클릭 시점에 일괄 복귀시키면 새 탭 메뉴처럼 방금 연 팝업이 즉시 닫힌다.
+        EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.ClosedEvent,
             new RoutedEventHandler((s, _) =>
             {
-                if (s is DependencyObject d && Window.GetWindow(d) is MainWindow window)
+                if (s is ContextMenu menu
+                    && (menu.PlacementTarget is DependencyObject target
+                            ? Window.GetWindow(target) as MainWindow
+                            : Application.Current?.MainWindow as MainWindow) is { } window)
+                {
+                    window._openContextMenus.Remove(menu);
                     window.ScheduleTerminalFocusRestore();
+                }
             }));
-        EventManager.RegisterClassHandler(typeof(MenuItem), MenuItem.ClickEvent,
+        EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.OpenedEvent,
             new RoutedEventHandler((s, _) =>
             {
-                if (s is DependencyObject d && Window.GetWindow(d) is MainWindow window)
-                    window.ScheduleTerminalFocusRestore();
+                if (s is ContextMenu menu
+                    && (menu.PlacementTarget is DependencyObject target
+                            ? Window.GetWindow(target) as MainWindow
+                            : Application.Current?.MainWindow as MainWindow) is { } window)
+                {
+                    window._openContextMenus.Add(menu);
+                    window._terminalFocusRestoreGeneration++;
+                }
             }));
     }
 
@@ -1412,9 +1423,9 @@ public partial class MainWindow : Window
     /// in-flight 락으로 재진입을 막고, 완료 후 카드를 재빌드해 쿨다운/개수를 반영한다.</summary>
     private async void ResetCreditUse_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        if (_resetConsumeInFlight) return;
+        if (_resetConsumeInFlight) { ScheduleTerminalFocusRestore(); return; }
         var credits = _lastCodex?.ResetCredits;
-        if (credits == null || credits.Count == 0) return;
+        if (credits == null || credits.Count == 0) { ScheduleTerminalFocusRestore(); return; }
 
         var pick = CodexUsageService.PickEarliestExpiring(credits);
         var expiryText = pick?.ExpiresAt is { } ex
@@ -1425,7 +1436,10 @@ public partial class MainWindow : Window
                 "초기화권 사용",
                 $"만료가 가장 빠른 초기화권(~ {expiryText})을 사용합니다.\n사용량 한도가 즉시 초기화되며 되돌릴 수 없습니다.",
                 okLabel: "사용", danger: true))
+        {
+            ScheduleTerminalFocusRestore();
             return;
+        }
 
         _resetConsumeInFlight = true;
         if (sender is System.Windows.Controls.Button b) b.IsEnabled = false;
@@ -1450,6 +1464,7 @@ public partial class MainWindow : Window
         {
             _resetConsumeInFlight = false;
             if (_usageOpen) SetSidebarUsageCards(BuildUsageCards()); // 쿨다운/개수 반영해 버튼 상태 갱신
+            ScheduleTerminalFocusRestore();
         }
     }
 
@@ -2385,6 +2400,7 @@ public partial class MainWindow : Window
             UnfreezeWorkspaceTerminals();
             UpdateShellToggleVisual();
             if (open) ShellTerminal.FocusTerminal(); // 열리면 바로 입력 가능 (pageReady 전이면 내부 보류 후 적용)
+            else ScheduleTerminalFocusRestore();
         }
     }
 
@@ -3398,7 +3414,11 @@ public partial class MainWindow : Window
         else
         {
             var proj = pane.ActiveProject;
-            if (proj == null) return;
+            if (proj == null)
+            {
+                ScheduleTerminalFocusRestore();
+                return;
+            }
             proj.SplitEnabled = true;
             EnableSplitForProject(proj);
             WorkspaceStore.Save(_projects, _archivedProjects);
@@ -3406,6 +3426,7 @@ public partial class MainWindow : Window
         RefreshCardGroups(); // 분할/닫기 후 카드 좌/우 그룹 재계산(닫기 시 SplitEnabled=false 반영 뒤여야 함)
         PaneA.RefreshSplitIndicator();
         PaneB.RefreshSplitIndicator();
+        ScheduleTerminalFocusRestore();
     }
 
     /// <summary>proj 에 저장된 분할 파트너를 찾는다. 우선순위: 같은/다른 프로젝트의 세션 → 같은 프로젝트의 파일 →
@@ -4693,6 +4714,7 @@ public partial class MainWindow : Window
                 SettingsService.SaveSessionHistoryRecords(
                     new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
             }
+            ScheduleTerminalFocusRestore();
             return;
         }
         try { Activate(); OpenSession(s); } catch { /* best effort */ }
@@ -4707,6 +4729,7 @@ public partial class MainWindow : Window
         SettingsService.SaveSessionHistoryRecords(
             new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
         UpdateSessionHistoryEmpty();
+        ScheduleTerminalFocusRestore();
     }
 
     /// <summary>완료기록 카드 우클릭 메뉴의 체크/체크 해제 → 표시 상태 토글 후 저장.</summary>
@@ -4727,16 +4750,20 @@ public partial class MainWindow : Window
 
     private void ClearHistoryBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (_sessionDoneRecords.Count == 0) return;
+        if (_sessionDoneRecords.Count == 0) { ScheduleTerminalFocusRestore(); return; }
         if (!ConfirmDialog.Show("기록 지우기",
                 "세션 완료기록을 초기화하시겠습니까?",
                 okLabel: "지우기", danger: true))
+        {
+            ScheduleTerminalFocusRestore();
             return;
+        }
 
         _sessionDoneRecords.Clear();
         SettingsService.SaveSessionHistoryRecords(
             new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
         UpdateSessionHistoryEmpty();
+        ScheduleTerminalFocusRestore();
     }
 
     private void TogglePromptBtn_Click(object sender, RoutedEventArgs e)
@@ -4744,6 +4771,7 @@ public partial class MainWindow : Window
         bool next = !ShowFullPrompt;
         ShowFullPrompt = next;
         SettingsService.SaveShowFullPrompt(next);
+        ScheduleTerminalFocusRestore();
     }
 
     private void MarkAllReadBtn_Click(object sender, RoutedEventArgs e)
@@ -4757,6 +4785,7 @@ public partial class MainWindow : Window
             SettingsService.SaveSessionHistoryRecords(
                 new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
         UpdateSessionHistoryEmpty();
+        ScheduleTerminalFocusRestore();
     }
 
     /// <summary>세션이 busy(true)→idle(false)로 바뀐 순간(=스피너 멈춤=응답 완료)에 종료 토스트를 띄운다.
@@ -4991,7 +5020,12 @@ public partial class MainWindow : Window
         // 이미 어느 패널에 떠 있으면 그 패널로 포커스만(재로딩 없음).
         var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, proj));
         DevezCode.Services.DiagLog.Write($"SelectProjectFromSidebar proj={proj.Name} existingPane={(existingPane == null ? "none" : (ReferenceEquals(existingPane, PaneA) ? "PaneA" : "PaneB"))} PaneA={PaneA.ActiveProject?.Name ?? "null"} PaneB={PaneB.ActiveProject?.Name ?? "null"} _splitActive={_splitActive}");
-        if (existingPane != null) { FocusPaneOnly(existingPane); return; }
+        if (existingPane != null)
+        {
+            FocusPaneOnly(existingPane);
+            ScheduleTerminalFocusRestore();
+            return;
+        }
 
         // 새 프로젝트는 항상 메인(좌측) 패널에 연다. 분할 여부는 그 프로젝트의 SplitEnabled 로
         // SelectProjectIntoPane→ApplyProjectSplitForMainPane 이 결정한다(분할로 띄우거나 단일로).
@@ -6371,15 +6405,20 @@ public partial class MainWindow : Window
     /// <summary>터미널 밖 WPF 조작·모달 종료 뒤 활성 세션으로 포커스를 되돌린다.
     /// 텍스트/선택 입력 중이거나 오버레이가 남아 있으면 사용자의 현재 입력을 보존한다.</summary>
     private int _terminalFocusRestoreGeneration;
-    private void ScheduleTerminalFocusRestore()
+    private readonly HashSet<ContextMenu> _openContextMenus = [];
+    private void ScheduleTerminalFocusRestore() => ScheduleTerminalFocusRestore(null);
+
+    internal void ScheduleTerminalFocusRestore(ComboBox? releasedCombo)
     {
         var generation = ++_terminalFocusRestoreGeneration;
         Dispatcher.BeginInvoke(new Action(() =>
         {
             if (generation != _terminalFocusRestoreGeneration || !IsActive
-                || _settingsView != null || _overlaySuspended || _rightOverlayOpen)
+                || _settingsView != null || _overlaySuspended || _rightOverlayOpen
+                || _openContextMenus.Count > 0)
                 return;
-            if (Keyboard.FocusedElement is TextBoxBase or ComboBox) return;
+            if (Keyboard.FocusedElement is TextBoxBase) return;
+            if (Keyboard.FocusedElement is ComboBox combo && !ReferenceEquals(combo, releasedCombo)) return;
             _focusedPane?.FocusActiveSessionTerminal();
         }), System.Windows.Threading.DispatcherPriority.Input);
     }
@@ -7174,6 +7213,7 @@ public partial class MainWindow : Window
         // 전환으로 보인다 → 커버 없이 상태만 바꾸고, 리사이즈 후 재fit·ConPTY 재동기는
         // StateChanged(post-hoc) 경로가 담당한다.
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        ScheduleTerminalFocusRestore();
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e)

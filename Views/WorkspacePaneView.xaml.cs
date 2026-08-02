@@ -1207,6 +1207,7 @@ public partial class WorkspacePaneView : UserControl
         {
             ConfirmDialog.Alert("에이전트 없음",
                 "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
+            FocusActiveSessionTerminal();
             return null;
         }
         string agentId;
@@ -1214,7 +1215,11 @@ public partial class WorkspacePaneView : UserControl
         else
         {
             var picked = AgentPickerDialog.Pick(Window.GetWindow(this), available, proj.Path);
-            if (picked == null) return null;
+            if (picked == null)
+            {
+                FocusActiveSessionTerminal();
+                return null;
+            }
             agentId = picked;
         }
 
@@ -1223,7 +1228,11 @@ public partial class WorkspacePaneView : UserControl
         {
             var enteredName = PromptDialog.Show("새 세션 이름", "새 이름을 입력하세요.",
                                                 defaultValue: sessionName, maxLength: 60);
-            if (enteredName == null) return null;
+            if (enteredName == null)
+            {
+                FocusActiveSessionTerminal();
+                return null;
+            }
             sessionName = enteredName;
         }
 
@@ -1608,6 +1617,7 @@ public partial class WorkspacePaneView : UserControl
         var selected = owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
         if (selected == true)
             _terminal.InsertFilePaths(dialog.FileNames);
+        FocusActiveSessionTerminal();
     }
 
     private void ActivateFileTab(FileTabItem tab)
@@ -1762,12 +1772,13 @@ public partial class WorkspacePaneView : UserControl
     private void DockCombo_DropDownClosed(object? sender, EventArgs e)
     {
         // ComboBox는 팝업이 닫혀도 키보드 포커스를 계속 가져 방향키로 값이 바뀐다.
-        // 닫힘 처리가 끝난 다음 WPF 포커스를 비우고, 세션 탭이면 WebView2/xterm에 입력을 돌려준다.
-        Dispatcher.BeginInvoke(new Action(() =>
+        // 다른 입력 컨트롤로 이동한 경우는 보존하고, 해당 콤보에 남은 포커스만 터미널로 돌린다.
+        if (Window.GetWindow(this) is MainWindow window)
         {
-            Keyboard.ClearFocus();
-            if (_activeSession != null) _terminal.FocusTerminal();
-        }), System.Windows.Threading.DispatcherPriority.Input);
+            window.ScheduleTerminalFocusRestore(sender as ComboBox);
+            return;
+        }
+        FocusActiveSessionTerminal();
     }
 
     private void SyncFontSizeCombo(double px)
@@ -2338,9 +2349,14 @@ public partial class WorkspacePaneView : UserControl
         if (_activeProject == null)
         {
             ConfirmDialog.Alert("프로젝트 없음", "먼저 왼쪽 사이드바에서 프로젝트를 추가하세요.");
+            FocusActiveSessionTerminal();
             return;
         }
-        if (NewTabBtn.ContextMenu is not { } menu) return;
+        if (NewTabBtn.ContextMenu is not { } menu)
+        {
+            FocusActiveSessionTerminal();
+            return;
+        }
         menu.PlacementTarget = NewTabBtn;
         menu.Placement = PlacementMode.Bottom;
         menu.IsOpen = true;
@@ -2379,7 +2395,11 @@ public partial class WorkspacePaneView : UserControl
         {
             var enteredName = PromptDialog.Show("새 브라우저 탭 이름", "새 이름을 입력하세요.",
                                                 defaultValue: name, maxLength: 60);
-            if (enteredName == null) return null;
+            if (enteredName == null)
+            {
+                FocusActiveSessionTerminal();
+                return null;
+            }
             name = enteredName;
         }
 
@@ -2455,9 +2475,12 @@ public partial class WorkspacePaneView : UserControl
     {
         var name = PromptDialog.Show("세션 이름 변경", "새 이름을 입력하세요.",
                                      defaultValue: session.Name, maxLength: 60);
-        if (string.IsNullOrWhiteSpace(name) || name == session.Name) return;
-        session.Name = name;
-        WorkspaceStore.Save(Projects);
+        if (!string.IsNullOrWhiteSpace(name) && name != session.Name)
+        {
+            session.Name = name;
+            WorkspaceStore.Save(Projects);
+        }
+        FocusActiveSessionTerminal();
     }
 
     public void RenameBrowserTab(BrowserTabItem browser)
@@ -3121,6 +3144,7 @@ public partial class WorkspacePaneView : UserControl
         {
             RequestCloseBrowserTab(b);
         }
+        FocusActiveSessionTerminal();
     }
 
     // ── 탭 드래그 순서변경 ─────────────────────────────────────────
@@ -3597,10 +3621,16 @@ public partial class WorkspacePaneView : UserControl
     }
 
     private void TabScrollLeft_Click(object sender, RoutedEventArgs e)
-        => AnimateTabScroll(TabScroller.HorizontalOffset - TabScrollStep);
+    {
+        AnimateTabScroll(TabScroller.HorizontalOffset - TabScrollStep);
+        FocusActiveSessionTerminal();
+    }
 
     private void TabScrollRight_Click(object sender, RoutedEventArgs e)
-        => AnimateTabScroll(TabScroller.HorizontalOffset + TabScrollStep);
+    {
+        AnimateTabScroll(TabScroller.HorizontalOffset + TabScrollStep);
+        FocusActiveSessionTerminal();
+    }
 
     private void TabBar_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
