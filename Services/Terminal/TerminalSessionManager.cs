@@ -140,6 +140,7 @@ public sealed class TerminalSessionManager
                 if (existing.IsAlive) { _pendingInitial[roomId] = null; return existing; } // 프리페치 사이 다른 호출이 생성 — 재주입 금지
                 existing.Dispose();
                 _sessions.Remove(roomId);
+                TerminalDisplayOutputHub.Remove(roomId);
             }
             var cfg = _config ??= WtSettingsLoader.Load();
             var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
@@ -1565,6 +1566,12 @@ public sealed class TerminalSessionManager
     public TerminalSession? Get(string roomId)
     {
         lock (_lock) return _sessions.TryGetValue(roomId, out var s) ? s : null;
+    }
+
+    /// <summary>LAN 대시보드 등 읽기 전용 관찰자가 현재 세션을 안전하게 열거할 때 사용.</summary>
+    public IReadOnlyList<KeyValuePair<string, TerminalSession>> GetSessionsSnapshot()
+    {
+        lock (_lock) return _sessions.ToList();
     }
 
     /// <summary>
@@ -3155,6 +3162,7 @@ public sealed class TerminalSessionManager
             _pendingInitial.Remove(roomId);
             _disposedRooms.Add(roomId); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
         }
+        TerminalDisplayOutputHub.Remove(roomId);
         if (purgeTracking)
         {
             // 추적 파일도 정리 (남아있으면 같은 roomId 재사용 시 엉뚱한 세션으로 이어붙음)

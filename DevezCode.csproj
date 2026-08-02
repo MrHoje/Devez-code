@@ -34,6 +34,7 @@
     <!-- 독립 추적 회귀 테스트 프로젝트의 소스는 WPF 앱 기본 Compile glob에서 제외. -->
     <Compile Remove="Tests\**\*.cs" />
 
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
@@ -41,6 +42,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 같은 LAN에서 현재 ConPTY 세션을 제어하는 웹 대시보드 -->
+    <Content Include="Resources\Dashboard\web\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- xterm.js 번들을 실행 폴더로 복사 (WebView2 가상 호스트가 디스크에서 로드) -->
     <Content Include="Resources\Terminal\web\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

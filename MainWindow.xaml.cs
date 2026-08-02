@@ -5032,6 +5032,16 @@ public partial class MainWindow : Window
         SelectProjectIntoPane(LeftPane, proj);
     }
 
+    /// <summary>외부 대시보드가 실행 전 세션을 선택했을 때 화면 선택을 바꾸지 않고 터미널을 준비한다.</summary>
+    public bool StartSessionForLanDashboard(string roomId)
+    {
+        var session = _projects.SelectMany(project => project.Tabs.OfType<SessionItem>())
+            .FirstOrDefault(item => item.Id == roomId);
+        if (session == null) return false;
+        _focusedPane.PreloadSession(session);
+        return true;
+    }
+
     /// <summary>사이드바에서 세션 클릭 → 이미 떠 있는 패널이면 그 패널에서 활성화, 아니면 그 세션의
     /// 프로젝트를 메인(좌측) 패널에 열고 세션을 활성화한다. 분할 여부는 프로젝트의 SplitEnabled 로 결정.</summary>
     private void OpenSession(SessionItem session)

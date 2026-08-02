@@ -170,6 +170,9 @@ public static class SettingsService
         public bool UseFullScreen { get; set; } = false;
         // X(닫기) 버튼으로 종료하지 않고 창을 최소화할지 여부. 기본 false = 닫기 시 종료.
         public bool MinimizeOnClose { get; set; } = false;
+        // LAN 웹 대시보드. 기본 비활성 — 원격 입력은 로컬 사용자 권한으로 명령을 실행하므로 명시적으로 켠다.
+        public bool LanDashboardEnabled { get; set; } = false;
+        public string LanDashboardToken { get; set; } = "";
         // 좌측 프로젝트 목록 열 수(1 또는 2). 2면 좌측 패널 최소너비 2배 + 카드 2열 그리드 + 가로 드래그.
         public int ProjectColumns { get; set; } = 1;
         // 메인 창 위치/크기 + 최대화 상태(재시작 시 복원). 화면 밖이면 복원 안 함. 로컬 전용.
@@ -1030,6 +1033,23 @@ public static class SettingsService
 
     public static bool LoadMinimizeOnClose() => Current.MinimizeOnClose;
     public static void SaveMinimizeOnClose(bool v) { Current.MinimizeOnClose = v; Save(); }
+
+    public static bool LoadLanDashboardEnabled() => Current.LanDashboardEnabled;
+    public static void SaveLanDashboardEnabled(bool v) { Current.LanDashboardEnabled = v; Save(); }
+
+    /// <summary>LAN 대시보드 접근 토큰. 최초 조회 때 192-bit 난수로 만들고 로컬 설정에 영속한다.</summary>
+    public static string LoadOrCreateLanDashboardToken()
+    {
+        lock (_lock)
+        {
+            var current = Current;
+            if (!string.IsNullOrWhiteSpace(current.LanDashboardToken)) return current.LanDashboardToken;
+            current.LanDashboardToken = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            Save();
+            return current.LanDashboardToken;
+        }
+    }
 
     public static int LoadProjectColumns() => Current.ProjectColumns == 2 ? 2 : 1;
     public static void SaveProjectColumns(int v) { Current.ProjectColumns = v == 2 ? 2 : 1; Save(); }

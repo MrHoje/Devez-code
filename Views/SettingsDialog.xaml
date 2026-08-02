@@ -547,6 +547,96 @@
                                     </Grid>
                                 </Border>
 
+                                <!-- 현재 ConPTY를 별도 프로세스 없이 같은 LAN 브라우저에서 제어 -->
+                                <Border Padding="0,18,0,0" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
+                                        Background="Transparent" Margin="0,20,0,0">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="LAN 터미널 대시보드" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextBrush}"/>
+                                                <TextBlock Text="같은 사설망의 브라우저에서 현재 DevezCode 터미널을 보고 입력합니다. 접속 토큰이 있어야 열립니다."
+                                                           FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                            </StackPanel>
+                                            <CheckBox x:Name="LanDashboardToggle" Grid.Column="1"
+                                                      Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                      Checked="LanDashboardToggle_Changed" Unchecked="LanDashboardToggle_Changed"/>
+                                        </Grid>
+                                        <Grid Margin="0,12,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="LanDashboardUrlText" Grid.Column="0" Height="34"
+                                                     IsReadOnly="True" VerticalContentAlignment="Center"
+                                                     FontSize="{DynamicResource Fs11}" Padding="9,0"
+                                                     Background="{DynamicResource PanelSoftBrush}"
+                                                     Foreground="{DynamicResource TextBrush}"
+                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"/>
+                                            <Button Grid.Column="1" Content="복사" Click="CopyLanDashboardUrl_Click"
+                                                    Width="58" Height="34" Margin="7,0,0,0"
+                                                    Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
+                                            <Button Grid.Column="2" Content="열기" Click="OpenLanDashboard_Click"
+                                                    Width="58" Height="34" Margin="7,0,0,0"
+                                                    Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
+                                        </Grid>
+                                        <TextBlock Text="포트 17865 · 웹 입력은 PC의 현재 사용자 권한으로 실행됩니다. 신뢰하는 사설망에서만 켜세요."
+                                                   FontSize="{DynamicResource Fs10}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,7,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Google OAuth + Cloudflare 릴레이를 통한 외부 네트워크 접속 -->
+                                <Border Padding="0,18,0,0" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
+                                        Background="Transparent" Margin="0,20,0,0">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="외부 네트워크 대시보드" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextBrush}"/>
+                                                <TextBlock Text="Google 계정으로 페어링하면 다른 네트워크에서도 이 PC의 터미널에 접속합니다."
+                                                           FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                            </StackPanel>
+                                            <CheckBox x:Name="RemoteDashboardToggle" Grid.Column="1"
+                                                      Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                      Checked="RemoteDashboardToggle_Changed" Unchecked="RemoteDashboardToggle_Changed"/>
+                                        </Grid>
+                                        <Grid Margin="0,12,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="RemoteDashboardStatusLabel" Grid.Column="0"
+                                                       Text="페어링 안 됨" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                                            <Button Grid.Column="1" Content="페어링" Click="PairRemoteDashboard_Click"
+                                                    Width="68" Height="34" Margin="7,0,0,0"
+                                                    Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
+                                            <Button Grid.Column="2" Content="포털 열기" Click="OpenRemoteDashboard_Click"
+                                                    Width="78" Height="34" Margin="7,0,0,0"
+                                                    Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
+                                        </Grid>
+                                        <TextBlock Text="PC가 켜져 있고 DevezCode가 실행 중일 때만 외부 접속이 가능합니다."
+                                                   FontSize="{DynamicResource Fs10}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,7,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
                             </StackPanel>
 
                             <!-- 프로젝트 패널 -->

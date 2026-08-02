@@ -5,8 +5,9 @@
 * **빌드·게시·배포를 위해 실행 중인 DevezCode 프로세스를 절대로 강제 종료하지 않는다.** `taskkill /F`, `Stop-Process -Force`, `Process.Kill` 등 강제 종료 수단은 사용 금지.
 * 빌드 전에 현재 작업을 수행하는 **본 세션 자체가 DevezCode 내부에서 실행 중인지** 반드시 확인한다.
 * 본 세션이 DevezCode 내부에서 실행 중이면 앱 종료로 본 세션이 끊길 수 있으므로, 사용자의 명시적 요청 없이 임의로 앱을 종료하거나 빌드·게시·배포·재시작하지 않는다.
-* 빌드가 필요하면 먼저 정상 종료를 요청하고 프로세스가 완전히 종료된 것을 확인한 뒤 빌드한다.
-* 정상 종료가 되지 않거나 제한 시간 내에 끝나지 않으면 강제 종료하거나 빌드를 진행하지 말고, 작업을 중단한 뒤 사용자에게 알린다.
+* 빌드가 필요하면 현재 소스 작업 폴더의 `bin\\` 또는 `bin-debug\\`에서 실행된 DevezCode에만 정상 종료를 요청하고, 프로세스가 완전히 종료된 것을 확인한 뒤 빌드한다.
+* 설치본 또는 다른 작업 폴더에서 실행된 DevezCode는 소스 빌드 산출물을 잠그지 않으므로 종료하거나 빌드 차단 사유로 삼지 않는다. 단, 동일 설정 충돌을 피하기 위해 설치본이 실행 중이면 빌드 성공 후 소스 앱을 자동 실행하지 않는다.
+* 현재 소스 빌드 산출물의 DevezCode가 정상 종료되지 않거나 제한 시간 내에 끝나지 않으면 강제 종료하거나 빌드를 진행하지 말고, 작업을 중단한 뒤 사용자에게 알린다.
 * 이 규칙은 아래의 모든 빌드·재시작·배포 절차보다 우선한다.
 
 ## 동기화 규칙
@@ -19,12 +20,22 @@
 코드 변경 후 항상 다음 프로세스를 따르십시오:
 
 ```powershell
-# 1. 실행 중인 앱에 정상 종료를 요청하고 완전히 종료될 때까지 대기.
-$process = Get-Process -Name DevezCode -ErrorAction SilentlyContinue
-if ($process) {
+# 1. 현재 소스의 빌드 출력 폴더에서 실행 중인 앱에만 정상 종료를 요청.
+$workspacePath = (Resolve-Path .).Path.TrimEnd('\\')
+$outputRoots = @("$workspacePath\\bin\\", "$workspacePath\\bin-debug\\")
+$sourceProcesses = foreach ($process in Get-Process -Name DevezCode -ErrorAction SilentlyContinue) {
+    $processPath = $process.Path
+    if ($processPath -and ($outputRoots | Where-Object {
+        $processPath.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1)) {
+        $process
+    }
+}
+
+foreach ($process in $sourceProcesses) {
     $process.CloseMainWindow() | Out-Null
     if (-not $process.WaitForExit(30000)) {
-        throw "DevezCode가 정상 종료되지 않아 빌드를 중단합니다. 강제 종료하지 마십시오."
+        throw "소스 빌드 산출물의 DevezCode가 정상 종료되지 않아 빌드를 중단합니다. 강제 종료하지 마십시오."
     }
 }
 
@@ -32,8 +43,12 @@ if ($process) {
 dotnet build -c Release --nologo -v quiet
 if ($LASTEXITCODE -ne 0) { throw "Release 빌드가 실패했습니다." }
 
-# 3. 빌드가 성공한 경우에만 앱 재시작.
-Start-Process "bin\DevezCode.exe"
+# 3. 빌드가 성공했고 다른 위치의 앱이 없을 때만 소스 앱 재시작.
+if (-not (Get-Process -Name DevezCode -ErrorAction SilentlyContinue)) {
+    Start-Process "bin\DevezCode.exe"
+} else {
+    Write-Host "다른 위치의 DevezCode가 실행 중이므로 소스 빌드 앱은 자동 실행하지 않습니다."
+}
 ```
 
 빌드가 실패하면 앱을 재시작하지 마십시오. 먼저 빌드 오류를 수정하십시오.

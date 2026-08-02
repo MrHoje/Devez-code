@@ -711,6 +711,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     var sess = TerminalSessionManager.Instance.Get(roomId);
                     DevezCode.Services.DiagLog.Write($"[dbg] resize recv room={roomId} req={cols}x{rows} conpty={sess?.Cols}x{sess?.Rows}");
                     sess?.Resize(cols, rows);
+                    TerminalDisplayOutputHub.PublishSize(roomId, cols, rows);
                     break;
                 }
                 case "diag": // 웹 레이어 진단 로그 → diag.log (codex 팝업 스윕 등)
@@ -1108,6 +1109,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             merged = RecolorGrokTerminalColors(roomId, merged);
         else
             _grokCsiTails.Remove(roomId);
+        TerminalDisplayOutputHub.Publish(roomId, merged);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
     }
 
@@ -1630,7 +1632,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// WPF Clipboard.SetDataObject(text, true) 는 OleFlushClipboard 경로라 clipboard viewer chain 을
     /// 동기 호출해 RDP/클립보드 매니저/백신 프로세스와 교착될 수 있다. 텍스트는 Win32
     /// CF_UNICODETEXT 로 직접 기록해 OLE flush 를 피한다.</summary>
-    private static void SetClipboardText(string text)
+    internal static void SetClipboardText(string text)
     {
         var owner = GetClipboardOwnerHandle();
 
