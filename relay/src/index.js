@@ -61,6 +61,7 @@ async function serveStatic(request, env, url) {
   // deviceId는 브라우저 쪽 dashboard.js 가 location.pathname 에서 직접 읽는다.
   if (url.pathname.startsWith('/app/') && url.pathname !== '/app/dashboard.js' && url.pathname !== '/app/dashboard.css') {
     const shellUrl = new URL('/app/index.html', url);
+    shellUrl.search = url.search;
     return env.ASSETS.fetch(new Request(shellUrl, request));
   }
   return env.ASSETS.fetch(request);
