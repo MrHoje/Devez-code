@@ -148,7 +148,7 @@ public sealed class DevezVibeStateService : IDisposable
         // rename 직전의 빈 파일을 idle 로 오인 방지 — 짧게 뒤 재확인, 그래도 비면 idle 확정(stuck-ON 방지).
         if (string.IsNullOrWhiteSpace(status)) { _ = ReEmitBusyAfterSettleAsync(path, room); return; }
         bool loading = status.Equals("loading", StringComparison.OrdinalIgnoreCase);
-        bool busy = loading || status.Equals("running", StringComparison.OrdinalIgnoreCase);
+        bool busy = status.Equals("running", StringComparison.OrdinalIgnoreCase);
         BusyChanged?.Invoke(room, busy, loading);
     }
 
@@ -160,8 +160,8 @@ public sealed class DevezVibeStateService : IDisposable
             var status = TryRead(path);
             bool loading = !string.IsNullOrWhiteSpace(status)
                 && status!.Equals("loading", StringComparison.OrdinalIgnoreCase);
-            bool busy = loading || (!string.IsNullOrWhiteSpace(status)
-                && status!.Equals("running", StringComparison.OrdinalIgnoreCase));
+            bool busy = !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("running", StringComparison.OrdinalIgnoreCase);
             BusyChanged?.Invoke(room, busy, loading);
         }
         catch { /* best effort */ }
@@ -175,8 +175,7 @@ public sealed class DevezVibeStateService : IDisposable
         {
             var status = TryRead(Path.Combine(BusyDir, Sanitize(roomId) + ".txt"));
             return !string.IsNullOrWhiteSpace(status)
-                && (status.Equals("running", StringComparison.OrdinalIgnoreCase)
-                    || status.Equals("loading", StringComparison.OrdinalIgnoreCase));
+                && status.Equals("running", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }

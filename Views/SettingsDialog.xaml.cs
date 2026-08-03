@@ -98,9 +98,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.22.3", "2026-08-03", true, new[]
+          ("v1.22.4", "2026-08-03", true, new[]
           {
-              "메모리 점유 및 GC 처리 로직을 개선합니다.",
+              "Node.js가 설치되지 않은 경우 앱 시작 시 설치를 안내하고, 동의하면 앱 안에서 바로 설치하도록 추가했습니다.",
+              "세션이 준비 중인 동안에는 작업 중 표시가 켜지지 않도록 수정했습니다.",
+          }),
+          ("v1.22.3", "2026-08-03", false, new[]
+          {
+              "메모리 점유 및 GC 처리 로직을 개선했습니다.",
           }),
           ("v1.22.2", "2026-08-02", false, new[]
           {

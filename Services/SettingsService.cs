@@ -164,6 +164,8 @@ public static class SettingsService
         public bool AutoUpdateAgents { get; set; } = true;
         // 시작 시 자동 업데이트를 마지막으로 실행한 날짜("yyyy-MM-dd"). 하루 1회만 동작하도록 게이트.
         public string LastAgentAutoUpdateDate { get; set; } = "";
+        // Node.js 설치 안내를 마지막으로 표시한 날짜("yyyy-MM-dd"). 거절해도 같은 날에는 다시 묻지 않는다.
+        public string LastNodeInstallPromptDate { get; set; } = "";
         // devez-marketplace/hoje-code 조용한 자동업데이트의 하루 1회 게이트(yyyy-MM-dd). 위 에이전트 게이트와 별개.
         public string LastDevezPluginUpdateDate { get; set; } = "";
         // 최대화 시 작업표시줄까지 덮는 전체화면 동작 여부. 기본 false = 작업영역에만 맞춤.
@@ -1021,6 +1023,9 @@ public static class SettingsService
 
     public static string LoadLastAgentAutoUpdateDate() => Current.LastAgentAutoUpdateDate;
     public static void SaveLastAgentAutoUpdateDate(string v) { Current.LastAgentAutoUpdateDate = v; Save(); }
+
+    public static string LoadLastNodeInstallPromptDate() => Current.LastNodeInstallPromptDate;
+    public static void SaveLastNodeInstallPromptDate(string v) { Current.LastNodeInstallPromptDate = v; Save(); }
 
     public static string LoadLastDevezPluginUpdateDate() => Current.LastDevezPluginUpdateDate;
     public static void SaveLastDevezPluginUpdateDate(string v) { Current.LastDevezPluginUpdateDate = v; Save(); }

@@ -1,11 +1,13 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 
 namespace DevezCode.Services;
 
@@ -22,6 +24,9 @@ public static class UserStatusLineInstaller
     private static string StatusLineJsPath => Path.Combine(ClaudeDir, "statusline.js");
     private static string StatusLineProxyPath => Path.Combine(ClaudeDir, "devezcode-statusline-proxy.ps1");
     private static string SettingsJsonPath => Path.Combine(ClaudeDir, "settings.json");
+    // 로컬 빌드(bin\DevezCode.exe)에서만 쓰는 일회성 화면 확인 마커. 설치본 경로에는 존재하지 않는다.
+    private static string PreviewMarkerPath => Path.GetFullPath(
+        Path.Combine(AppContext.BaseDirectory, "..", "node-install-preview.once"));
 
     private static string BundledScriptPath => Path.Combine(
         AppContext.BaseDirectory, "Resources", "StatusLine", "statusline.js");
@@ -30,8 +35,8 @@ public static class UserStatusLineInstaller
     private const string ManagedMarker = "DEVEZCODE-STATUSLINE";
 
     /// <summary>statusLine 실행에 필요한 node.exe 를 시스템에서 찾을 수 있는지.
-    /// false 면 node 미설치/PATH 부재로 원클릭 설정이 불가(사용자가 직접 Node.js 설치 필요).</summary>
-    public static bool HasNode() => FindNodePath() != null;
+    /// false 면 앱 시작 시 하루 한 번 설치 여부를 안내한다.</summary>
+    public static bool HasNode() => ResolveNodePath() != null;
 
     private static string? _cachedNode;
     private static bool _nodeResolved;
@@ -71,6 +76,57 @@ public static class UserStatusLineInstaller
         try { InstallScript(); } catch { /* best effort */ }
         try { EnsureProxyInstalled(); } catch { /* best effort */ }
         if (!IsInstalled()) { try { InstallSettingsEntry(); } catch { /* best effort */ } }
+    }
+
+    /// <summary>Node.js가 없고 오늘 아직 설치 안내를 표시하지 않았는지.</summary>
+    public static bool ShouldOfferNodeInstallToday()
+    {
+        var today = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return SettingsService.LoadLastNodeInstallPromptDate() != today && !HasNode();
+    }
+
+    /// <summary>설치/거절/닫기와 무관하게 오늘은 다시 묻지 않도록 기록한다.</summary>
+    public static void MarkNodeInstallPromptedToday()
+        => SettingsService.SaveLastNodeInstallPromptDate(
+            DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+    /// <summary>개발 확인용 일회성 마커를 소비한다. 존재하면 Node.js 설치 여부와 무관하게 안내창을 한 번 띄운다.</summary>
+    public static bool ConsumeNodeInstallPreview()
+    {
+        try
+        {
+            if (!File.Exists(PreviewMarkerPath)) return false;
+            File.Delete(PreviewMarkerPath);
+            return true;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Node.js LTS를 설치하고 성공 즉시 Claude Code 상태줄 설정을 등록한다.</summary>
+    public static async Task InstallNodeAndStatusLineAsync()
+    {
+        if (HasNode())
+        {
+            EnsureInstalled();
+            return;
+        }
+
+        using var process = Process.Start(new ProcessStartInfo("winget.exe",
+            "install --id OpenJS.NodeJS.LTS --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        }) ?? throw new InvalidOperationException("Node.js 설치 프로세스를 시작하지 못했습니다.");
+
+        await process.WaitForExitAsync().ConfigureAwait(false);
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException($"Node.js 설치가 실패했습니다. (종료 코드: {process.ExitCode})");
+
+        _cachedNode = null;
+        _nodeResolved = false;
+        EnsureInstalled();
+        if (!IsInstalled())
+            throw new InvalidOperationException("Claude Code 상태줄 설정을 적용하지 못했습니다.");
     }
 
     /// <summary>

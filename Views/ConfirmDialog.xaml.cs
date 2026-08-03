@@ -8,8 +8,8 @@ namespace DevezCode.Views;
 /// <summary>3버튼 확인 다이얼로그 결과.</summary>
 public enum ConfirmChoice { Primary, Secondary, Cancel }
 
-/// <summary>ShowUpdate 결과(성공 시 앱이 재실행되어 반환되지 않으므로 없음).</summary>
-public enum UpdateOutcome { Cancelled, Failed, ElevationDenied }
+/// <summary>진행 작업 결과. 앱 업데이트 성공 시에는 재실행되어 반환되지 않는다.</summary>
+public enum UpdateOutcome { Cancelled, Completed, Failed, ElevationDenied }
 
 public partial class ConfirmDialog : Window
 {
@@ -20,6 +20,7 @@ public partial class ConfirmDialog : Window
     // 업데이트 진행률 모드용.
     private Func<IProgress<double>, Task>? _download;
     private bool _downloading;
+    private bool _indeterminateProgress;
     private UpdateOutcome _updateOutcome = UpdateOutcome.Cancelled;
 
     /// <summary>Owner 는 "지금 활성인 창" 우선 — 설정 화면처럼 메인창 위에 떠 있는 비모달 창에서 띄울 때
@@ -51,9 +52,9 @@ public partial class ConfirmDialog : Window
         }
         if (autoWidth)
         {
-            // 업데이트 노트 전용: 텍스트 길이에 따라 폭을 자동 조절(상한 700), 짧으면 360.
+            // 업데이트 노트 전용: 텍스트 길이에 따라 폭을 자동 조절(상한 700), 짧아도 기본 확인창과 같은 490.
             SizeToContent = SizeToContent.WidthAndHeight;
-            MinWidth = 360;
+            MinWidth = 490;
             MaxWidth = 700;
         }
         else if (confirmText == null)
@@ -104,24 +105,29 @@ public partial class ConfirmDialog : Window
     }
 
     /// <summary>업데이트 노트 팝업 → "업데이트" 클릭 시 창을 닫지 않고 같은 창 안에서 진행률을
-    /// 표시하며 <paramref name="download"/> 를 실행한다. 성공 시 앱이 종료·재실행되어 반환되지 않으며,
-    /// 사용자가 취소하면 <see cref="UpdateOutcome.Cancelled"/>, 다운로드가 실패하면
+    /// 표시하며 <paramref name="download"/> 를 실행한다. 일반 작업 완료는 <see cref="UpdateOutcome.Completed"/>,
+    /// 사용자가 취소하면 <see cref="UpdateOutcome.Cancelled"/>, 작업이 실패하면
     /// <see cref="UpdateOutcome.Failed"/> 를 반환한다.</summary>
     public static UpdateOutcome ShowUpdate(
         string title,
         string message,
         Func<IProgress<double>, Task> download,
         string okLabel = "업데이트",
-        string iconKey = "IconDownload")
+        string iconKey = "IconDownload",
+        string cancelLabel = "나중에",
+        string progressLabel = "다운로드 중…",
+        bool indeterminateProgress = false)
     {
         var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger: false,
                                        confirmText: null, wideLayout: false, autoWidth: true);
         dialog._download = download;
-        dialog.CancelBtn.Content = "나중에"; // devez 정합: 업데이트 팝업의 취소는 '나중에'
+        dialog._indeterminateProgress = indeterminateProgress;
+        dialog.CancelText.Text = cancelLabel;
+        dialog.ProgressLabel.Text = progressLabel;
         // 내용에 맞춰 폭을 줄이되 최대 700까지만 넓힌다. 약 10줄까지 높이 자동 확장한다.
         dialog.SizeToContent = SizeToContent.WidthAndHeight;
         dialog.MaxHeight = 430;
-        dialog.MinWidth = 360;
+        dialog.MinWidth = 490;
         dialog.MaxWidth = 700;
 
         ApplyOwner(dialog);
@@ -289,6 +295,12 @@ public partial class ConfirmDialog : Window
         HeaderCloseBtn.Visibility = Visibility.Collapsed;
         ConfirmInputPanel.Visibility = Visibility.Collapsed;
         ProgressArea.Visibility = Visibility.Visible;
+        if (_indeterminateProgress)
+        {
+            ProgressPercent.Visibility = Visibility.Collapsed;
+            ProgressTrack.Visibility = Visibility.Collapsed;
+            IndeterminateProgress.Visibility = Visibility.Visible;
+        }
 
         var progress = new Progress<double>(v =>
         {
@@ -305,6 +317,7 @@ public partial class ConfirmDialog : Window
             ProgressPercent.Text = "100 %";
             ProgressFill.Width = ProgressTrack.ActualWidth;
             _downloading = false;
+            _updateOutcome = UpdateOutcome.Completed;
             DialogResult = true;
         }
         catch (Exception ex)

@@ -736,8 +736,33 @@ public partial class MainWindow : Window
             InitUpdates();
             StartPerfMonitor();
             // claude code 커스텀 statusline(~/.claude\statusline.js + settings.json statusLine) 보장.
-            // 다른 PC 첫 실행 시 자동 설치되며, 이미 있으면 사용자 수정 보존(스킵).
+            // Node.js가 없으면 하루 한 번 설치 여부를 묻고, 동의한 경우 같은 창에서 진행 상태를 보여준다.
             UserStatusLineInstaller.EnsureInstalled();
+            Dispatcher.BeginInvoke(() =>
+            {
+                bool previewNodeInstall = UserStatusLineInstaller.ConsumeNodeInstallPreview();
+                if (!previewNodeInstall && !UserStatusLineInstaller.ShouldOfferNodeInstallToday()) return;
+
+                if (!previewNodeInstall) UserStatusLineInstaller.MarkNodeInstallPromptedToday();
+                Func<IProgress<double>, Task> installNode = previewNodeInstall
+                    ? async _ => await Task.Delay(3000)
+                    : _ => UserStatusLineInstaller.InstallNodeAndStatusLineAsync();
+                var outcome = ConfirmDialog.ShowUpdate(
+                    "Node.js 설치",
+                    "DevezCode의 모든 기능을 원활하게 사용하려면 Node.js 설치가 필요합니다.\n" +
+                    "설치하지 않아도 계속 사용할 수 있지만, 일부 기능이 제한될 수 있습니다.\n" +
+                    "지금 설치하시겠습니까?",
+                    installNode,
+                    okLabel: "설치",
+                    iconKey: "IconDownload",
+                    cancelLabel: "설치하지 않음",
+                    progressLabel: "Node.js 설치 중…",
+                    indeterminateProgress: true);
+                if (outcome == UpdateOutcome.Completed)
+                    ConfirmDialog.Alert("설치 완료", "Node.js 설치가 완료되었습니다.");
+                else if (outcome == UpdateOutcome.Failed)
+                    ConfirmDialog.Alert("설치 실패", "Node.js를 설치하지 못했습니다.\n다음 날 DevezCode 실행 시 다시 안내해 드립니다.");
+            }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
             StartStatusLine();
             _sessionBusy.Start();
             // /send-new: 인박스가 자식 세션 생성을 요청하면 UI 스레드에서 생성·시작한다.

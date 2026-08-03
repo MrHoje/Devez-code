@@ -98,7 +98,7 @@
                 <!-- 업데이트 진행률: 본문 스크롤과 분리해 다운로드 중 항상 노출 -->
                 <StackPanel x:Name="ProgressArea" Grid.Row="2" Visibility="Collapsed" Margin="28,18,28,16">
                     <Grid Margin="0,0,0,6">
-                        <TextBlock Text="다운로드 중…" FontSize="{DynamicResource Fs12}"
+                        <TextBlock x:Name="ProgressLabel" Text="다운로드 중…" FontSize="{DynamicResource Fs12}"
                                    Foreground="{DynamicResource TextMutedBrush}"/>
                         <TextBlock x:Name="ProgressPercent" HorizontalAlignment="Right"
                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
@@ -107,6 +107,9 @@
                         <Border x:Name="ProgressFill" HorizontalAlignment="Left" Width="0" Height="6"
                                 CornerRadius="3" Background="{DynamicResource PrimaryBrush}"/>
                     </Border>
+                    <ProgressBar x:Name="IndeterminateProgress" Height="3" Visibility="Collapsed"
+                                 IsIndeterminate="True" Background="Transparent" BorderThickness="0"
+                                 Foreground="{DynamicResource PrimaryBrush}"/>
                 </StackPanel>
 
                 <!-- Footer -->
