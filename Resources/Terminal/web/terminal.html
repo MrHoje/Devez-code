@@ -1642,9 +1642,9 @@
     // 조합 시작 시 findBlockCursor 가 라이브 커서를 직접 읽지만, 커서가 순간적으로 범위 밖이거나
     // statusLine 에 파킹돼 있을 때 이 마지막 유효 좌표가 폴백이 된다. 조합 중엔 갱신 금지 —
     // 리페인트가 커서를 출력영역으로 옮긴 좌표를 "입력 위치"로 오염시키면 안 되기 때문.
-    // 맨 아랫줄(term.rows-1)은 기록하지 않는다: codex/opencode 는 statusLine(스피너·토큰카운트)을
-    // 주기적으로 재묘화하며 커서를 그 끝에 파킹하는데, 입력란은 구조상 항상 statusLine 위에
-    // 있으므로 맨 아랫줄 좌표는 입력 캐럿일 수 없다.
+    // 하단 예약행(bottomReserved)은 기록하지 않는다: TUI 는 statusLine(스피너·토큰카운트)을
+    // 주기적으로 재묘화하며 커서를 그 끝에 파킹하는데, 입력란은 구조상 항상 그 위에 있으므로
+    // 예약행 좌표는 입력 캐럿일 수 없다(claude 3줄: 구분선/모델줄/모드줄, 그 외 statusLine 1줄).
     function rememberLogicalCaret() {
       if (!pinsLogicalCaret || isImeComposing) return;
       const buf = term.buffer.active;
@@ -1688,14 +1688,14 @@
       let expected = frozenImeCaret;
       if (!expected && pinsLogicalCaret) {
         const buf = term.buffer.active;
-        if (buf.cursorY >= 0 && buf.cursorY < term.rows - 1)
+        if (buf.cursorY >= 0 && buf.cursorY < term.rows - bottomReserved)
           expected = { row: buf.cursorY, col: buf.cursorX };
         else
           expected = lastLogicalCaret;
       }
 
       // active 조합뷰와 우리 상태가 불일치하면 xterm/WebView2 조합 이벤트가 누락된 상태다.
-      // codex/opencode/claude TUI의 입력란은 구조상 화면 좌상단 셀이 아니므로, 이 대상들의
+      // B형(pinsLogicalCaret) TUI의 입력란은 구조상 화면 좌상단 셀이 아니므로, 이 대상들의
       // 보이는 (0,0) 조합은 라이브 논리 커서가 그곳에 파킹됐더라도 고착으로 판정한다.
       // 일반 셸/gajae/grok은 실제 첫 셀 입력 가능성을 보존하고 상태 불일치일 때만 복구한다.
       const stale = outside || (atOrigin && (needsCaretFix || !isImeComposing));
