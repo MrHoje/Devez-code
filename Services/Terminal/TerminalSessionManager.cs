@@ -40,6 +40,35 @@ public sealed class TerminalSessionManager
         lock (_lock) _disposedRooms.Remove(roomId);
     }
 
+    /// <summary>유휴 자동 종료로 닫은 방. '모든 세션 미리 로드'가 켜져 있으면 프로젝트를 다시 열 때
+    /// 프리로드가 이 방을 배경에서 새 ConPTY 로 되살려 자동 종료가 무효화되고(리소스 절약 실패)
+    /// 사이드바 점도 다시 활성색으로 돌아간다. 사용자가 직접 세션을 열 때만 해제한다.</summary>
+    private readonly HashSet<string> _idleStoppedRooms = new();
+
+    /// <summary>유휴 자동 종료로 닫힌 방으로 표시 — 이후 프리로드가 건너뛴다.</summary>
+    public void MarkIdleStopped(string roomId)
+    {
+        lock (_lock) _idleStoppedRooms.Add(roomId);
+    }
+
+    /// <summary>이 방이 유휴 자동 종료로 닫힌 상태인지(프리로드 제외 대상).</summary>
+    public bool IsIdleStopped(string roomId)
+    {
+        lock (_lock) return _idleStoppedRooms.Contains(roomId);
+    }
+
+    /// <summary>사용자가 세션을 직접 열었을 때 해제 — 이후에는 정상적으로 resume·프리로드된다.</summary>
+    public void ClearIdleStopped(string roomId)
+    {
+        lock (_lock) _idleStoppedRooms.Remove(roomId);
+    }
+
+    /// <summary>유휴 종료 설정을 끄거나 바꿀 때 전체 해제.</summary>
+    public void ClearAllIdleStopped()
+    {
+        lock (_lock) _idleStoppedRooms.Clear();
+    }
+
     /// <summary>graceful 종료(숨김 지연 종료·부분 재시작)가 진행 중인 방. 이 동안(최대 수 초) 새 배선/
     /// 재부착을 막는다 — 죽어가는 세션에 붙으면 종료 트랜스크립트가 재생되고 "[세션 종료됨]" 죽은 방으로
     /// 굳어 자동 resume 이 안 된다(다른 패널에서의 재오픈·프리로드 경로).</summary>

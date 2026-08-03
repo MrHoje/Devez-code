@@ -1072,6 +1072,7 @@ public partial class WorkspacePaneView : UserControl
         var sessions = proj.Tabs.OfType<SessionItem>()
             .Where(s => !ReferenceEquals(s, except) && !s.IsEffectivelyHidden && !s.IsExternal)
             .Where(s => !_themeReloadRoomIds.Contains(s.Id)) // 테마 종료 중 비활성 방을 백그라운드에서 되살리지 않음
+            .Where(s => !TerminalSessionManager.Instance.IsIdleStopped(s.Id)) // 유휴 자동 종료된 방은 사용자가 직접 열 때만 되살린다
             .Where(s => IsSessionActiveElsewhere?.Invoke(s) != true) // 다른 패널이 표시 중 — 그 패널이 최종 폭으로 생성
             .ToList();
 
@@ -1505,6 +1506,8 @@ public partial class WorkspacePaneView : UserControl
             return;
         }
 
+        // 사용자가 직접 연 시점 — 유휴 종료 표시를 풀어 이후 프리로드도 정상 동작하게 한다.
+        TerminalSessionManager.Instance.ClearIdleStopped(session.Id);
         session.IsAlive = true;
         // 콜드(미준비) 세션: UpdateEmptyState 가 UnparkTerminalHost 로 webview 를 0×0→풀사이즈로 드러내는데,
         // 그 전에 웹 로딩 커버부터 켜야 한다. ShowTerminal 을 먼저 보내면 빠른 codex 는 커서가 한 프레임

@@ -1666,12 +1666,41 @@
       return null;
     }
 
+    // [폴백] 반전(SGR 7) 스캔이 0건일 때 — claude 버전에 따라 입력 캐럿을 reverse 가 아니라
+    // ① 명시적 배경색 빈 셀 ② 블록 글리프(█/▌/▎)로 그린다(diag 전량 `anchor=claude null` 근거).
+    // 오탐 방지: ①은 좌우 이웃이 기본 배경인 폭 1 셀만 인정(선택 하이라이트·헤더 바 제외).
+    function scanClaudeAltCaret() {
+      const buf = term.buffer.active;
+      for (let row = Math.max(0, term.rows - 2); row >= 0; row--) {
+        const line = buf.getLine(buf.viewportY + row);
+        if (!line) continue;
+        for (let col = 0; col < term.cols; col++) {
+          const cell = line.getCell(col);
+          if (!cell) continue;
+          const ch = cell.getChars();
+          if (ch === '█' || ch === '▌' || ch === '▎' || ch === '▏') return { row: row, col: col };
+          if (ch !== '' && ch !== ' ') continue;
+          if (cell.isBgDefault()) continue;
+          const prev = col > 0 ? line.getCell(col - 1) : null;
+          const next = col + 1 < term.cols ? line.getCell(col + 1) : null;
+          if (prev && !prev.isBgDefault()) continue;
+          if (next && !next.isBgDefault()) continue;
+          return { row: row, col: col };
+        }
+      }
+      return null;
+    }
+
+    function scanClaudeCaret() {
+      return scanClaudeBlockCursor() || scanClaudeAltCaret();
+    }
+
     function rememberClaudeCaret(force) {
       if (!isClaude || isImeComposing) return;
       const now = Date.now();
       if (!force && now - lastClaudeScanAt < 80) return; // 고빈도 리페인트 중 전체 셀 스캔 제한
       lastClaudeScanAt = now;
-      const caret = scanClaudeBlockCursor();
+      const caret = scanClaudeCaret();
       if (!caret) return;
       lastClaudeCaret = caret;
     }
@@ -1889,7 +1918,7 @@
         return caret;
       }
       if (isClaude) {
-        const caret = scanClaudeBlockCursor();
+        const caret = scanClaudeCaret();
         // [진단] "한글이 화면 중앙에 뜸" 재현 시 어느 반전셀을 물었는지 확정용. 스캔은 첫 매치만
         // 반환하므로, 화면의 모든 반전 빈/스페이스셀 후보를 함께 남겨 중앙 셀이 하단 입력캐럿을
         // 이겼는지(=오탐) 판별한다. claude 분기는 원래 무로그라 이 증상이 관측 불가였다.
@@ -1906,9 +1935,25 @@
               if (g === '' || g === ' ') cands.push(r + ',' + c);
             }
           }
+          // [진단2] 반전 후보가 0건인 claude 버전용 — 하단 8행에서 배경색 지정 셀/블록 글리프를
+          // 좌표+글리프+bg 모드와 함께 남겨 실제 캐럿 렌더 방식을 확정한다.
+          const alt = [];
+          for (let r = term.rows - 1; r >= Math.max(0, term.rows - 8) && alt.length < 14; r--) {
+            const ln = buf.getLine(buf.viewportY + r);
+            if (!ln) continue;
+            for (let c = 0; c < term.cols && alt.length < 14; c++) {
+              const cl = ln.getCell(c);
+              if (!cl) continue;
+              const g = cl.getChars();
+              const blockGlyph = (g === '█' || g === '▌' || g === '▎' || g === '▏');
+              if (!blockGlyph && cl.isBgDefault()) continue;
+              alt.push(r + ',' + c + ':' + (blockGlyph ? 'glyph' : 'bg' + cl.getBgColorMode() + '/' + cl.getBgColor()));
+            }
+          }
           imeDiag('anchor=claude ' + (caret ? caret.row + ',' + caret.col : 'null') +
             ' rows=' + term.rows + ' vpY=' + buf.viewportY +
-            ' cands[' + cands.length + ']=' + cands.slice(0, 12).join(' '));
+            ' cands[' + cands.length + ']=' + cands.slice(0, 12).join(' ') +
+            ' alt=' + alt.join(' '));
         } catch (e) {}
         if (caret) {
           lastClaudeCaret = caret;

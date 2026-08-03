@@ -5678,6 +5678,7 @@ public partial class MainWindow : Window
         _idleSessionShutdownTimer.Stop();
         _idleSessionShutdownMinutes = SettingsService.LoadIdleSessionShutdownMinutes();
         _sessionLastActivityUtc.Clear();
+        TerminalSessionManager.Instance.ClearAllIdleStopped();
         if (_idleSessionShutdownMinutes <= 0)
         {
             DiagLog.Write("IdleSessionShutdown disabled");
@@ -5834,6 +5835,9 @@ public partial class MainWindow : Window
         finally
         {
             try { TerminalSessionManager.Instance.ClearDisposedRoom(roomId); } catch { }
+            // 프리로드('모든 세션 미리 로드')가 이 방을 배경에서 되살리지 못하게 표시한다 —
+            // 안 하면 다음 프로젝트 전환에 새 ConPTY 가 떠 자동 종료가 무효화되고 점도 다시 활성색이 된다.
+            try { TerminalSessionManager.Instance.MarkIdleStopped(roomId); } catch { }
             _sessionLastActivityUtc.Remove(roomId);
             if (ReferenceEquals(FindSession(roomId), session))
             {
