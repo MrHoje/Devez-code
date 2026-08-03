@@ -69,6 +69,9 @@
                                TextWrapping="Wrap"
                                LineStackingStrategy="BlockLineHeight"
                                LineHeight="22"/>
+                    <!-- 글머리 기호 목록(업데이트 노트)은 매달린 들여쓰기가 필요해 줄 단위로 여기에 렌더한다.
+                         MessageText 와 둘 중 하나만 보인다(NoteText.Render 참고). -->
+                    <StackPanel x:Name="MessageHost" Visibility="Collapsed"/>
                     <StackPanel x:Name="ConfirmInputPanel" Visibility="Collapsed" Margin="0,14,0,0">
                         <TextBlock x:Name="ConfirmHintText"
                                    FontSize="{DynamicResource Fs12}"

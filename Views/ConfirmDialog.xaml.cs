@@ -2,6 +2,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace DevezCode.Views;
 
@@ -38,7 +39,18 @@ public partial class ConfirmDialog : Window
         InitializeComponent();
         Title = title;
         TitleText.Text = title;
-        MessageText.Text = message;
+        // 글머리 기호 목록이 섞인 메시지(업데이트 노트)는 줄 단위 렌더로 매달린 들여쓰기를 적용한다.
+        // 기호가 없는 평범한 메시지는 기존 단일 TextBlock 경로 그대로.
+        if (NoteText.Render(MessageHost, message, (Brush)FindResource("TextBrush"), 13, 22))
+        {
+            MessageText.Visibility = Visibility.Collapsed;
+            MessageHost.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            MessageText.Text = message;
+            MessageHost.Children.Clear();
+        }
         OkText.Text = okLabel;
         if (cancelLabel != null) CancelText.Text = cancelLabel;   // 취소가 단순 취소가 아닌 경우(예: 되돌리기)
         _confirmText = confirmText;

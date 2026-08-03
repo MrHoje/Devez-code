@@ -1148,20 +1148,15 @@ public partial class SettingsDialog : UserControl
             VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0),
         });
 
-        var tb = new TextBlock
-        {
-            TextWrapping = TextWrapping.Wrap, FontSize = 13,
-            Foreground = (Brush)FindResource("TextBrush"), LineHeight = 22,
-        };
+        // 항목이 워드랩될 때 둘째 줄이 글머리 기호 아래로 붙지 않도록 항목마다 매달린 들여쓰기로 그린다.
+        var noteList = new StackPanel();
+        var noteFg = (Brush)FindResource("TextBrush");
         foreach (var note in notes)
-        {
-            if (tb.Inlines.Count > 0) tb.Inlines.Add(new System.Windows.Documents.LineBreak());
-            tb.Inlines.Add(new System.Windows.Documents.Run($"• {note}"));
-        }
+            noteList.Children.Add(NoteText.BulletRow("•", note, noteFg, 13, 22));
 
         var body = new StackPanel();
         body.Children.Add(header);
-        body.Children.Add(tb);
+        body.Children.Add(noteList);
         return new Border
         {
             Background = (Brush)FindResource("PanelBrush"),
