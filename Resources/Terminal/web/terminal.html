@@ -2248,15 +2248,6 @@
       return false;
     }
 
-    // Shift+←/→ = effort 한 칸, Shift+↑/↓ = model 한 칸 (메타바 콤보 위임, 끝값에서 정지).
-    // claude 전용 — 다른 에이전트는 화살표를 TUI 로 그대로 보낸다.
-    if (shift && !ctrl && !alt && entry.agent === 'claude') {
-      if (key === 'ArrowLeft')  { e.preventDefault(); post({ type:'action', name:'effortStep', index: -1 }); return false; }
-      if (key === 'ArrowRight') { e.preventDefault(); post({ type:'action', name:'effortStep', index: +1 }); return false; }
-      if (key === 'ArrowUp')    { e.preventDefault(); post({ type:'action', name:'modelStep',  index: -1 }); return false; }
-      if (key === 'ArrowDown')  { e.preventDefault(); post({ type:'action', name:'modelStep',  index: +1 }); return false; }
-    }
-
     return true;
   }
 

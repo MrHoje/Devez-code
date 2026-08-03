@@ -1096,9 +1096,6 @@ public partial class WorkspacePaneView : UserControl
     // ── 세션 ─────────────────────────────────────────────────────
     private void OnTerminalSessionAction(string name, int index) => Dispatcher.BeginInvoke(() =>
     {
-        // model/effort 스텝은 방을 바꾸거나 모달을 띄우지 않는다 — 조합을 끊으면 입력 중 글자가 깨지므로 AbortIme 앞에서 처리.
-        if (name == "modelStep")  { StepModelEffortCombo(ModelCombo, index); return; }
-        if (name == "effortStep") { StepModelEffortCombo(EffortCombo, index); return; }
         // 이 액션들은 터미널 안에서 키로 들어온다 — 모달을 띄우거나 방을 바꾸기 전에 조합 상태를
         // 끊어, 모달 뒤/새 방에서 첫 한글이 중복 입력되는 것을 막는다(TerminalHostView.AbortIme 참고).
         _terminal.AbortIme();
@@ -2214,24 +2211,6 @@ public partial class WorkspacePaneView : UserControl
 
     private static ModelEffortOption[] ReasoningOptions(params string[] values)
         => values.Select(v => new ModelEffortOption(v, v)).ToArray();
-
-    /// <summary>Shift+화살표로 메타바 model/effort 콤보를 한 칸 이동. 끝값에서는 순환하지 않고 멈춘다.
-    /// 선택이 바뀌면 기존 SelectionChanged 경로가 저장·슬래시 주입(busy면 보류)까지 그대로 처리한다.</summary>
-    private void StepModelEffortCombo(System.Windows.Controls.ComboBox combo, int dir)
-    {
-        if (dir == 0) return;
-        var s = _activeSession;
-        if (s == null) return;
-        var agentId = string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
-        if (agentId != "claude") return; // claude 전용 단축키
-        if (ModelEffortDock.Visibility != Visibility.Visible || combo.Visibility != Visibility.Visible) return;
-        int count = combo.Items.Count;
-        if (count == 0) return;
-        if (combo.SelectedIndex < 0) { combo.SelectedIndex = 0; return; } // 선택 없음 → 첫 항목부터
-        int next = combo.SelectedIndex + dir;
-        if (next < 0 || next >= count) return;
-        combo.SelectedIndex = next;
-    }
 
     private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         => OnModelEffortPicked(isModel: true);
