@@ -164,11 +164,13 @@ internal static class ExternalSessionProxy
             {
                 bool wrapperGone = false;
                 try { wrapperGone = wrapper is { HasExited: true }; } catch { wrapperGone = true; }
+                // 복귀 버튼은 .return을 먼저 쓴 뒤 전용 창에도 WM_CLOSE를 보낸다. Claude는 창 종료가
+                // 빠르면 wrapperGone이 먼저 관측될 수 있으므로, 파일이 있으면 반드시 정상 복귀로 우선한다.
+                bool returnFileExists = !string.IsNullOrEmpty(spec.ReturnPath) && File.Exists(spec.ReturnPath);
 
-                if (wrapperGone
-                    || (!string.IsNullOrEmpty(spec.ReturnPath) && File.Exists(spec.ReturnPath)))
+                if (returnFileExists || wrapperGone)
                 {
-                    returnRequested = !wrapperGone; // 래퍼 사망(탭 닫힘)은 회수 아님 → 실제 종료코드 유지
+                    returnRequested = returnFileExists; // 직접 탭 닫힘만 실제 종료코드를 유지한다.
                     try { child.Kill(entireProcessTree: true); } catch { }
                     child.WaitForExit(3000);
                     break;
