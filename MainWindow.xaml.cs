@@ -4377,6 +4377,10 @@ public partial class MainWindow : Window
             UpdateSessionBusyDisplay();
             await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { session.Id });
             TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
+            // 내부 dvz가 남긴 owner 파일은 새 외부 dvz의 상태 기록을 막는다. 내부 종료가 완료된 뒤
+            // 소유권만 비워 외부 프로세스가 같은 방의 최신 thread ID를 계속 기록하게 한다.
+            if (agent.Id == "devezvibe")
+                DevezVibeStateService.ClearRoomOwner(session.Id);
 
             var result = await ExternalSessionService.LaunchAsync(
                 session.Id,

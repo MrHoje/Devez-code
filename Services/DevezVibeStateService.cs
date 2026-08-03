@@ -67,7 +67,13 @@ public sealed class DevezVibeStateService : IDisposable
         var name = Sanitize(room) + ".txt";
         foreach (var dir in new[] { LastmsgDir, BusyDir, WaitingDir, SessionDir })
             try { File.Delete(Path.Combine(dir, name)); } catch { }
-        try { File.Delete(Path.Combine(BaseDir, "owners", name)); } catch { }
+        ClearRoomOwner(room);
+    }
+
+    /// <summary>새 dvz 프로세스가 방 상태 파일의 소유권을 다시 획득할 수 있게 이전 실행의 소유권만 비운다.</summary>
+    public static void ClearRoomOwner(string room)
+    {
+        try { File.Delete(Path.Combine(BaseDir, "owners", Sanitize(room) + ".txt")); } catch { }
     }
 
     /// <summary>Devez CLI → Devez Vibe 개명 1회 이관. 새 폴더가 이미 있으면(새 이름 dvz 가 한 번 돈 뒤)

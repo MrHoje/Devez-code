@@ -268,7 +268,7 @@ public static class ExternalSessionService
 
             File.WriteAllText(
                 runnerPath,
-                BuildRunnerScript(roomId, agent.Id, workingDir, executable, args),
+                BuildRunnerScript(roomId, agent.Id, workingDir, executable, args, theme),
                 ScriptFile.Ps1);
 
             var spec = new ExternalSessionProxySpec
@@ -316,7 +316,9 @@ public static class ExternalSessionService
                     CreateNoWindow = true,
                 };
                 start.ArgumentList.Add("-w");
-                start.ArgumentList.Add("0");
+                // 외부 세션은 전용 창으로 격리한다. 복귀 후 종료된 탭이 사용 중인 기존 터미널에
+                // 남지 않고, 다른 사용자의 탭도 건드리지 않는다.
+                start.ArgumentList.Add("-1");
                 start.ArgumentList.Add("new-tab");
                 // CLI(claude/codex 등)가 OSC title escape로 탭 제목을 덮어쓰지 못하게 고정한다.
                 start.ArgumentList.Add("--suppressApplicationTitle");
@@ -448,10 +450,15 @@ public static class ExternalSessionService
         string agentId,
         string workingDir,
         string executable,
-        IReadOnlyList<string> args)
+        IReadOnlyList<string> args,
+        string theme)
     {
         static string Q(string value) => "'" + value.Replace("'", "''") + "'";
         var quotedArgs = string.Join(", ", args.Select(Q));
+        var command = agentId == "devezvibe"
+            ? "chcp 65001 > $null\r\n" +
+              $"& {Q(executable)} --theme {Q(theme)} @cliArgs\r\n"
+            : $"& {Q(executable)} @cliArgs\r\n";
         return
             "$ErrorActionPreference = 'Stop'\r\n" +
             $"$env:DEVEZCODE_ROOM_ID = {Q(roomId)}\r\n" +
@@ -461,7 +468,7 @@ public static class ExternalSessionService
             "Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue\r\n" +
             $"Set-Location -LiteralPath {Q(workingDir)}\r\n" +
             $"$cliArgs = @({quotedArgs})\r\n" +
-            $"& {Q(executable)} @cliArgs\r\n" +
+            command +
             "$code = $LASTEXITCODE\r\n" +
             "if ($null -eq $code) { $code = 0 }\r\n" +
             "exit $code\r\n";
