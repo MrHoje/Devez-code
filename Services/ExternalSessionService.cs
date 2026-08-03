@@ -561,20 +561,31 @@ public static class ExternalSessionService
         catch { /* 실패해도 사용자가 외부 탭을 직접 닫으면 복귀 가능 */ }
     }
 
+    /// <summary>인앱 복귀 요청 중인 전용 외부 창이 아직 남아 있으면 닫기를 재요청하고 true를 반환한다.
+    /// 호출자는 false가 될 때까지 내부 세션 재개를 보류해 창 종료가 화면 전환보다 항상 먼저 보이게 한다.</summary>
+    public static bool ShouldWaitForReturnWindowClose(string roomId)
+    {
+        try
+        {
+            if (!File.Exists(ReturnPath(roomId))) return false;
+            var window = GetTrackedExternalWindow(roomId);
+            if (window == IntPtr.Zero) return false;
+            PostMessage(window, WindowCloseMessage, IntPtr.Zero, IntPtr.Zero);
+            return true;
+        }
+        catch { return false; }
+    }
+
     /// <summary>복귀 요청을 보낸 방의 전용 외부 창만 정상 닫기 요청한다.</summary>
     private static void CloseExternalWindow(string roomId)
     {
         var marker = WindowMarker(roomId);
         try
         {
-            if (File.Exists(WindowHandlePath(roomId))
-                && long.TryParse(File.ReadAllText(WindowHandlePath(roomId), Encoding.ASCII).Trim(), out var rawHandle))
-            {
-                var savedWindow = new IntPtr(rawHandle);
-                if (IsWindow(savedWindow)
-                    && PostMessage(savedWindow, WindowCloseMessage, IntPtr.Zero, IntPtr.Zero))
-                    return;
-            }
+            var trackedWindow = GetTrackedExternalWindow(roomId);
+            if (trackedWindow != IntPtr.Zero
+                && PostMessage(trackedWindow, WindowCloseMessage, IntPtr.Zero, IntPtr.Zero))
+                return;
 
             // 이전 실행이나 HWND 기록 실패에 대한 폴백. 실행 중에는 고정 제목으로 찾을 수 있다.
             EnumWindows((window, _) =>
@@ -593,6 +604,19 @@ public static class ExternalSessionService
             }, IntPtr.Zero);
         }
         catch { }
+    }
+
+    private static IntPtr GetTrackedExternalWindow(string roomId)
+    {
+        try
+        {
+            if (!File.Exists(WindowHandlePath(roomId))
+                || !long.TryParse(File.ReadAllText(WindowHandlePath(roomId), Encoding.ASCII).Trim(), out var rawHandle))
+                return IntPtr.Zero;
+            var window = new IntPtr(rawHandle);
+            return IsExternalTerminalWindow(window) ? window : IntPtr.Zero;
+        }
+        catch { return IntPtr.Zero; }
     }
 
     private static HashSet<IntPtr> CaptureExternalTerminalWindows()

@@ -4267,6 +4267,11 @@ public partial class MainWindow : Window
                     continue;
                 }
 
+                // 모든 에이전트 공통: 프록시 lock이 먼저 풀려도 전용 외부 창의 HWND가 실제로
+                // 사라진 뒤에만 내부 resume을 시작한다. 화면 전환보다 터미널 종료가 항상 먼저다.
+                if (ExternalSessionService.ShouldWaitForReturnWindowClose(session.Id))
+                    continue;
+
                 foreach (var pane in _panes)
                     pane.PumpExternalSessionOutput(session);
                 // 종료 순간 UI가 잠시 뒤처졌다면 다음 tick에도 계속 읽고, 모든 실제 미러가
