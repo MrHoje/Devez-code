@@ -48,9 +48,9 @@
     text-underline-offset: 3px;
   }
 
-  /* IME 조합 위치 고정: claude 같은 TUI는 하드웨어 커서를 입력 캐럿이 아닌
-     화면 끝에 파킹해서 조합 글자가 엉뚱한 곳에 뜬다. 조합 중(ime-fixed)에는
-     조합 글자와 textarea(후보창 기준점)를 입력란 블록커서 위치로 강제한다.
+  /* IME 조합 위치 고정: TUI 는 리페인트 중 하드웨어 커서를 입력 캐럿이 아닌 출력영역/
+     statusLine 으로 왕복시켜 조합 글자가 엉뚱한 곳에 뜬다. 조합 중(ime-fixed)에는
+     조합 글자와 textarea(후보창 기준점)를 조합 시작 시 잡은 입력 캐럿 좌표로 강제한다.
      xterm 은 0ms 루프로 인라인 left/top 을 계속 되돌리므로 — 인라인보다
      우선하는 !important CSS 변수로 무력화한다. */
   .term-container.ime-fixed .composition-view,
@@ -1251,9 +1251,9 @@
   //      "직전 음절 echo 도착 전" 좌표다 → 연타 시 직전 글자를 조합뷰가 덮는다.
   //
   // [에이전트 분류] — 새 에이전트 추가 시 첫 판정 (에이전트추가규칙.md §11-2)
-  //  A. 자체커서형(claude/gajae/grok): DECTCEM 으로 hw 커서 숨김 + 자체 캐럿 렌더.
-  //     → claude 만 블록커서 스캔으로 별도 처리, gajae/grok 은 무개입(조합 위치 정상).
-  //  B. hw커서형(codex/opencode): hw 커서가 입력 캐럿에 있음. pinsLogicalCaret 에
+  //  A. 자체커서형(gajae/grok): DECTCEM 으로 hw 커서 숨김 + 자체 캐럿 렌더 → 무개입(조합 위치 정상).
+  //     claude 도 예전엔 여기였지만 2026-08-03 계측으로 B형 확정(반전셀 스캔 영구 0건).
+  //  B. hw커서형(codex/opencode/devezvibe/claude): hw 커서가 입력 캐럿에 있음. pinsLogicalCaret 에
   //     agent id 한 줄 추가하면 아래 처방 4종(pin/chain/ghost/커서숨김) 전부 자동 적용.
   //
   // [처방 요약]
@@ -1292,18 +1292,16 @@
     // B형(hw커서형): 입력 캐럿 = 논리 커서. 조합 중 리페인트가 커서를 viewport 밖/statusLine
     // 으로 옮기면 xterm 이 조합뷰를 못 따라가거나(0,0 잔류) 여기저기 튄다 → 조합 중 고정 대상.
     // 새 B형 에이전트는 여기에 id 만 추가하면 pin/chain/ghost/커서숨김 전부 자동 적용된다.
-    // claude 도 2026-08-03 계측으로 B형 확정: 반전/배경/글리프 어디에도 캐럿 흔적이 없고
+    // claude 도 2026-08-03 계측으로 B형 확정: 반전/배경/블록글리프 어디에도 캐럿 흔적이 없고
     // (diag 전량 `cands[0]= alt=`) hw 커서가 입력 행에서 음절마다 2칸씩 전진(`cur=38,15→17→19`).
-    // 과거 A형 전제의 반전셀 스캔(scanClaudeCaret/isClaude 분기)은 구조적으로 0건이었고, claude 가
-    // pinsLogicalCaret 에 들어간 지금은 도달하지 않는다 — claude 가 자체 캐럿으로 되돌아갈 경우의
-    // 참고용으로만 남긴다(되살릴 때는 배경블록/글리프 폴백까지 함께 검증할 것).
+    // 옛 claude 전용 반전셀 스캔은 이 시점에 제거했다(영구 0건) — 자세한 근거는
+    // `.knowledge/터미널커스텀동작.md` §5 부류표 주석 참조.
     const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode' || agent === 'devezvibe' || agent === 'claude');
-    const isClaude = (agent === 'claude');
     // 입력란 아래 "캐럿일 수 없는" 하단 행 수. codex/opencode 는 statusLine 1줄, claude 는
     // 계측된 하단 3줄(구분선 + `main | Opus … | ctx` + `⏵⏵ … mode`). 커서가 그 영역에 파킹된
     // 순간 조합이 시작되면 앵커로 쓰지 않는다(잘못된 행 고정 > 폴백/no-pin 자가치유).
-    const bottomReserved = isClaude ? 3 : 1;
-    const needsCaretFix = pinsLogicalCaret || isClaude; // 그 외(gajae/grok/셸)는 전부 무개입
+    const bottomReserved = (agent === 'claude') ? 3 : 1;
+    const needsCaretFix = pinsLogicalCaret; // 그 외(gajae/grok/셸)는 전부 무개입
     let isImeComposing = false;   // compositionstart~end 사이 true. 모든 지연 콜백의 유효성 가드.
     let lastLogicalCaret = null;  // B형: 마지막으로 관측한 유효 논리 커서(커서가 범위 밖일 때 폴백)
 
@@ -1509,8 +1507,6 @@
       if (!chars.length) { clearGhost(); return; } // 전부 도착 — 완료
       if (trimmed) { ghost.text = chars.join(''); showGhost(); } // 남은 미도착분만 다시 그림
     }
-    let lastClaudeCaret = null;      // claude: 마지막으로 스캔 성공한 블록커서 좌표(스캔 실패 프레임 폴백)
-    let lastClaudeScanAt = 0;        // claude: 전체 셀 스캔 스로틀 기준 시각
     let frozenImeCaret = null;       // [pin] 이번 조합 동안 동결된 좌표 — 리페인트가 와도 안 바뀜
     let pendingResponseReset = false; // 응답 완료 신호가 조합 중에 도착 — 누락된 end 감시 안전망 플래그
     let responseResetTimer = 0;
@@ -1657,69 +1653,14 @@
       lastLogicalCaret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
     }
 
-    function scanClaudeBlockCursor() {
-      const buf = term.buffer.active;
-      // Claude 의 자체 입력 커서 = 반전된 빈 셀. 현재 보이는 viewport 만 아래→위로 훑는다.
-      // 맨 아래 1줄은 상태바이므로 후보에서 제외한다.
-      for (let row = Math.max(0, term.rows - 2); row >= 0; row--) {
-        const line = buf.getLine(buf.viewportY + row);
-        if (!line) continue;
-        for (let col = 0; col < term.cols; col++) {
-          const cell = line.getCell(col);
-          if (!cell || !cell.isInverse()) continue;
-          const ch = cell.getChars();
-          if (ch === '' || ch === ' ') return { row: row, col: col };
-        }
-      }
-      return null;
-    }
-
-    // [폴백] 반전(SGR 7) 스캔이 0건일 때 — claude 버전에 따라 입력 캐럿을 reverse 가 아니라
-    // ① 명시적 배경색 빈 셀 ② 블록 글리프(█/▌/▎)로 그린다(diag 전량 `anchor=claude null` 근거).
-    // 오탐 방지: ①은 좌우 이웃이 기본 배경인 폭 1 셀만 인정(선택 하이라이트·헤더 바 제외).
-    function scanClaudeAltCaret() {
-      const buf = term.buffer.active;
-      for (let row = Math.max(0, term.rows - 2); row >= 0; row--) {
-        const line = buf.getLine(buf.viewportY + row);
-        if (!line) continue;
-        for (let col = 0; col < term.cols; col++) {
-          const cell = line.getCell(col);
-          if (!cell) continue;
-          const ch = cell.getChars();
-          if (ch === '█' || ch === '▌' || ch === '▎' || ch === '▏') return { row: row, col: col };
-          if (ch !== '' && ch !== ' ') continue;
-          if (cell.isBgDefault()) continue;
-          const prev = col > 0 ? line.getCell(col - 1) : null;
-          const next = col + 1 < term.cols ? line.getCell(col + 1) : null;
-          if (prev && !prev.isBgDefault()) continue;
-          if (next && !next.isBgDefault()) continue;
-          return { row: row, col: col };
-        }
-      }
-      return null;
-    }
-
-    function scanClaudeCaret() {
-      return scanClaudeBlockCursor() || scanClaudeAltCaret();
-    }
-
-    function rememberClaudeCaret(force) {
-      if (!isClaude || isImeComposing) return;
-      const now = Date.now();
-      if (!force && now - lastClaudeScanAt < 80) return; // 고빈도 리페인트 중 전체 셀 스캔 제한
-      lastClaudeScanAt = now;
-      const caret = scanClaudeCaret();
-      if (!caret) return;
-      lastClaudeCaret = caret;
-    }
-
-    // 숨겨졌던 Claude 탭은 onRender가 생략되거나 블록커서가 꺼진 프레임에서 다시 표시될 수 있다.
-    // show 직후 즉시 한 번, 리페인트가 안정된 뒤 한 번 더 읽어 첫 한글 입력 전에 좌표를 준비한다.
+    // 숨겨졌던 탭이 다시 표시되는 순간엔 커서가 리페인트 도중 좌표(출력영역/statusLine)에
+    // 있을 수 있다. show 직후와 리페인트 진정 후 각 1회 읽어, 첫 한글 조합이 폴백 좌표
+    // (lastLogicalCaret)를 쓸 수 있게 준비한다 — 없으면 첫 음절만 no-pin 으로 어긋난다.
     el._prepareImeCaret = function () {
-      if (!isClaude) return;
-      rememberClaudeCaret(true);
+      if (!pinsLogicalCaret) return;
+      rememberLogicalCaret();
       setTimeout(function () {
-        if (roomId === activeRoomId && !isImeComposing) rememberClaudeCaret(true);
+        if (roomId === activeRoomId && !isImeComposing) rememberLogicalCaret();
       }, 80);
     };
 
@@ -1752,7 +1693,6 @@
         else
           expected = lastLogicalCaret;
       }
-      if (!expected && isClaude) expected = scanClaudeBlockCursor() || lastClaudeCaret;
 
       // active 조합뷰와 우리 상태가 불일치하면 xterm/WebView2 조합 이벤트가 누락된 상태다.
       // codex/opencode/claude TUI의 입력란은 구조상 화면 좌상단 셀이 아니므로, 이 대상들의
@@ -1840,15 +1780,6 @@
           }, 80);
         });
       } catch (e) {}
-    } else if (isClaude) {
-      rememberClaudeCaret();
-      try {
-        term.onRender(function () { rememberClaudeCaret(false); });
-        term.onResize(function () {
-          if (isImeComposing) apply();
-          else rememberClaudeCaret(true); // 리사이즈 후 좌표계가 바뀌므로 강제 재스캔
-        });
-      } catch (e) {}
     }
 
     // [고착 수사] codex/opencode 가 커서 스타일(DECSCUSR)·블링크(DECSET/RST 12)를 런타임에
@@ -1874,9 +1805,8 @@
     }
 
     // 이번 조합의 앵커 좌표를 결정한다. 우선순위:
-    //  B형: ① chain 예약분(직전 확정의 전진 좌표, 250ms 내 1회) → ② 라이브 논리 커서
-    //       → ③ 마지막 유효 좌표(커서가 순간 범위 밖일 때)
-    //  claude: ① 블록커서 스캔 → ② 캐시(cached 마킹 — 이후 재스캔이 교정 가능하게)
+    //  ① chain 예약분(직전 확정의 전진 좌표, 250ms 내 1회) → ② 라이브 논리 커서
+    //  → ③ 마지막 유효 좌표(커서가 순간 범위 밖이거나 하단 예약행에 파킹됐을 때)
     function findBlockCursor() {
       if (pinsLogicalCaret) {
         // [chain 소비] 직전 음절 확정 직후의 연속 조합 — echo 미도착 논리 커서 대신 예상 좌표.
@@ -1925,75 +1855,13 @@
         imeDiag('anchor=live ' + caret.row + ',' + caret.col + ' rows=' + term.rows + ' cols=' + term.cols);
         return caret;
       }
-      if (isClaude) {
-        const caret = scanClaudeCaret();
-        // [진단] "한글이 화면 중앙에 뜸" 재현 시 어느 반전셀을 물었는지 확정용. 스캔은 첫 매치만
-        // 반환하므로, 화면의 모든 반전 빈/스페이스셀 후보를 함께 남겨 중앙 셀이 하단 입력캐럿을
-        // 이겼는지(=오탐) 판별한다. claude 분기는 원래 무로그라 이 증상이 관측 불가였다.
-        try {
-          const cands = [];
-          const buf = term.buffer.active;
-          for (let r = Math.max(0, term.rows - 2); r >= 0; r--) {
-            const ln = buf.getLine(buf.viewportY + r);
-            if (!ln) continue;
-            for (let c = 0; c < term.cols; c++) {
-              const cl = ln.getCell(c);
-              if (!cl || !cl.isInverse()) continue;
-              const g = cl.getChars();
-              if (g === '' || g === ' ') cands.push(r + ',' + c);
-            }
-          }
-          // [진단2] 반전 후보가 0건인 claude 버전용 — 하단 8행에서 배경색 지정 셀/블록 글리프를
-          // 좌표+글리프+bg 모드와 함께 남겨 실제 캐럿 렌더 방식을 확정한다.
-          const alt = [];
-          for (let r = term.rows - 1; r >= Math.max(0, term.rows - 8) && alt.length < 14; r--) {
-            const ln = buf.getLine(buf.viewportY + r);
-            if (!ln) continue;
-            for (let c = 0; c < term.cols && alt.length < 14; c++) {
-              const cl = ln.getCell(c);
-              if (!cl) continue;
-              const g = cl.getChars();
-              const blockGlyph = (g === '█' || g === '▌' || g === '▎' || g === '▏');
-              if (!blockGlyph && cl.isBgDefault()) continue;
-              alt.push(r + ',' + c + ':' + (blockGlyph ? 'glyph' : 'bg' + cl.getBgColorMode() + '/' + cl.getBgColor()));
-            }
-          }
-          // [진단3] 셀 속성에 캐럿 흔적이 전무한 claude 버전 — hw 커서를 쓰는지(=B형 전환) 판별용
-          // 논리 커서와 하단 3행 텍스트를 함께 남긴다.
-          const tails = [];
-          for (let r = term.rows - 3; r <= term.rows - 1; r++) {
-            const ln = buf.getLine(buf.viewportY + r);
-            tails.push(r + ':' + (ln ? ln.translateToString(true).slice(0, 40) : 'null'));
-          }
-          imeDiag('anchor=claude ' + (caret ? caret.row + ',' + caret.col : 'null') +
-            ' rows=' + term.rows + ' vpY=' + buf.viewportY +
-            ' cur=' + buf.cursorY + ',' + buf.cursorX + ' type=' + buf.type +
-            ' cands[' + cands.length + ']=' + cands.slice(0, 12).join(' ') +
-            ' alt=' + alt.join(' ') +
-            ' tail=' + tails.join(' | '));
-        } catch (e) {}
-        if (caret) {
-          lastClaudeCaret = caret;
-          return caret;
-        }
-        // blink/repaint 한 프레임에서 반전 셀이 사라져도 좌상단 기본값으로 떨어지지 않게 마지막 정상
-        // 좌표를 임시 사용한다. cached 표시는 후속 compositionupdate/60ms 재스캔이 교정할 수 있게 한다.
-        if (lastClaudeCaret) {
-          imeDiag('anchor=claude-cached ' + lastClaudeCaret.row + ',' + lastClaudeCaret.col);
-          return {
-            row: Math.max(0, Math.min(lastClaudeCaret.row, term.rows - 1)),
-            col: Math.max(0, Math.min(lastClaudeCaret.col, term.cols - 1)),
-            cached: true
-          };
-        }
-      }
       return null;
     }
 
     // [pin 적용] 앵커 좌표를 픽셀로 환산해 CSS 변수(--ime-left/top)에 쓰고 .ime-fixed 를
     // 부착한다. xterm 은 0ms 루프로 조합뷰/textarea 의 인라인 left/top 을 계속 논리 커서로
     // 되돌리므로, 인라인보다 우선하는 !important CSS 변수로 무력화한다(CSS 정의부 참조).
-    // 좌표가 없으면(claude 첫 조합 + 스캔 실패 + 캐시 없음) 아무것도 안 한다 — xterm 기본
+    // 좌표가 없으면(커서가 하단 예약행 파킹 + 폴백 좌표 없음) 아무것도 안 한다 — xterm 기본
     // 동기화가 잠깐 어긋나 보일 수 있지만, 숨기는 시도(-9999px)는 지연 apply 와 결합해
     // "조합 전체 안 보임" 회귀를 냈던 폐기된 접근이다. 어긋남 < 안 보임.
     function apply() {
@@ -2004,9 +1872,7 @@
       if (!isImeComposing) return;
       const caret = frozenImeCaret || findBlockCursor(); // 동결분이 있으면 그대로(조합 중 부동)
       if (!caret) return;
-      // 실시간 좌표만 동결한다. claude 캐시 폴백(cached)은 동결하지 않음 — 이후 60ms 재시도/
-      // compositionupdate 재적용 때 실제 블록커서가 나타나면 그쪽으로 교정될 여지를 남긴다.
-      if (!caret.cached) frozenImeCaret = caret;
+      frozenImeCaret = caret;
       const screen = el.querySelector('.xterm-screen');
       if (!screen) return;
       // 셀 픽셀 크기 실측 환산 — showGhost() 와 동일 식(동일해야 고스트와 조합뷰가 정렬됨).
@@ -2096,8 +1962,8 @@
       if (pinsLogicalCaret) hideHwCursor(); // B형: 조합 동안 블록커서 깜빡임 제거(A형과 동일 UX)
       if (pendingResponseReset) armStaleCompositionReset();
       apply();                            // 여기서 chain 예약이 있으면 소비되어 앵커가 된다
-      // 60ms 재시도: claude 캐시 폴백(cached)으로 시작한 경우 직전 확정 글자가 TUI 에 반영돼
-      // 블록커서가 실좌표에 나타난 뒤 교정하기 위함. B형은 이미 동결돼 있어 no-op.
+      // 60ms 재시도: 앵커를 못 잡아 no-pin 으로 시작한 경우(커서가 하단 예약행에 파킹 + 폴백 없음)
+      // 그 사이 커서가 입력란으로 복귀하면 그때 동결한다. 이미 동결됐으면 no-op.
       // (조합이 60ms 안에 끝나면 apply 의 isImeComposing 가드가 무해하게 흡수)
       setTimeout(apply, 60);
       // 고착 수사 스냅샷 — 조합/pin 이 자리잡은 뒤(120ms) 실제 페인트 상태. 500ms 스로틀(저볼륨).
@@ -2121,7 +1987,7 @@
       }
       if (pendingResponseReset) armStaleCompositionReset();
       // setTimeout 0: xterm 이 같은 이벤트에서 조합뷰 textContent/inline 좌표를 갱신한 "다음에"
-      // 우리 좌표를 다시 얹기 위한 태스크 양보. (claude cached 교정 경로이기도 함)
+      // 우리 좌표를 다시 얹기 위한 태스크 양보. (no-pin 시작분의 교정 경로이기도 함)
       setTimeout(apply, 0);
     });
     ta.addEventListener('compositionend', function (e) {
