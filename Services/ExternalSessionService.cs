@@ -39,6 +39,7 @@ public static class ExternalSessionService
     private static string OutputPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".output.bin");
     private static string SizePath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".size");
     private static string SnapshotPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".png");
+    private static string WindowHandlePath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".hwnd");
     private static string WindowMarker(string roomId) => $"[DevezCodeExternal:{SafeName(roomId)}]";
     private static string WindowTitle(string roomId, string sessionName, string fallback)
         => $"{(string.IsNullOrWhiteSpace(sessionName) ? fallback : sessionName)} {WindowMarker(roomId)}";
@@ -359,13 +360,28 @@ public static class ExternalSessionService
                 start.ArgumentList.Add(ScriptPath(roomId));
             }
 
+            var windowsBeforeLaunch = CaptureExternalTerminalWindows();
             Process.Start(start);
 
             var timeout = DateTime.UtcNow + TimeSpan.FromSeconds(10);
             while (DateTime.UtcNow < timeout)
             {
                 if (GetState(roomId) == ExternalSessionState.Running)
+                {
+                    // Windows Terminal은 명령 종료 뒤 창 제목을 "Terminal"로 되돌린다. 생성 직후 실제 HWND를
+                    // 저장해야 복귀 시 제목이 사라져도 해당 전용 창만 정확히 닫을 수 있다.
+                    for (int attempt = 0; attempt < 10; attempt++)
+                    {
+                        var window = FindExternalTerminalWindow(roomId, windowsBeforeLaunch);
+                        if (window != IntPtr.Zero)
+                        {
+                            File.WriteAllText(WindowHandlePath(roomId), window.ToInt64().ToString(), Encoding.ASCII);
+                            break;
+                        }
+                        await Task.Delay(50);
+                    }
                     return (true, null);
+                }
                 await Task.Delay(100);
             }
             return (false, "외부 세션이 시작되지 않았습니다.");
@@ -551,6 +567,16 @@ public static class ExternalSessionService
         var marker = WindowMarker(roomId);
         try
         {
+            if (File.Exists(WindowHandlePath(roomId))
+                && long.TryParse(File.ReadAllText(WindowHandlePath(roomId), Encoding.ASCII).Trim(), out var rawHandle))
+            {
+                var savedWindow = new IntPtr(rawHandle);
+                if (IsWindow(savedWindow)
+                    && PostMessage(savedWindow, WindowCloseMessage, IntPtr.Zero, IntPtr.Zero))
+                    return;
+            }
+
+            // 이전 실행이나 HWND 기록 실패에 대한 폴백. 실행 중에는 고정 제목으로 찾을 수 있다.
             EnumWindows((window, _) =>
             {
                 try
@@ -569,6 +595,52 @@ public static class ExternalSessionService
         catch { }
     }
 
+    private static HashSet<IntPtr> CaptureExternalTerminalWindows()
+    {
+        var windows = new HashSet<IntPtr>();
+        try
+        {
+            EnumWindows((window, _) =>
+            {
+                if (IsExternalTerminalWindow(window)) windows.Add(window);
+                return true;
+            }, IntPtr.Zero);
+        }
+        catch { }
+        return windows;
+    }
+
+    private static IntPtr FindExternalTerminalWindow(string roomId, HashSet<IntPtr> windowsBeforeLaunch)
+    {
+        var marker = WindowMarker(roomId);
+        var candidates = new List<IntPtr>();
+        IntPtr exact = IntPtr.Zero;
+        try
+        {
+            EnumWindows((window, _) =>
+            {
+                if (!IsExternalTerminalWindow(window) || windowsBeforeLaunch.Contains(window)) return true;
+                candidates.Add(window);
+                var length = GetWindowTextLength(window);
+                if (length <= 0) return true;
+                var title = new StringBuilder(length + 1);
+                GetWindowText(window, title, title.Capacity);
+                if (title.ToString().Contains(marker, StringComparison.Ordinal)) exact = window;
+                return true;
+            }, IntPtr.Zero);
+        }
+        catch { }
+        return exact != IntPtr.Zero ? exact : candidates.Count == 1 ? candidates[0] : IntPtr.Zero;
+    }
+
+    private static bool IsExternalTerminalWindow(IntPtr window)
+    {
+        if (!IsWindow(window)) return false;
+        var className = new StringBuilder(128);
+        if (GetClassName(window, className, className.Capacity) <= 0) return false;
+        return className.ToString() is "CASCADIA_HOSTING_WINDOW_CLASS" or "ConsoleWindowClass";
+    }
+
     private const uint WindowCloseMessage = 0x0010;
     private delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
 
@@ -580,6 +652,12 @@ public static class ExternalSessionService
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr window);
 
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
@@ -595,6 +673,7 @@ public static class ExternalSessionService
         TryDelete(OutputPath(roomId));
         TryDelete(SizePath(roomId));
         TryDelete(SnapshotPath(roomId));
+        TryDelete(WindowHandlePath(roomId));
     }
 
     private static void TryDelete(string path)
