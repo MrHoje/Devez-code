@@ -904,14 +904,6 @@
                                         </Ellipse.RenderTransform>
                                     </Ellipse>
                                 </Grid>
-                                <!-- 접힘 상태 집계 활성 점: 내부에 살아있는 세션이 하나라도 있으면 표시.
-                                     펼치면 세션 행의 StatusDot 이 같은 정보를 더 정확히 보여주므로 숨긴다. -->
-                                <Ellipse x:Name="ProjectAliveDot"
-                                         Width="6" Height="6"
-                                         Margin="0,0,6,0"
-                                         VerticalAlignment="Center"
-                                         Visibility="Collapsed"
-                                         Fill="{DynamicResource SessionAliveBrush}"/>
                                 <TextBlock b:SearchHighlight.Text="{Binding Name}"
                                            b:SearchHighlight.Query="{Binding SearchHighlightQuery, RelativeSource={RelativeSource AncestorType={x:Type local:SidebarView}}}"
                                            TextTrimming="CharacterEllipsis"
@@ -1212,15 +1204,6 @@
                     <Setter TargetName="ProjectHeaderIndicator" Property="Visibility" Value="Visible"/>
                     <Setter TargetName="ProjectMarker" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="ProjectBusySpinner" Property="Visibility" Value="Visible"/>
-                </MultiDataTrigger>
-                <!-- 접힘 + 내부 세션이 하나라도 살아있음 → 이름 왼쪽에 집계 활성 점.
-                     IsAlive 전이(시작·종료·유휴 자동 종료·테마 재시작)가 HasAliveSession 으로 즉시 전파된다. -->
-                <MultiDataTrigger>
-                    <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding IsExpanded}" Value="False"/>
-                        <Condition Binding="{Binding HasAliveSession}" Value="True"/>
-                    </MultiDataTrigger.Conditions>
-                    <Setter TargetName="ProjectAliveDot" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
                 <!-- 프로젝트 카드 호버: 활성/보관함 모두 같은 보더색 변경 -->
                 <MultiDataTrigger>
