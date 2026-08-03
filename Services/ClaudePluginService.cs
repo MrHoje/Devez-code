@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -218,14 +219,25 @@ public static class ClaudePluginService
     /// <summary>마켓플레이스 추가 — 보이는 콘솔로 띄운다(레거시/대체 경로).</summary>
     public static void SpawnMarketplaceAdd(string source) => SpawnConsole($"plugin marketplace add {Q(source)}");
 
-    /// <summary>앱 시작 시 devez-marketplace 갱신 + hoje-code 플러그인을 <b>완전 조용히</b>(창·모달·알림 없이) 최신화한다.
+    /// <summary>앱 시작 시 설치된 devez-marketplace와 사용 중인 hoje-code 플러그인만 <b>완전 조용히</b>(창·모달·알림 없이) 최신화한다.
     /// 내부적으로 <see cref="MarketplaceUpdateAsync"/>/<see cref="UpdateAsync"/> 를 재사용하며, 둘 다
     /// <c>cmd /c</c> + <c>CreateNoWindow=true</c> 라 콘솔이 뜨지 않는다. 실패해도 삼키고 넘어간다(fire-and-forget).
     /// 시작 지연을 주지 않으려 호출부는 await 하지 않고 버린다.</summary>
     public static async Task UpdateDevezSilentlyAsync()
     {
-        try { await MarketplaceUpdateAsync("devez-marketplace"); } catch { /* 오프라인/CLI 미설치 등: 조용히 무시 */ }
-        try { await UpdateAsync("hoje-code@devez-marketplace"); }    catch { /* 조용히 무시 */ }
+        try
+        {
+            var marketplaces = await MarketplacesAsync();
+            if (!marketplaces.Any(m => string.Equals(m.Name, "devez-marketplace", StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            await MarketplaceUpdateAsync("devez-marketplace");
+
+            var plugins = await ListAsync();
+            if (plugins.Any(p => p.Enabled && string.Equals(p.Id, "hoje-code@devez-marketplace", StringComparison.OrdinalIgnoreCase)))
+                await UpdateAsync("hoje-code@devez-marketplace");
+        }
+        catch { /* 오프라인/CLI 미설치 등: 조용히 무시 */ }
     }
 
     // ── 실행 헬퍼 ─────────────────────────────────────────────────
