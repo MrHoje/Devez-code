@@ -1292,9 +1292,17 @@
     // B형(hw커서형): 입력 캐럿 = 논리 커서. 조합 중 리페인트가 커서를 viewport 밖/statusLine
     // 으로 옮기면 xterm 이 조합뷰를 못 따라가거나(0,0 잔류) 여기저기 튄다 → 조합 중 고정 대상.
     // 새 B형 에이전트는 여기에 id 만 추가하면 pin/chain/ghost/커서숨김 전부 자동 적용된다.
-    const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode' || agent === 'devezvibe');
-    // claude 는 A형(자체커서형)이지만 조합 위치가 틀어지는 유일한 A형이라 블록커서 스캔으로 처리.
+    // claude 도 2026-08-03 계측으로 B형 확정: 반전/배경/글리프 어디에도 캐럿 흔적이 없고
+    // (diag 전량 `cands[0]= alt=`) hw 커서가 입력 행에서 음절마다 2칸씩 전진(`cur=38,15→17→19`).
+    // 과거 A형 전제의 반전셀 스캔(scanClaudeCaret/isClaude 분기)은 구조적으로 0건이었고, claude 가
+    // pinsLogicalCaret 에 들어간 지금은 도달하지 않는다 — claude 가 자체 캐럿으로 되돌아갈 경우의
+    // 참고용으로만 남긴다(되살릴 때는 배경블록/글리프 폴백까지 함께 검증할 것).
+    const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode' || agent === 'devezvibe' || agent === 'claude');
     const isClaude = (agent === 'claude');
+    // 입력란 아래 "캐럿일 수 없는" 하단 행 수. codex/opencode 는 statusLine 1줄, claude 는
+    // 계측된 하단 3줄(구분선 + `main | Opus … | ctx` + `⏵⏵ … mode`). 커서가 그 영역에 파킹된
+    // 순간 조합이 시작되면 앵커로 쓰지 않는다(잘못된 행 고정 > 폴백/no-pin 자가치유).
+    const bottomReserved = isClaude ? 3 : 1;
     const needsCaretFix = pinsLogicalCaret || isClaude; // 그 외(gajae/grok/셸)는 전부 무개입
     let isImeComposing = false;   // compositionstart~end 사이 true. 모든 지연 콜백의 유효성 가드.
     let lastLogicalCaret = null;  // B형: 마지막으로 관측한 유효 논리 커서(커서가 범위 밖일 때 폴백)
@@ -1645,7 +1653,7 @@
       if (!pinsLogicalCaret || isImeComposing) return;
       const buf = term.buffer.active;
       const row = buf.cursorY, col = buf.cursorX;
-      if (row < 0 || row >= term.rows - 1) return;
+      if (row < 0 || row >= term.rows - bottomReserved) return;
       lastLogicalCaret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
     }
 
@@ -1880,7 +1888,7 @@
           const chained = { // 예약~소비 사이 fit 리사이즈가 끼어들 수 있어 현재 그리드로 클램프
             // rows-2 상한: 입력란은 구조상 statusLine(rows-1) 위 — rows-1 로 클램프하면
             // 리사이즈 축소 시 statusLine 에 앵커가 꽂혀 우측 끝 조합 표시가 재발한다.
-            row: Math.max(0, Math.min(chainCaret.row, term.rows - 2)),
+            row: Math.max(0, Math.min(chainCaret.row, term.rows - bottomReserved - 1)),
             col: Math.max(0, Math.min(chainCaret.col, term.cols - 1))
           };
           chainCaret = null; // 1회 소비 — 같은 예약이 두 조합에 쓰이면 두 번째는 반드시 틀린다
@@ -1894,7 +1902,7 @@
         // 폴백 좌표는 현재 그리드 기준으로 유효할 때만 신뢰 — 리사이즈로 행수가 줄면 기록해
         // 둔 입력란 행이 지금은 statusLine(rows-1)일 수 있고, 그대로 폴백하면 아래 lastrow
         // 가드를 스스로 무력화한다(statusLine 우측 끝 조합 표시 재발).
-        const lastValid = (lastLogicalCaret && lastLogicalCaret.row < term.rows - 1)
+        const lastValid = (lastLogicalCaret && lastLogicalCaret.row < term.rows - bottomReserved)
           ? lastLogicalCaret : null;
         if (row < 0 || row >= term.rows) { // 순간적 범위 밖 — 마지막 유효 좌표 폴백
           imeDiag('anchor=oob cur=' + row + ',' + col + ' last=' + JSON.stringify(lastValid));
@@ -1907,7 +1915,7 @@
         // 폴백조차 없으면 pin 을 포기(null)한다 — statusLine 좌표를 동결하면 chain 이 오류를
         // 음절마다 전파하지만, null 이면 frozenImeCaret 이 비어 있어 compositionupdate 의
         // 재적용이 커서가 입력란으로 복귀하는 즉시 정상 앵커로 자가 치유된다.
-        if (row === term.rows - 1) {
+        if (row >= term.rows - bottomReserved) {
           imeDiag('anchor=lastrow-fallback cur=' + row + ',' + col + ' -> ' +
             (lastValid ? lastValid.row + ',' + lastValid.col : 'none(no-pin)'));
           return lastValid;
@@ -1950,10 +1958,19 @@
               alt.push(r + ',' + c + ':' + (blockGlyph ? 'glyph' : 'bg' + cl.getBgColorMode() + '/' + cl.getBgColor()));
             }
           }
+          // [진단3] 셀 속성에 캐럿 흔적이 전무한 claude 버전 — hw 커서를 쓰는지(=B형 전환) 판별용
+          // 논리 커서와 하단 3행 텍스트를 함께 남긴다.
+          const tails = [];
+          for (let r = term.rows - 3; r <= term.rows - 1; r++) {
+            const ln = buf.getLine(buf.viewportY + r);
+            tails.push(r + ':' + (ln ? ln.translateToString(true).slice(0, 40) : 'null'));
+          }
           imeDiag('anchor=claude ' + (caret ? caret.row + ',' + caret.col : 'null') +
             ' rows=' + term.rows + ' vpY=' + buf.viewportY +
+            ' cur=' + buf.cursorY + ',' + buf.cursorX + ' type=' + buf.type +
             ' cands[' + cands.length + ']=' + cands.slice(0, 12).join(' ') +
-            ' alt=' + alt.join(' '));
+            ' alt=' + alt.join(' ') +
+            ' tail=' + tails.join(' | '));
         } catch (e) {}
         if (caret) {
           lastClaudeCaret = caret;
