@@ -98,7 +98,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.22.4", "2026-08-03", true, new[]
+          ("v1.22.5", "2026-08-03", true, new[]
+          {
+              "업데이트 노트가 두 줄 이상으로 표시될 때 글머리 기호 아래로 문장이 붙어 어긋나 보이던 문제를 수정했습니다.",
+          }),
+          ("v1.22.4", "2026-08-03", false, new[]
           {
               "Node.js가 설치되지 않은 경우 앱 시작 시 설치를 안내하고, 동의하면 앱 안에서 바로 설치하도록 추가했습니다.",
               "세션이 준비 중인 동안에는 작업 중 표시가 켜지지 않도록 수정했습니다.",
