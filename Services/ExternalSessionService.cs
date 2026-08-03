@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
@@ -38,6 +39,9 @@ public static class ExternalSessionService
     private static string OutputPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".output.bin");
     private static string SizePath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".size");
     private static string SnapshotPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".png");
+    private static string WindowMarker(string roomId) => $"[DevezCodeExternal:{SafeName(roomId)}]";
+    private static string WindowTitle(string roomId, string sessionName, string fallback)
+        => $"{(string.IsNullOrWhiteSpace(sessionName) ? fallback : sessionName)} {WindowMarker(roomId)}";
 
     public static bool IsWindowsTerminalAvailable() => ResolveWindowsTerminalPath() != null;
 
@@ -260,6 +264,7 @@ public static class ExternalSessionService
 
         try
         {
+            var windowTitle = WindowTitle(roomId, sessionName, agent.DisplayName);
             Directory.CreateDirectory(RootDir);
             var runnerPath = RunnerPath(roomId);
             var specPath = SpecPath(roomId);
@@ -303,7 +308,7 @@ public static class ExternalSessionService
                 ScriptPath(roomId),
                 BuildWrapperScript(
                     TicketPath(roomId), token, roomId,
-                    agent.Id, workingDir, proxyExecutable, specPath),
+                    agent.Id, workingDir, proxyExecutable, specPath, windowTitle),
                 ScriptFile.Ps1);
 
             ProcessStartInfo start;
@@ -323,7 +328,7 @@ public static class ExternalSessionService
                 // CLI(claude/codex 등)가 OSC title escape로 탭 제목을 덮어쓰지 못하게 고정한다.
                 start.ArgumentList.Add("--suppressApplicationTitle");
                 start.ArgumentList.Add("--title");
-                start.ArgumentList.Add(string.IsNullOrWhiteSpace(sessionName) ? agent.DisplayName : sessionName);
+                start.ArgumentList.Add(windowTitle);
                 start.ArgumentList.Add("--startingDirectory");
                 start.ArgumentList.Add(workingDir);
                 start.ArgumentList.Add("powershell.exe");
@@ -481,7 +486,8 @@ public static class ExternalSessionService
         string agentId,
         string workingDir,
         string proxyExecutable,
-        string specPath)
+        string specPath,
+        string windowTitle)
     {
         static string Q(string value) => "'" + value.Replace("'", "''") + "'";
         return
@@ -497,6 +503,8 @@ public static class ExternalSessionService
             "$env:FORCE_COLOR = '3'\r\n" +
             "$env:COLORTERM = 'truecolor'\r\n" +
             "Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue\r\n" +
+            // Windows Terminal 없는 폴백 콘솔도 같은 식별 제목을 써야 복귀 시 해당 창만 닫을 수 있다.
+            $"try {{ $Host.UI.RawUI.WindowTitle = {Q(windowTitle)} }} catch {{ }}\r\n" +
             // 이 래퍼(탭 셸)의 PID 를 프록시에 넘긴다 → 탭이 닫혀 래퍼가 죽으면 프록시가 즉시 감지해 정리.
             "$env:DEVEZCODE_WRAPPER_PID = $PID\r\n" +
             $"Set-Location -LiteralPath {Q(workingDir)}\r\n" +
@@ -532,9 +540,49 @@ public static class ExternalSessionService
         {
             Directory.CreateDirectory(RootDir);
             File.WriteAllText(ReturnPath(roomId), "1", Encoding.ASCII);
+            CloseExternalWindow(roomId);
         }
         catch { /* 실패해도 사용자가 외부 탭을 직접 닫으면 복귀 가능 */ }
     }
+
+    /// <summary>복귀 요청을 보낸 방의 전용 외부 창만 정상 닫기 요청한다.</summary>
+    private static void CloseExternalWindow(string roomId)
+    {
+        var marker = WindowMarker(roomId);
+        try
+        {
+            EnumWindows((window, _) =>
+            {
+                try
+                {
+                    var length = GetWindowTextLength(window);
+                    if (length <= 0) return true;
+                    var title = new StringBuilder(length + 1);
+                    GetWindowText(window, title, title.Capacity);
+                    if (title.ToString().Contains(marker, StringComparison.Ordinal))
+                        PostMessage(window, WindowCloseMessage, IntPtr.Zero, IntPtr.Zero);
+                }
+                catch { }
+                return true;
+            }, IntPtr.Zero);
+        }
+        catch { }
+    }
+
+    private const uint WindowCloseMessage = 0x0010;
+    private delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextLength(IntPtr window);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
     private static void CleanupStoppedFiles(string roomId)
     {
