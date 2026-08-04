@@ -3019,7 +3019,8 @@ public partial class MainWindow : Window
 
         _updateInProgress = false;
         if (test) { _pendingUpdate = null; Sidebar.HideUpdateButton(); return; } // 테스트: 뒷정리만
-        Sidebar.ShowUpdateButton(info.Version); // 취소·실패 → 버튼 복원
+        if (outcome == UpdateOutcome.Cancelled)
+            Sidebar.ShowUpdateButton(info.Version); // 나중에 선택한 경우에만 버튼 복원
 
         if (outcome == UpdateOutcome.ElevationDenied)
         {
