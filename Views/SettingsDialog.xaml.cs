@@ -700,6 +700,7 @@ public partial class SettingsDialog : UserControl
         UsagePanel.Visibility      = key == "usage"      ? Visibility.Visible : Visibility.Collapsed;
         McpPanel.Visibility        = key == "mcp"        ? Visibility.Visible : Visibility.Collapsed;
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
+        if (key != "changelog") ChangelogPager.Visibility = Visibility.Collapsed;
         LicensesPanel.Visibility   = key == "licenses"   ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
         NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;

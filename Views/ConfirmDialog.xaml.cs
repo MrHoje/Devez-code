@@ -34,14 +34,25 @@ public partial class ConfirmDialog : Window
         if (owner is { IsLoaded: true } && owner != dialog) dialog.Owner = owner;
     }
 
-    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false, string? cancelLabel = null)
+    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false, string? cancelLabel = null, bool updateTypography = false)
     {
         InitializeComponent();
         Title = title;
         TitleText.Text = title;
+        var messageFontSize = updateTypography ? 14 : 13;
+        if (updateTypography)
+        {
+            TitleText.SetResourceReference(TextBlock.FontSizeProperty, "Fs15");
+            HeaderCloseBtn.SetResourceReference(Control.FontSizeProperty, "Fs12");
+            MessageText.SetResourceReference(TextBlock.FontSizeProperty, "Fs14");
+            ProgressLabel.SetResourceReference(TextBlock.FontSizeProperty, "Fs13");
+            ProgressPercent.SetResourceReference(TextBlock.FontSizeProperty, "Fs13");
+            CancelBtn.SetResourceReference(Control.FontSizeProperty, "Fs14");
+            OkBtn.SetResourceReference(Control.FontSizeProperty, "Fs14");
+        }
         // 글머리 기호 목록이 섞인 메시지(업데이트 노트)는 줄 단위 렌더로 매달린 들여쓰기를 적용한다.
         // 기호가 없는 평범한 메시지는 기존 단일 TextBlock 경로 그대로.
-        if (NoteText.Render(MessageHost, message, (Brush)FindResource("TextBrush"), 13, 22))
+        if (NoteText.Render(MessageHost, message, (Brush)FindResource("TextBrush"), messageFontSize, 22))
         {
             MessageText.Visibility = Visibility.Collapsed;
             MessageHost.Visibility = Visibility.Visible;
@@ -131,7 +142,8 @@ public partial class ConfirmDialog : Window
         bool indeterminateProgress = false)
     {
         var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger: false,
-                                       confirmText: null, wideLayout: false, autoWidth: true);
+                                       confirmText: null, wideLayout: false, autoWidth: true,
+                                       updateTypography: true);
         dialog._download = download;
         dialog._indeterminateProgress = indeterminateProgress;
         dialog.CancelText.Text = cancelLabel;
