@@ -67,9 +67,9 @@ public static class SessionUsageService
         if (m.Contains("opus")) return new Price(5, 25, DefW5m, DefW1h, DefRead);
         if (m.Contains("sonnet")) return new Price(3, 15, DefW5m, DefW1h, DefRead); // Sonnet 5 정가(인트로 $2/$10 은 2026-08 까지 — 정가 기준 표시)
         if (m.Contains("haiku")) return new Price(1, 5, DefW5m, DefW1h, DefRead);
-        // GPT-5.6 티어별(2026-07 공시가). cached read ×0.1, cache write ×1.25(5.6부터 write 과금).
-        if (m.Contains("gpt-5.6-terra")) return new Price(2.5, 15, DefW5m, DefW1h, DefRead);
-        if (m.Contains("gpt-5.6-luna")) return new Price(1, 6, DefW5m, DefW1h, DefRead);
+        // GPT-5.6 티어별(2026-07-30 인하 반영). cached read ×0.1, cache write ×1.25(5.6부터 write 과금).
+        if (m.Contains("gpt-5.6-terra")) return new Price(2, 12, DefW5m, DefW1h, DefRead);
+        if (m.Contains("gpt-5.6-luna")) return new Price(0.2, 1.2, DefW5m, DefW1h, DefRead);
         if (m.Contains("gpt-5.6")) return new Price(5, 30, DefW5m, DefW1h, DefRead); // sol + 티어 미표기 폴백
         if (m.Contains("gpt-5.5")) return new Price(5, 30, DefW5m, DefW1h, DefRead);
         if (m.Contains("gpt-5.3-codex")) return new Price(1.75, 14, DefW5m, DefW1h, DefRead);

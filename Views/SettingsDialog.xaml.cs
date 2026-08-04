@@ -98,7 +98,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.22.5", "2026-08-03", true, new[]
+          ("v1.22.6", "2026-08-04", true, new[]
+          {
+              "세션 토큰 사용량의 비용 계산에서 GPT-5.6 Terra·Luna의 인하된 최신 단가를 반영했습니다.",
+          }),
+          ("v1.22.5", "2026-08-03", false, new[]
           {
               "업데이트 노트가 두 줄 이상으로 표시될 때 글머리 기호 아래로 문장이 붙어 어긋나 보이던 문제를 수정했습니다.",
           }),
