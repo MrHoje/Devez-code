@@ -25,20 +25,22 @@ public static class UpdateService
             ? $"{v.Major}.{v.Minor}.{v.Build}"
             : "1.0.0";
 
-    // devez-publish R2 버킷을 공유하되 객체 키만 DevezCode 전용으로 분리 (devez 객체와 충돌 없음).
-    private const string VersionUrl = "https://pub-37da98a9e72d4514aed3533375fb7368.r2.dev/DevezCode_version.json";
+    // devez-publish R2 버킷을 공유하되 devezcode/ 접두사로 제품별 객체를 분리한다.
+    private const string VersionUrl = "https://pub-37da98a9e72d4514aed3533375fb7368.r2.dev/devezcode/version.json";
 
     /// <summary>업데이트 다운로드를 허용할 신뢰 호스트(R2 버킷). 이 외 호스트·비 https URL 은 거부 → MITM/리다이렉트 강등 차단.</summary>
     private const string TrustedHost = "pub-37da98a9e72d4514aed3533375fb7368.r2.dev";
+    private const string TrustedPathPrefix = "/devezcode/";
 
-    /// <summary>https 이고 호스트가 신뢰 버킷인 URL만 허용. version.json 이 url/patchUrl 을 임의 도메인·http 로 바꿔치기하는 것을 막는다.</summary>
+    /// <summary>https·신뢰 호스트·DevezCode 전용 경로인 URL만 허용한다.</summary>
     public static bool IsTrustedUrl(string url)
         => Uri.TryCreate(url, UriKind.Absolute, out var u)
            && u.Scheme == Uri.UriSchemeHttps
-           && string.Equals(u.Host, TrustedHost, StringComparison.OrdinalIgnoreCase);
+           && string.Equals(u.Host, TrustedHost, StringComparison.OrdinalIgnoreCase)
+           && u.AbsolutePath.StartsWith(TrustedPathPrefix, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>자동 교체 실패 시 수동 재설치용 최신 인스톨러 URL. (R2에 이 키로 인스톨러를 올려둬야 함)</summary>
-    public const string InstallerUrl = "https://pub-37da98a9e72d4514aed3533375fb7368.r2.dev/DevezCode_Setup.zip";
+    public const string InstallerUrl = "https://pub-37da98a9e72d4514aed3533375fb7368.r2.dev/devezcode/DevezCode_Setup.zip";
 
     /// <summary>single-file self-extract 폴더에 전개된 zstd.exe 경로 (델타 복원용).</summary>
     private static string ZstdPath =>
