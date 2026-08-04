@@ -5,6 +5,8 @@
 터미널을 여러 개 띄우고 창을 옮겨 다니는 대신, 프로젝트·세션·파일 탐색기·임베디드 터미널을 한 화면에 모았습니다. 각 세션은 프로젝트 디렉터리에서 원하는 AI CLI를 실제로 실행합니다 — 래퍼가 아니라 진짜 CLI가 ConPTY 위에서 그대로 돕니다.
 
 > DevezCode 소스는 [MIT License](LICENSE). Visual Studio Image Library 및 서드파티 브랜드 자산은 제외됩니다 — [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [BRAND_ASSETS.md](BRAND_ASSETS.md) 참고.
+>
+> DevezCode는 독립적으로 개발된 프로젝트이며 Microsoft, Anthropic, OpenAI, xAI, Google, Moonshot AI 및 기타 에이전트·서비스 제공자와 제휴하거나 이들로부터 보증·후원받은 제품이 아닙니다. 제품명과 아이콘은 사용자가 실행하거나 확인할 외부 CLI·서비스를 식별하기 위한 용도로만 표시됩니다.
 
 ## 지원 에이전트
 
