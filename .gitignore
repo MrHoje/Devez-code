@@ -36,3 +36,7 @@ installer/Output/
 # superpowers 산출물(plans/specs — 로컬 전용)
 docs/superpowers/
 .verify/
+
+# WPF 마크업 컴파일(GenerateTemporaryTargetAssembly)이 만드는 임시 프로젝트.
+# 빌드가 중단되면 삭제되지 않고 남아 프로젝트가 두 개로 보여 dotnet build 가 MSB1011 로 실패한다.
+*_wpftmp.csproj
