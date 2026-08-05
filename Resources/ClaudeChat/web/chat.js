@@ -53,13 +53,22 @@
   let compactMarker = null;
   let pendingLocalCommand = "";
   let quietCommandInFlight = false;
+  let pendingResult = null;
   const markdownTemplate = document.createElement("template");
   const markdownBlockCache = new Map();
+  let markdownBlockCacheWeight = 0;
+  const markdownBlockCacheLimit = 2 * 1024 * 1024;
+  const escapedTablePipe = "\uE000";
+  const escapedTableBacktick = "\uE001";
+  const escapedTableBackslash = "\uE002";
   const tools = new Map();
   const tasks = new Map();
   const toolGroups = new Set();
   const assistantStreams = new Map();
   const thinkingStreams = new Map();
+  const graphemeSegmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter("ko", { granularity: "grapheme" })
+    : null;
   const imageTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
   const maxAttachments = 20;
   const maxImageEncodedBytes = 10 * 1024 * 1024;
@@ -282,9 +291,45 @@
     })[char]);
   }
 
+  function restoreTableEscapes(value) {
+    return String(value ?? "")
+      .replaceAll(escapedTablePipe, "|")
+      .replaceAll(escapedTableBacktick, "`")
+      .replaceAll(escapedTableBackslash, "\\");
+  }
+
+  function protectCodeSpans(value, code) {
+    const text = String(value ?? "");
+    let output = "";
+    for (let index = 0; index < text.length;) {
+      if (text[index] !== "`") { output += text[index++]; continue; }
+
+      let markerLength = 1;
+      while (text[index + markerLength] === "`") markerLength++;
+      const marker = "`".repeat(markerLength);
+      let close = index + markerLength;
+      while ((close = text.indexOf(marker, close)) >= 0) {
+        if (text[close - 1] !== "`" && text[close + markerLength] !== "`") break;
+        close += markerLength;
+      }
+      if (close < 0) {
+        output += marker;
+        index += markerLength;
+        continue;
+      }
+
+      let body = restoreTableEscapes(text.slice(index + markerLength, close)).replace(/\r?\n/g, " ");
+      if (/^\s[\s\S]*\s$/.test(body) && /\S/.test(body)) body = body.slice(1, -1);
+      output += `\u0000C${code.push(escapeHtml(body)) - 1}\u0000`;
+      index = close + markerLength;
+    }
+    return output;
+  }
+
   function inlineMarkdown(value) {
     const code = [];
-    let text = String(value ?? "").replace(/`([^`\n]+)`/g, (_, body) => `\u0000C${code.push(escapeHtml(body)) - 1}\u0000`);
+    let text = protectCodeSpans(value, code);
+    text = restoreTableEscapes(text);
     text = escapeHtml(text);
     text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     text = text.replace(/__([^_]+)__/g, "<strong>$1</strong>");
@@ -294,25 +339,31 @@
     return text;
   }
 
+  function isEscapedAt(value, index) {
+    let slashes = 0;
+    for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor--) slashes++;
+    return slashes % 2 === 1;
+  }
+
   function splitTableRow(line) {
     let value = String(line ?? "").trim();
     if (value.startsWith("|")) value = value.slice(1);
-    if (value.endsWith("|")) value = value.slice(0, -1);
+    if (value.endsWith("|") && !isEscapedAt(value, value.length - 1)) value = value.slice(0, -1);
     const cells = [];
     let cell = "";
-    let inCode = false;
     for (let index = 0; index < value.length; index++) {
       const char = value[index];
       if (char === "\\") {
         const next = value[index + 1];
         if (next === "|" || next === "\\" || next === "`") {
-          cell += next;
+          cell += next === "|"
+            ? escapedTablePipe
+            : next === "`" ? escapedTableBacktick : escapedTableBackslash;
           index++;
         } else cell += char;
         continue;
       }
-      if (char === "`") { inCode = !inCode; cell += char; continue; }
-      if (char === "|" && !inCode) { cells.push(cell.trim()); cell = ""; continue; }
+      if (char === "|") { cells.push(cell.trim()); cell = ""; continue; }
       cell += char;
     }
     cells.push(cell.trim());
@@ -321,7 +372,7 @@
 
   function tableAlignments(line) {
     const cells = splitTableRow(line);
-    if (!cells.length || !cells.every(cell => /^:?-{3,}:?$/.test(cell))) return null;
+    if (!cells.length || !cells.every(cell => /^:?-+:?$/.test(cell))) return null;
     return cells.map(cell => cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : "left");
   }
 
@@ -422,6 +473,26 @@
     return blocks;
   }
 
+  function startsMarkdownBlock(line) {
+    return /^(?: {0,3})(?:#{1,6}\s+|>\s?|`{3,}|~{3,}|(?:[-+*]|\d+[.)])\s+|<(?:!--|\/?[A-Za-z][A-Za-z0-9-]*(?:\s|\/?>)|\?|!)|\[[^\]]+\]:\s*)/.test(line)
+      || /^(?: {4}|\t)\S/.test(line)
+      || /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
+  }
+
+  function renderTable(headers, alignments, rows) {
+    const head = headers.map((cell, cellIndex) =>
+      `<th scope="col" data-align="${alignments[cellIndex] || "left"}">${inlineMarkdown(cell)}</th>`).join("");
+    const body = rows.map(sourceRow => {
+      const row = sourceRow.length > headers.length
+        ? [...sourceRow.slice(0, headers.length - 1), sourceRow.slice(headers.length - 1).join(" | ")]
+        : sourceRow;
+      return `<tr>${headers.map((_, cellIndex) =>
+        `<td data-align="${alignments[cellIndex] || "left"}">${inlineMarkdown(row[cellIndex] ?? "")}</td>`).join("")}</tr>`;
+    }).join("");
+    const tableBody = body ? `<tbody>${body}</tbody>` : "";
+    return `<div class="table-wrap" role="region" aria-label="표" tabindex="0"><table style="--table-columns:${headers.length}"><thead><tr>${head}</tr></thead>${tableBody}</table></div>`;
+  }
+
   function renderMarkdownBlock(source) {
     const lines = source.split("\n");
     const html = [];
@@ -443,17 +514,16 @@
         if (headers.length !== alignments.length) {
           const paragraph = [line];
           index++;
-          while (index < lines.length && lines[index].trim()) paragraph.push(lines[index++]);
+          while (index < lines.length && lines[index].trim() && !startsMarkdownBlock(lines[index]))
+            paragraph.push(lines[index++]);
           html.push(`<p>${paragraph.map(inlineMarkdown).join("<br>")}</p>`);
           continue;
         }
         const rows = [];
         index += 2;
-        while (index < lines.length && lines[index].trim() && lines[index].includes("|"))
+        while (index < lines.length && lines[index].trim() && !startsMarkdownBlock(lines[index]))
           rows.push(splitTableRow(lines[index++]));
-        const head = headers.map((cell, cellIndex) => `<th data-align="${alignments[cellIndex] || "left"}">${inlineMarkdown(cell)}</th>`).join("");
-        const body = rows.map(row => `<tr>${headers.map((_, cellIndex) => `<td data-align="${alignments[cellIndex] || "left"}">${inlineMarkdown(row[cellIndex] || "")}</td>`).join("")}</tr>`).join("");
-        html.push(`<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`);
+        html.push(renderTable(headers, alignments, rows));
         continue;
       }
       const heading = /^(#{1,4})\s+(.+)$/.exec(line);
@@ -486,29 +556,53 @@
   function renderMarkdown(source) {
     return splitMarkdownBlocks(source).map(block => {
       const cached = markdownBlockCache.get(block);
-      if (cached !== undefined) return cached;
+      if (cached !== undefined) {
+        markdownBlockCache.delete(block);
+        markdownBlockCache.set(block, cached);
+        return cached.html;
+      }
       const html = renderMarkdownBlock(block);
-      if (markdownBlockCache.size >= 256)
-        markdownBlockCache.delete(markdownBlockCache.keys().next().value);
-      markdownBlockCache.set(block, html);
+      const weight = block.length + html.length;
+      if (weight <= markdownBlockCacheLimit) {
+        while (markdownBlockCache.size >= 192 || markdownBlockCacheWeight + weight > markdownBlockCacheLimit) {
+          const oldestKey = markdownBlockCache.keys().next().value;
+          if (oldestKey === undefined) break;
+          markdownBlockCacheWeight -= markdownBlockCache.get(oldestKey).weight;
+          markdownBlockCache.delete(oldestKey);
+        }
+        markdownBlockCache.set(block, { html, weight });
+        markdownBlockCacheWeight += weight;
+      }
       return html;
     }).join("");
   }
 
   function patchMarkdownNode(current, next) {
     if (current.nodeType === Node.TEXT_NODE && next.nodeType === Node.TEXT_NODE) {
-      current.nodeValue = next.nodeValue;
+      if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
       return true;
     }
     if (!(current instanceof HTMLElement) || !(next instanceof HTMLElement)) return false;
-    if (current.tagName !== next.tagName || current.className !== next.className) return false;
+    if (current.tagName !== next.tagName) return false;
 
     for (const attribute of Array.from(current.attributes))
       if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
     for (const attribute of Array.from(next.attributes))
       if (current.getAttribute(attribute.name) !== attribute.value)
         current.setAttribute(attribute.name, attribute.value);
-    current.replaceChildren(...Array.from(next.childNodes, node => node.cloneNode(true)));
+
+    const currentChildren = Array.from(current.childNodes);
+    const nextChildren = Array.from(next.childNodes);
+    const shared = Math.min(currentChildren.length, nextChildren.length);
+    for (let index = 0; index < shared; index++) {
+      if (currentChildren[index].isEqualNode(nextChildren[index])) continue;
+      if (!patchMarkdownNode(currentChildren[index], nextChildren[index]))
+        currentChildren[index].replaceWith(nextChildren[index].cloneNode(true));
+    }
+    for (let index = currentChildren.length - 1; index >= nextChildren.length; index--)
+      currentChildren[index].remove();
+    if (nextChildren.length > currentChildren.length)
+      current.append(...nextChildren.slice(currentChildren.length).map(node => node.cloneNode(true)));
     return true;
   }
 
@@ -693,23 +787,37 @@
     turn.classList.add("stream-enter");
     const state = {
       bubble: turn.querySelector(".bubble"), text: "", pending: "", frame: 0, ended: false,
-      lastPaint: 0,
+      lastPaint: performance.now(),
     };
     assistantStreams.set(streamId, state);
     append(turn);
     requestAnimationFrame(() => turn.classList.add("is-visible"));
+    turn.addEventListener("transitionend", () => turn.classList.remove("stream-enter", "is-visible"), { once: true });
   }
 
   function streamChunkLength(state, backlog, reduceMotion) {
     if (reduceMotion) return backlog;
-    if (state.ended) return Math.min(backlog, Math.max(10, Math.ceil(backlog * .42)));
-    const minimum = state.text.length < 80 ? 2 : 3;
-    const maximum = state.text.length > 12000 ? 96 : 160;
-    return Math.min(backlog, maximum, Math.max(minimum, Math.ceil(backlog * .18)));
+    if (state.ended)
+      return Math.min(backlog, 96, Math.max(12, Math.ceil(backlog * .28)));
+    const minimum = state.text.length < 120 ? 2 : 3;
+    const maximum = state.text.length > 12000 ? 48 : state.text.length > 4000 ? 56 : 64;
+    return Math.min(backlog, maximum, Math.max(minimum, Math.ceil(backlog * .12)));
+  }
+
+  function streamPaintInterval(state, reduceMotion) {
+    if (reduceMotion) return 0;
+    if (state.ended) return 20;
+    return state.text.length > 12000 ? 46 : state.text.length > 4000 ? 40 : 34;
   }
 
   function safeStreamCut(text, count) {
     let cut = Math.min(text.length, Math.max(0, count));
+    if (graphemeSegmenter && cut > 0 && cut < text.length) {
+      for (const segment of graphemeSegmenter.segment(text)) {
+        const end = segment.index + segment.segment.length;
+        if (end >= cut) { cut = end; break; }
+      }
+    }
     if (cut > 0 && cut < text.length && /[\uD800-\uDBFF]/.test(text[cut - 1])) cut++;
     if (cut > 0 && cut < text.length && text[cut - 1] === "\r" && text[cut] === "\n") cut++;
     while (cut < text.length && /\p{Mark}/u.test(text[cut])) cut++;
@@ -724,12 +832,15 @@
       const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const backlog = state.pending.length;
       if (!backlog) {
-        if (state.ended) assistantStreams.delete(streamId);
+        if (state.ended) {
+          assistantStreams.delete(streamId);
+          finishPendingResult();
+        }
         return;
       }
 
-      const paintInterval = state.text.length > 12000 ? 34 : state.text.length > 4000 ? 28 : 22;
-      if (!state.ended && !reduceMotion && now - state.lastPaint < paintInterval) {
+      const paintInterval = streamPaintInterval(state, reduceMotion);
+      if (paintInterval && now - state.lastPaint < paintInterval) {
         scheduleAssistantFrame(streamId, state);
         return;
       }
@@ -743,7 +854,10 @@
       reconcileMarkdown(state.bubble, state.text);
       scrollAfterAppend();
       if (state.pending.length) scheduleAssistantFrame(streamId, state);
-      else if (state.ended) assistantStreams.delete(streamId);
+      else if (state.ended) {
+        assistantStreams.delete(streamId);
+        finishPendingResult();
+      }
     });
   }
 
@@ -767,6 +881,7 @@
       reconcileMarkdown(state.bubble, state.text);
       assistantStreams.delete(streamId);
       scrollAfterAppend();
+      finishPendingResult();
       return;
     }
     scheduleAssistantFrame(streamId, state);
@@ -909,7 +1024,7 @@
     countTool(group, presentation);
     group.running++;
     updateToolGroup(group);
-    const state = { element, group, presentation, status: "running" };
+    const state = { element, group, presentation, body: presentation.body || "", status: "running" };
     if (event.toolUseId) tools.set(event.toolUseId, state);
     scrollAfterAppend();
     return state;
@@ -926,8 +1041,8 @@
     state.element.querySelector(".tool-item-state").textContent = event.isError ? "오류" : event.canceled ? "중단됨" : "완료";
     const output = state.element.querySelector("pre");
     if (event.text) {
-      const combined = `${output.textContent ? `${output.textContent}\n\n` : ""}${event.text}`;
-      renderActivityBody(output, combined, state.presentation.kind);
+      state.body = `${state.body ? `${state.body}\n\n` : ""}${event.text}`;
+      renderActivityBody(output, state.body, state.presentation.kind);
     }
     state.element.open = event.isError;
     if (event.isError) state.group.element.open = true;
@@ -1089,6 +1204,7 @@
     compactMarker = null;
     pendingLocalCommand = "";
     quietCommandInFlight = false;
+    pendingResult = null;
     assistantStreams.clear();
     thinkingStreams.clear();
     resetWorkingTimer();
@@ -1097,10 +1213,12 @@
   }
 
   function stripTerminalFormatting(text) {
-    return String(text || "")
+    const value = String(text || "")
       .replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, "")
       .replace(/<local-command-(?:stdout|stderr)>|<\/local-command-(?:stdout|stderr)>/g, "")
-      .trim();
+      .replace(/\r\n?/g, "\n")
+      .replace(/^(?:[\t ]*\n)+|(?:\n[\t ]*)+$/g, "");
+    return /\S/.test(value) ? value : "";
   }
 
   function makeSystemOutput(event) {
@@ -1592,6 +1710,23 @@
     prompt.focus();
   }
 
+  function completeResult(event, live) {
+    finalizeRunningTools(false);
+    pendingLocalCommand = "";
+    setBusy(false);
+    if (live) finishWorkingTimer(!event.isError && !quietCommandInFlight);
+    quietCommandInFlight = false;
+    setStatus(event.isError ? "요청 실패" : "대화 준비됨", event.isError ? "error" : "ready");
+    if (event.isError) append(makeError("요청 실패", event.text || "알 수 없는 오류"), true);
+  }
+
+  function finishPendingResult() {
+    if (!pendingResult || assistantStreams.size > 0) return;
+    const value = pendingResult;
+    pendingResult = null;
+    completeResult(value.event, value.live);
+  }
+
   function renderEvent(event, live = true) {
     if (!event || !event.type) return;
     switch (event.type) {
@@ -1622,6 +1757,7 @@
         makeSystemOutput(event);
         break;
       case "user":
+        pendingResult = null;
         if (compactMarker && !compactMarker.classList.contains("running")) compactMarker = null;
         sealToolGroup();
         setBusy(true); setStatus("Claude가 작업 중…", "busy");
@@ -1633,7 +1769,12 @@
       case "assistant":
         sealToolGroup();
         setBusy(true); setStatus("Claude가 응답하는 중…", "busy");
-        append(makeTurn("assistant", event.text || ""));
+        if (live) {
+          const streamId = `complete:${crypto.randomUUID()}`;
+          startAssistantStream(streamId);
+          appendAssistantDelta(streamId, event.text || "");
+          endAssistantStream(streamId);
+        } else append(makeTurn("assistant", event.text || ""));
         break;
       case "assistant_stream_start":
         sealToolGroup();
@@ -1674,15 +1815,11 @@
       case "permission_resolved": resolvePermission(event.requestId || "", event.text === "allow"); break;
       case "interrupting": setBusy(false); setStatus("응답 중지 요청됨"); break;
       case "result":
-        finalizeRunningTools(false);
-        pendingLocalCommand = "";
-        setBusy(false);
-        if (live) finishWorkingTimer(!event.isError && !quietCommandInFlight);
-        quietCommandInFlight = false;
-        setStatus(event.isError ? "요청 실패" : "대화 준비됨", event.isError ? "error" : "ready");
-        if (event.isError) append(makeError("요청 실패", event.text || "알 수 없는 오류"), true);
+        if (live && assistantStreams.size > 0) pendingResult = { event, live };
+        else completeResult(event, live);
         break;
       case "error":
+        pendingResult = null;
         finalizeRunningTools(false);
         pendingLocalCommand = "";
         quietCommandInFlight = false;
@@ -1691,6 +1828,7 @@
         append(makeError("Claude SDK 오류", event.text || "알 수 없는 오류"), true);
         break;
       case "stopped":
+        pendingResult = null;
         finalizeRunningTools(true);
         pendingLocalCommand = "";
         quietCommandInFlight = false;
@@ -1726,6 +1864,7 @@
     compactMarker = null;
     pendingLocalCommand = "";
     quietCommandInFlight = false;
+    pendingResult = null;
     assistantStreams.clear();
     thinkingStreams.clear();
     setBusy(false);
