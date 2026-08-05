@@ -82,9 +82,17 @@ public partial class MainWindow
     /// 단일 패널이면 우측 분할을 만들고, 이미 분할돼 있으면 현재 세션의 반대 패널을 사용한다.</summary>
     private void PlaceNewAutomationBrowserOppositeSession(ProjectItem project, SessionItem session, BrowserTabItem tab)
     {
+        // 세션 프로젝트가 어느 패널에도 안 떠 있으면(사용자가 딴 프로젝트를 보는 중) 레이아웃을 건드리지
+        // 않는다. 예전엔 _focusedPane 으로 폴백해 남의 프로젝트 화면을 그대로 분할하고 SplitEnabled 까지
+        // 영속시켰다. 탭은 이미 proj.Tabs 에 붙었으니 그 프로젝트로 갈 때 정상 배치된다.
         var source = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveSession, session))
             ?? _panes.FirstOrDefault(p => p.ShowsTab(session))
-            ?? _focusedPane;
+            ?? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, project));
+        if (source == null)
+        {
+            DiagLog.Write($"PlaceNewAutomationBrowser skip layout — project '{project.Name}' not visible; tab={tab.Id}");
+            return;
+        }
 
         if (!_splitActive)
         {
