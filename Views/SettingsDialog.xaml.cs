@@ -98,7 +98,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.22.7", "2026-08-04", true, new[]
+          ("v1.22.8", "2026-08-05", true, new[]
+          {
+              "Claude 응답 출력 중 Backspace로 입력을 지울 때 글자와 diff 화면이 밀려 보이던 문제를 수정했습니다.",
+          }),
+          ("v1.22.7", "2026-08-04", false, new[]
           {
               "업데이트 프로세스를 개선해 배포 안정성을 강화했습니다.",
           }),
