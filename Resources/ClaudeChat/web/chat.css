@@ -226,7 +226,8 @@ button:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 72%,
 .tool-item[data-kind="shell"] .tool-item-body pre { color: var(--text); }
 .tool-item[data-kind="diff"] .tool-item-body pre { max-height: 360px; padding: 7px 0; color: var(--text); white-space: pre; }
 
-body[data-vibe="on"] .tool-group,
+body[data-vibe="on"] .tool-group:not([data-has-plan="true"]),
+body[data-vibe="on"] .tool-group[data-has-plan="true"] .tool-item:not([data-kind="plan"]),
 body[data-vibe="on"] .activity[data-kind="shell"],
 body[data-vibe="on"] .activity[data-kind="diff"],
 body[data-vibe="on"] .activity[data-kind="tool"],

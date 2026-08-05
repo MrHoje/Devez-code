@@ -57,6 +57,7 @@
   const markdownBlockCache = new Map();
   const tools = new Map();
   const tasks = new Map();
+  const toolGroups = new Set();
   const assistantStreams = new Map();
   const thinkingStreams = new Map();
   const imageTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
@@ -789,6 +790,7 @@
       canceled: 0,
       summary: "",
     };
+    toolGroups.add(group);
     currentToolGroup = group;
     updateToolGroup(group);
     append(element);
@@ -796,6 +798,8 @@
   }
 
   function toolGroupSummary(group) {
+    if (vibeMode && group.plans > 0)
+      return group.plans === 1 ? "계획" : `계획 ${group.plans}`;
     const parts = [
       ["파일 변경", group.editedFiles.size],
       ["명령", group.commands],
@@ -831,7 +835,10 @@
     else if (presentation.kind === "diff") group.editedFiles.add(presentation.resourceKey || `diff:${group.editedFiles.size}`);
     else if (presentation.kind === "read") group.readFiles.add(presentation.resourceKey || `read:${group.readFiles.size}`);
     else if (presentation.kind === "search") group.searches++;
-    else if (presentation.kind === "plan") group.plans++;
+    else if (presentation.kind === "plan") {
+      group.plans++;
+      group.element.dataset.hasPlan = "true";
+    }
     else group.otherTools++;
   }
 
@@ -1029,6 +1036,7 @@
     messages.replaceChildren();
     tools.clear();
     tasks.clear();
+    toolGroups.clear();
     currentToolGroup = null;
     compactMarker = null;
     pendingLocalCommand = "";
@@ -1269,6 +1277,10 @@
     vibeControl.setAttribute("aria-pressed", String(vibeMode));
     vibeControl.setAttribute("aria-label", vibeLabel.textContent);
     vibeControl.style.setProperty("--control-color", vibeMode ? statusPalette.plan : statusPalette.text);
+    for (const group of toolGroups) {
+      if (group.element.isConnected) updateToolGroup(group);
+      else toolGroups.delete(group);
+    }
     requestAnimationFrame(updateScrollBoundary);
   }
 
@@ -1661,6 +1673,7 @@
     messages.replaceChildren();
     tools.clear();
     tasks.clear();
+    toolGroups.clear();
     currentToolGroup = null;
     compactMarker = null;
     pendingLocalCommand = "";

@@ -51,6 +51,20 @@ const SAFE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image
 const MAX_IMAGES = 20;
 const MAX_IMAGE_BASE64_LENGTH = 10 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BASE64_LENGTH = 28 * 1024 * 1024;
+const DEVEZCODE_GUI_INSTRUCTIONS = [
+  "DevezCode GUI 응답 규칙:",
+  "- 서론이나 인사 없이 결론부터 답한다.",
+  "- 기본 답변은 짧고 명확하게 작성하며, 사용자가 자세한 설명을 요청하거나 정확한 전달에 필요한 경우에만 늘린다.",
+  "- 산문보다 짧은 불릿과 필요한 코드 블록을 우선한다.",
+  "- 코드 변경 결과는 핵심 내용과 검증 결과만 알리고, 내부 도구 호출이나 불필요한 작업 중계를 장황하게 설명하지 않는다.",
+  "- 작업을 완료하면 사용자의 요청을 기준으로 무엇을 완료했는지 분명하게 알린다.",
+  "- 코드, 명령어, 경로, 파일명, 제품명 같은 기술 식별자는 번역하지 않는다.",
+  "작업 단계 규칙:",
+  "- 질문에만 답하는 경우를 제외하고 코드 확인, 원인 분석, 수정처럼 실행이 필요한 작업은 제공되는 TodoWrite 또는 Task 관리 도구로 간단한 계획을 먼저 만들고 계속 갱신한다.",
+  "- 계획은 작업 규모에 맞는 최소 단계로 구성하고, 각 단계 제목은 `1. `, `2. `처럼 번호로 시작하는 자연스러운 한국어로 작성한다.",
+  "- 동시에 진행 중인 단계는 하나만 두고, 착수할 때 in_progress로 바꾸며 끝나는 즉시 completed로 갱신한다.",
+  "- 계획 도구가 제공되지 않은 환경에서는 존재하지 않는 도구를 호출하거나 계획용 표식을 일반 답변에 출력하지 않는다.",
+].join("\n");
 
 async function publishCapabilities() {
   if (!conversation) return;
@@ -403,7 +417,11 @@ async function start(command) {
     allowDangerouslySkipPermissions: true,
     canUseTool: requestPermission,
     settingSources: ["user", "project", "local"],
-    systemPrompt: { type: "preset", preset: "claude_code" },
+    systemPrompt: {
+      type: "preset",
+      preset: "claude_code",
+      append: DEVEZCODE_GUI_INSTRUCTIONS,
+    },
   };
   if (sessionId) options.resume = sessionId;
   if (command.model) options.model = command.model;
