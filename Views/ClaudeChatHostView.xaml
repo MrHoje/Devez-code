@@ -1,0 +1,6 @@
+<UserControl x:Class="DevezCode.Views.ClaudeChatHostView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource PanelBrush}">
+    <Grid x:Name="WebViewHost" Background="{DynamicResource PanelBrush}"/>
+</UserControl>

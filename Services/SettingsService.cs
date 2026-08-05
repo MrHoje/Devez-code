@@ -57,6 +57,10 @@ public static class SettingsService
         public double ShellTerminalHeight { get; set; } = 260;
         // 계정 사용량 오른쪽의 세션 완료 기록 사이드바 펼침 상태. 기본 접힘.
         public bool   SessionHistoryPanelOpen { get; set; } = false;
+        // Claude Code를 터미널 TUI 대신 Agent SDK 기반 대화형 화면으로 실행. 기본 false=기존 터미널.
+        public bool ClaudeGuiMode { get; set; } = false;
+        // Agent SDK GUI의 간결한 Vibe 표시. true면 Shell·Diff·도구 실행 내역을 숨긴다.
+        public bool ClaudeVibeMode { get; set; } = true;
         // 세션 완료 기록 "한줄만 보기"/"전체보기" 토글 상태. 기본 한줄만 보기(=false).
         public bool   ShowFullPrompt { get; set; } = false;
         // 세션 완료 기록 사이드바 너비 (드래그로 조절, settings.json 에 영속).
@@ -69,6 +73,8 @@ public static class SettingsService
         // 방별 model/effort 선택 (claude --model / --effort 런치 플래그). 빈 값/미존재 = 미적용(claude 기본). 로컬 전용.
         public Dictionary<string, string> ClaudeCodeRoomModel { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomEffort { get; set; } = new();
+        // Agent SDK GUI의 방별 권한 모드. 미지정 시 SDK 기본(default)을 사용한다.
+        public Dictionary<string, string> ClaudeCodeRoomPermissionMode { get; set; } = new();
         // 비-Claude 방별 model/effort. 키는 "roomId|agentId"라 에이전트를 바꿔도 이전 선택이 섞이지 않는다.
         public Dictionary<string, string> AgentRoomModel { get; set; } = new();
         public Dictionary<string, string> AgentRoomEffort { get; set; } = new();
@@ -329,6 +335,12 @@ public static class SettingsService
     public static int LoadTerminalFontSizePt() => Current.TerminalFontSizePt;
     public static void SaveTerminalFontSizePt(int pt) { Current.TerminalFontSizePt = pt; Save(); }
 
+    // ── Claude Code 실행 화면 ─────────────────────────────────────
+    public static bool LoadClaudeGuiMode() => Current.ClaudeGuiMode;
+    public static void SaveClaudeGuiMode(bool value) { Current.ClaudeGuiMode = value; Save(); }
+    public static bool LoadClaudeVibeMode() => Current.ClaudeVibeMode;
+    public static void SaveClaudeVibeMode(bool value) { Current.ClaudeVibeMode = value; Save(); }
+
     // ── 마크다운 뷰어 본문 너비 ────────────────────────────────────
     public static event Action<int>? MarkdownViewportWidthChanged;
     public static int LoadMarkdownViewportWidth() => System.Math.Max(0, Current.MarkdownViewportWidth);
@@ -524,6 +536,7 @@ public static class SettingsService
         changed |= Current.RoomAgents.Remove(roomId);
         changed |= Current.ClaudeCodeRoomModel.Remove(roomId);
         changed |= Current.ClaudeCodeRoomEffort.Remove(roomId);
+        changed |= Current.ClaudeCodeRoomPermissionMode.Remove(roomId);
         changed |= RemoveWhere(Current.AgentRoomModel, k => k.StartsWith(roomId + "|", StringComparison.Ordinal));
         changed |= RemoveWhere(Current.AgentRoomEffort, k => k.StartsWith(roomId + "|", StringComparison.Ordinal));
         changed |= Current.TerminalRoomFontSizePt.Remove(roomId);
@@ -729,9 +742,21 @@ public static class SettingsService
     { SetOrRemove(Current.ClaudeCodeRoomModel, roomId, value); Save(); }
 
     public static string? LoadClaudeCodeRoomEffort(string roomId)
-        => Current.ClaudeCodeRoomEffort.TryGetValue(roomId, out var v) && !string.IsNullOrEmpty(v) ? v : null;
+        => Current.ClaudeCodeRoomEffort.TryGetValue(roomId, out var v) && IsSupportedClaudeCodeEffort(v) ? v : null;
     public static void SaveClaudeCodeRoomEffort(string roomId, string? value)
-    { SetOrRemove(Current.ClaudeCodeRoomEffort, roomId, value); Save(); }
+    { SetOrRemove(Current.ClaudeCodeRoomEffort, roomId, IsSupportedClaudeCodeEffort(value) ? value : null); Save(); }
+
+    public static bool IsSupportedClaudeCodeEffort(string? value)
+        => value is "low" or "medium" or "high" or "xhigh" or "max";
+
+    public static string LoadClaudeCodeRoomPermissionMode(string roomId)
+        => Current.ClaudeCodeRoomPermissionMode.TryGetValue(roomId, out var value)
+           && ClaudeGlobalSettings.IsSupportedPermissionMode(value)
+            ? value
+            : ClaudeGlobalSettings.GetDefaultPermissionMode();
+
+    public static void SaveClaudeCodeRoomPermissionMode(string roomId, string? value)
+    { SetOrRemove(Current.ClaudeCodeRoomPermissionMode, roomId, ClaudeGlobalSettings.IsSupportedPermissionMode(value) ? value : null); Save(); }
 
     public static string? LoadAgentRoomModel(string roomId, string agentId)
     {

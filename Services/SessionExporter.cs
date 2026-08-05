@@ -13,6 +13,10 @@ namespace DevezCode.Services;
 /// 활성 세션이면 파일이 잠겨 있어 FileShare.ReadWrite 로 읽는다.</summary>
 public static class SessionExporter
 {
+    /// <summary>Claude GUI가 기존 대화를 복원할 때 사용하는 사용자/어시스턴트 텍스트 목록.</summary>
+    public static IReadOnlyList<(string Role, string Text)> LoadClaudeConversation(string roomId, string? cwd)
+        => FromClaude(roomId, cwd).Select(turn => (turn.role, turn.text)).ToArray();
+
     /// <summary>세션 마크다운 생성. 대화가 없거나 미지원이면 null. (opencode 는 CLI export 를 스폰하므로
     /// 호출부는 백그라운드 스레드에서 부르는 게 좋다.)</summary>
     public static string? BuildMarkdown(string roomId, string agentId, string sessionName, string? cwd)

@@ -31,6 +31,7 @@ public partial class SettingsDialog : UserControl
     private string _originalTheme;
     private int    _originalFontScale;
     private bool   _originalPreloadAllSessions;
+    private bool   _originalClaudeGuiMode;
     private int    _originalIdleSessionShutdownMinutes;
     private int    _originalDefaultFontSizePt;
     private int    _originalMarkdownViewportWidth;
@@ -54,6 +55,7 @@ public partial class SettingsDialog : UserControl
     private string _selectedTheme;
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
+    private bool   _selectedClaudeGuiMode;
     private int    _selectedIdleSessionShutdownMinutes;
     private int    _selectedDefaultFontSizePt;
     private int    _selectedMarkdownViewportWidth;
@@ -573,6 +575,9 @@ public partial class SettingsDialog : UserControl
         _originalPreloadAllSessions = SettingsService.LoadPreloadAllProjectSessions();
         _selectedPreloadAllSessions = _originalPreloadAllSessions;
         PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
+        _originalClaudeGuiMode = SettingsService.LoadClaudeGuiMode();
+        _selectedClaudeGuiMode = _originalClaudeGuiMode;
+        ClaudeGuiModeToggle.IsChecked = _selectedClaudeGuiMode;
         _originalIdleSessionShutdownMinutes = SettingsService.LoadIdleSessionShutdownMinutes();
         _selectedIdleSessionShutdownMinutes = _originalIdleSessionShutdownMinutes;
         SelectComboByTag(IdleSessionShutdownCombo, _selectedIdleSessionShutdownMinutes.ToString());
@@ -945,6 +950,11 @@ public partial class SettingsDialog : UserControl
     private void PreloadAllSessionsToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedPreloadAllSessions = PreloadAllSessionsToggle.IsChecked == true;
+    }
+
+    private void ClaudeGuiModeToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedClaudeGuiMode = ClaudeGuiModeToggle.IsChecked == true;
     }
 
     private void IdleSessionShutdownCombo_Changed(object sender, SelectionChangedEventArgs e)
@@ -1902,6 +1912,8 @@ public partial class SettingsDialog : UserControl
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);
         SettingsService.SavePreloadAllProjectSessions(_selectedPreloadAllSessions);
+        if (_selectedClaudeGuiMode != _originalClaudeGuiMode)
+            SettingsService.SaveClaudeGuiMode(_selectedClaudeGuiMode);
         if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes)
         {
             SettingsService.SaveIdleSessionShutdownMinutes(_selectedIdleSessionShutdownMinutes);
@@ -2016,6 +2028,7 @@ public partial class SettingsDialog : UserControl
         _originalTheme       = _selectedTheme;
         _originalFontScale   = _selectedFontScale;
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
+        _originalClaudeGuiMode = _selectedClaudeGuiMode;
         _originalIdleSessionShutdownMinutes = _selectedIdleSessionShutdownMinutes;
         _originalDefaultFontSizePt = _selectedDefaultFontSizePt;
         _originalMarkdownViewportWidth = _selectedMarkdownViewportWidth;

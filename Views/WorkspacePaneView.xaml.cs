@@ -13,6 +13,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using DevezCode.Models;
 using DevezCode.Services;
+using DevezCode.Services.ClaudeSdk;
 using DevezCode.Services.Terminal;
 
 namespace DevezCode.Views;
@@ -31,6 +32,7 @@ public partial class WorkspacePaneView : UserControl
     public event Action<string>? SessionActivity;
 
     private readonly TerminalHostView _terminal = new();
+    private readonly ClaudeChatHostView _claudeChat = new();
 
     private ProjectItem? _activeProject;
     private SessionItem? _activeSession;
@@ -109,6 +111,13 @@ public partial class WorkspacePaneView : UserControl
     {
         InitializeComponent();
         TerminalHostContainer.Content = _terminal;
+        ClaudeChatHostContainer.Content = _claudeChat;
+        _claudeChat.UserInteracted += () =>
+        {
+            FocusRequested?.Invoke(this);
+            if (_activeSession != null) SessionActivity?.Invoke(_activeSession.Id);
+        };
+        _claudeChat.ResponseCompleted += FlushPendingModelEffort;
         // 빈 패널로 시작(자동복원 off 가 기본)하면 UpdateEmptyState 가 안 불려 컨테이너가 XAML 기본값(풀사이즈)로
         // 방치된다. 그 상태에서 PrewarmWebView 가 WebView2(#0C0C0C)를 만들면 airspace HWND 가 풀사이즈로 떠
         // EmptyState 위를 덮어 시작 시 검정이 한 번 번쩍인다. 초기 상태를 0×0 주차로 맞춰 prewarm 이 안 보이게
@@ -943,9 +952,11 @@ public partial class WorkspacePaneView : UserControl
     private void RefreshHeaderSessionGate()
     {
         if (AttachFileBtn != null)
-            AttachFileBtn.Visibility = _activeTab is SessionItem { IsExternal: false } ? Visibility.Visible : Visibility.Collapsed;
+            AttachFileBtn.Visibility = _activeTab is SessionItem { IsExternal: false } session && !UsesClaudeGui(session)
+                ? Visibility.Visible : Visibility.Collapsed;
         if (FontSizeCombo != null)
-            FontSizeCombo.Visibility = _activeTab is SessionItem { IsExternal: false } ? Visibility.Visible : Visibility.Collapsed;
+            FontSizeCombo.Visibility = _activeTab is SessionItem { IsExternal: false } session && !UsesClaudeGui(session)
+                ? Visibility.Visible : Visibility.Collapsed;
         UpdateProjectBranchBubble(_activeProject);
     }
 
@@ -1356,10 +1367,21 @@ public partial class WorkspacePaneView : UserControl
         var parent = ParentOf(session);
         if (parent == null) return;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
+        if (UsesClaudeGui(session))
+        {
+            _ = ClaudeSdkSessionManager.Instance.EnsureStartedAsync(session, parent.Path);
+            return;
+        }
         _terminal.PreloadTerminal(session.Id);
     }
 
-    public bool IsTerminalReady(string roomId) => _terminal.IsReady(roomId);
+    public bool IsTerminalReady(string roomId)
+    {
+        var session = FindSession(roomId);
+        return session != null && UsesClaudeGui(session)
+            ? ClaudeSdkSessionManager.Instance.IsStarted(roomId)
+            : _terminal.IsReady(roomId);
+    }
 
     /// <summary>다른 패널로 "분할 보기" 이동된 파일 탭을 이 패널에서 연다(필요 시 프로젝트 전환).</summary>
     public void OpenFileTab(FileTabItem tab)
@@ -1418,6 +1440,17 @@ public partial class WorkspacePaneView : UserControl
         {
             ActivateExternalSession(session, unHide);
             return;
+        }
+        if (UsesClaudeGui(session))
+        {
+            ActivateClaudeGuiSession(session, unHide);
+            return;
+        }
+        if (ReferenceEquals(_activeSession, session) && ClaudeChatHostContainer.Visibility == Visibility.Visible)
+        {
+            session.IsActive = false;
+            _activeSession = null;
+            _activeTab = null;
         }
         SessionActivity?.Invoke(session.Id);
         if (ReferenceEquals(_activeSession, session)) return;
@@ -1550,6 +1583,58 @@ public partial class WorkspacePaneView : UserControl
         if (coverReflow) RevealAfterTransition(kick: true); // 최종 폭에서 세션 재동기 후 커버 걷기(리플로우 감춤)
     }
 
+    private static bool UsesClaudeGui(SessionItem session)
+    {
+        var agentId = string.IsNullOrWhiteSpace(session.AgentId)
+            ? SettingsService.LoadAgentForRoom(session.Id)
+            : session.AgentId;
+        if (!string.Equals(agentId, "claude", StringComparison.OrdinalIgnoreCase)) return false;
+        // 설정 변경으로 이미 실행 중인 TUI/SDK 세션의 표면이 중간에 바뀌어 두 프로세스가 겹치지 않게
+        // 실행 중인 방식은 유지하고, 아직 시작하지 않은 세션에만 새 기본값을 적용한다.
+        if (ClaudeSdkSessionManager.Instance.IsStarted(session.Id)) return true;
+        if (TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }) return false;
+        return SettingsService.LoadClaudeGuiMode();
+    }
+
+    private void ActivateClaudeGuiSession(SessionItem session, bool unHide)
+    {
+        SessionActivity?.Invoke(session.Id);
+        if (ReferenceEquals(_activeSession, session) && ClaudeChatHostContainer.Visibility == Visibility.Visible)
+        {
+            _claudeChat.FocusInput();
+            ActiveChanged?.Invoke(this);
+            return;
+        }
+
+        ClearIsolationIfMismatch(session);
+        if (_activeSession != null) _activeSession.IsActive = false;
+        var parent = ParentOf(session);
+        if (parent == null) return;
+        if (unHide && session.IsEffectivelyHidden)
+        {
+            foreach (var visible in parent.UnhideSessionPath(session)) CancelPendingHideStop(visible.Id);
+            WorkspaceStore.Save(Projects);
+        }
+        if (!parent.IsExpanded) parent.IsExpanded = true;
+        SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
+
+        if (_activeTab is FileTabItem previousFile) previousFile.IsActive = false;
+        if (_activeTab is BrowserTabItem previousBrowser) DeactivateBrowserTab(previousBrowser);
+        _activeTab = session;
+        _activeSession = session;
+        session.IsActive = true;
+        RecordActiveTab(parent, "S:" + session.Id);
+
+        _gateUnpark = false;
+        _unparkFallback?.Stop();
+        HideSessionLoading();
+        UpdateEmptyState();
+        _claudeChat.ActivateSession(session, parent.Path);
+        EnsureSelectedTabVisible(session);
+        RefreshModelEffortDock();
+        ActiveChanged?.Invoke(this);
+    }
+
     private void ActivateExternalSession(SessionItem session, bool unHide)
     {
         if (ReferenceEquals(_activeSession, session))
@@ -1588,6 +1673,16 @@ public partial class WorkspacePaneView : UserControl
     public async Task<byte[]?> CaptureSessionSnapshotPngAsync(SessionItem session)
     {
         if (!ReferenceEquals(_activeSession, session) || session.IsExternal) return null;
+        if (UsesClaudeGui(session))
+        {
+            var bitmap = await _claudeChat.CaptureSnapshotAsync();
+            if (bitmap == null || !ReferenceEquals(_activeSession, session)) return null;
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+            using var stream = new MemoryStream();
+            encoder.Save(stream);
+            return stream.ToArray();
+        }
         var png = await _terminal.CapturePngAsync();
         return ReferenceEquals(_activeSession, session) ? png : null;
     }
@@ -1596,6 +1691,14 @@ public partial class WorkspacePaneView : UserControl
     public bool SendTextToActiveSession(string text)
     {
         if (_activeSession is null or { IsExternal: true }) return false;
+        if (UsesClaudeGui(_activeSession))
+        {
+            var parent = ParentOf(_activeSession);
+            if (parent == null) return false;
+            _ = ClaudeSdkSessionManager.Instance.SendPromptAsync(_activeSession, parent.Path, text);
+            _claudeChat.FocusInput();
+            return true;
+        }
         var id = _activeSession.Id;
         var session = TerminalSessionManager.Instance.Get(id);
         if (session is not { IsAlive: true }) return false;
@@ -1619,7 +1722,10 @@ public partial class WorkspacePaneView : UserControl
         var owner = Window.GetWindow(this);
         var selected = owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
         if (selected == true)
-            _terminal.InsertFilePaths(dialog.FileNames);
+        {
+            if (UsesClaudeGui(_activeSession)) _claudeChat.InsertFilePaths(dialog.FileNames);
+            else _terminal.InsertFilePaths(dialog.FileNames);
+        }
         FocusActiveSessionTerminal();
     }
 
@@ -1899,7 +2005,9 @@ public partial class WorkspacePaneView : UserControl
         }
 
         var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
-        bool supportsSelection = s is { IsExternal: false } && agentId is ("claude" or "grok");
+        // Claude GUI는 composer 안의 SDK 모델 선택기를 사용하므로 헤더 중복 컨트롤을 숨긴다.
+        bool supportsSelection = s is { IsExternal: false } && agentId is ("claude" or "grok")
+            && !(agentId == "claude" && UsesClaudeGui(s));
         ModelEffortDock.Visibility = supportsSelection ? Visibility.Visible : Visibility.Collapsed;
         bool isCodex = s is { IsExternal: false } && agentId == "codex";
         CodexModelEffortDock.Visibility = isCodex ? Visibility.Visible : Visibility.Collapsed;
@@ -2264,11 +2372,23 @@ public partial class WorkspacePaneView : UserControl
 
         if (s.IsBusy)
             (isModel ? _pendingModel : _pendingEffort)[s.Id] = val;
+        else if (agentId == "claude" && UsesClaudeGui(s))
+        {
+            RestartClaudeSdkSession(s);
+        }
         else if (agentId == "grok")
         {
             SendGrokModelEffortSlash(s.Id, isModel, val);
         }
         else SendModelEffortSlash(s.Id, isModel, val);
+    }
+
+    private async void RestartClaudeSdkSession(SessionItem session)
+    {
+        var parent = ParentOf(session);
+        if (parent == null) return;
+        await ClaudeSdkSessionManager.Instance.StopAsync(session.Id);
+        await ClaudeSdkSessionManager.Instance.EnsureStartedAsync(session, parent.Path);
     }
 
     /// <summary>응답 종료(busy→idle) 시 보류된 model/effort 변경을 라이브 주입. 셸이 호출.</summary>
@@ -2278,6 +2398,12 @@ public partial class WorkspacePaneView : UserControl
         var agentId = session == null || string.IsNullOrEmpty(session.AgentId)
             ? AgentRegistry.DefaultAgentId
             : session.AgentId;
+        if (session != null && agentId == "claude" && UsesClaudeGui(session))
+        {
+            bool changed = _pendingModel.Remove(roomId) | _pendingEffort.Remove(roomId);
+            if (changed) RestartClaudeSdkSession(session);
+            return;
+        }
         bool grokModelIncludedEffort = false;
         if (_pendingModel.Remove(roomId, out var m))
         {
@@ -2600,7 +2726,8 @@ public partial class WorkspacePaneView : UserControl
     {
         CancelPendingHideStop(session.Id);
         if (session.IsExternal) return;
-        if (TerminalSessionManager.Instance.Get(session.Id) is not { IsAlive: true })
+        if (TerminalSessionManager.Instance.Get(session.Id) is not { IsAlive: true }
+            && !ClaudeSdkSessionManager.Instance.IsStarted(session.Id))
             return;
 
         var cts = new CancellationTokenSource();
@@ -2634,7 +2761,8 @@ public partial class WorkspacePaneView : UserControl
 
             // 유예 동안 다시 열렸으면 죽이지 않는다.
             if (!session.IsEffectivelyHidden) return;
-            if (TerminalSessionManager.Instance.Get(roomId) is not { IsAlive: true })
+            bool sdkSession = ClaudeSdkSessionManager.Instance.IsStarted(roomId);
+            if (TerminalSessionManager.Instance.Get(roomId) is not { IsAlive: true } && !sdkSession)
                 return;
 
             // 실제 종료 시작 — UI 는 죽은 상태, 종료 중 재오픈은 완료 후 resume.
@@ -2644,12 +2772,19 @@ public partial class WorkspacePaneView : UserControl
             _gracefulStopRoomIds.Add(roomId);
             try
             {
-                try { _terminal.CloseTerminal(roomId); } catch { /* ignore */ }
-                try
+                if (sdkSession)
                 {
-                    await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { roomId });
+                    await ClaudeSdkSessionManager.Instance.StopAsync(roomId);
                 }
-                catch { /* best effort */ }
+                else
+                {
+                    try { _terminal.CloseTerminal(roomId); } catch { /* ignore */ }
+                    try
+                    {
+                        await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { roomId });
+                    }
+                    catch { /* best effort */ }
+                }
 
                 // dispose 플래그 해제 — 사이드바에서 다시 열 때 WireSession 이 막히지 않게.
                 try { TerminalSessionManager.Instance.ClearDisposedRoom(roomId); } catch { /* ignore */ }
@@ -2797,6 +2932,8 @@ public partial class WorkspacePaneView : UserControl
         CancelPendingHideStop(session.Id); // 숨김 유예 종료 예약 취소(삭제/프로젝트 제거와 레이스 방지)
         var workingDir = SettingsService.LoadClaudeCodeRoomDir(session.Id);
         try { _terminal.CloseTerminal(session.Id); } catch { /* ignore */ }
+        if (ClaudeSdkSessionManager.Instance.IsStarted(session.Id))
+            _ = ClaudeSdkSessionManager.Instance.StopAsync(session.Id, purge);
         try
         {
             if (purge) TerminalSessionManager.Instance.PurgeRoom(session.Id, workingDir);
@@ -2830,22 +2967,37 @@ public partial class WorkspacePaneView : UserControl
             })
             .ToList();
 
+        var sdkSessions = allClaudeSessions
+            .Where(s => UsesClaudeGui(s) || ClaudeSdkSessionManager.Instance.IsStarted(s.Id))
+            .ToList();
+        var terminalSessions = allClaudeSessions.Except(sdkSessions).ToList();
+        var restartSdkIds = sdkSessions
+            .Where(s => ClaudeSdkSessionManager.Instance.IsStarted(s.Id) || ReferenceEquals(s, _activeSession))
+            .Select(s => s.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         // graceful 종료는 훅 flush 대기 등으로 수 초 걸릴 수 있는데 그동안 스피너가 없으면
         // 화면이 멈춘 것처럼 보인다 — 종료 시작과 동시에 먼저 스피너를 띄운다.
-        if (_activeSession != null && allClaudeSessions.Contains(_activeSession))
+        if (_activeSession != null && terminalSessions.Contains(_activeSession))
             ShowSessionLoading(_activeSession.Id, "세션을 안전하게 종료하는 중…");
 
-        foreach (var s in allClaudeSessions)
+        foreach (var s in terminalSessions)
         {
             try { _terminal.CloseTerminal(s.Id); } catch { /* ignore */ }
         }
 
+        foreach (var s in sdkSessions)
+        {
+            try { await ClaudeSdkSessionManager.Instance.StopAsync(s.Id); }
+            catch { /* best effort */ }
+        }
+
         // 하드킬(DisposeRoom) 대신 Enter 없는 종료 제어키로 claude 가 transcript 를
         // flush 하고 Stop/SessionEnd 훅을 기록할 틈을 준 뒤 정리한다.
-        try { await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(allClaudeSessions.Select(s => s.Id)); }
+        try { await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(terminalSessions.Select(s => s.Id)); }
         catch { /* best effort */ }
 
-        foreach (var s in allClaudeSessions)
+        foreach (var s in terminalSessions)
         {
             try
             {
@@ -2856,6 +3008,14 @@ public partial class WorkspacePaneView : UserControl
                 _terminal.PreloadTerminal(s.Id);
             }
             catch { /* ignore */ }
+        }
+
+        foreach (var s in sdkSessions.Where(s => restartSdkIds.Contains(s.Id)))
+        {
+            var parent = ParentOf(s);
+            if (parent == null) continue;
+            try { await ClaudeSdkSessionManager.Instance.EnsureStartedAsync(s, parent.Path); }
+            catch { /* best effort */ }
         }
 
         await Task.Delay(150);
@@ -3999,16 +4159,28 @@ public partial class WorkspacePaneView : UserControl
             TerminalHostContainer.Visibility = Visibility.Collapsed;
             FileEditorHostContainer.Visibility = Visibility.Collapsed;
             BrowserHostContainer.Visibility = Visibility.Collapsed;
+            ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
         }
         else if (_activeTab is SessionItem { IsExternal: true } externalSession)
         {
+            ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
+            _claudeChat.Deactivate();
             ShowExternalSessionPreview(externalSession);
         }
         else
         {
             HideExternalSessionPreview();
-            if (_activeTab is SessionItem)
+            if (_activeTab is SessionItem guiSession && UsesClaudeGui(guiSession))
             {
+                ParkTerminalHost();
+                ParkFileEditorHost();
+                ParkBrowserHost();
+                ClaudeChatHostContainer.Visibility = _overlaySuspended ? Visibility.Collapsed : Visibility.Visible;
+            }
+            else if (_activeTab is SessionItem)
+            {
+                ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
+                _claudeChat.Deactivate();
                 // 콜드 게이트 중이면 unpark 과 파일 에디터 파킹 둘 다 ACK(RevealTerminalAfterGate)까지 미룬다 —
                 // 파일(md)에서 세션 전환 시 md 를 먼저 파킹하면 airspace 갭에 검정이 새므로, md 를 띄워둔 채 대기.
                 if (!_gateUnpark) { UnparkTerminalHost(); ParkFileEditorHost(); ParkBrowserHost(); }
@@ -4018,6 +4190,8 @@ public partial class WorkspacePaneView : UserControl
             }
             else if (_activeTab is FileTabItem)
             {
+                ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
+                _claudeChat.Deactivate();
                 ParkTerminalHost();
                 ParkBrowserHost();
                 // 전환 커버 중이면 파일 에디터(md=WebView2 는 airspace 로 WPF 커튼에 안 가려짐)를 0×0 주차로
@@ -4029,6 +4203,8 @@ public partial class WorkspacePaneView : UserControl
             }
             else if (_activeTab is BrowserTabItem)
             {
+                ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
+                _claudeChat.Deactivate();
                 ParkTerminalHost();
                 ParkFileEditorHost();
                 if (_coverActive) ParkBrowserHost();
@@ -4036,6 +4212,8 @@ public partial class WorkspacePaneView : UserControl
             }
             else
             {
+                ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
+                _claudeChat.Deactivate();
                 ParkTerminalHost();
                 ParkFileEditorHost();
                 ParkBrowserHost();
@@ -4285,6 +4463,18 @@ public partial class WorkspacePaneView : UserControl
     public async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
         _overlaySuspended = true; // ResumeTerminal 이 해제 — 그 사이 훅발 UpdateEmptyState 의 표시 복원 차단
+        if (_activeSession != null && UsesClaudeGui(_activeSession))
+        {
+            var snapshot = await _claudeChat.CaptureSnapshotAsync();
+            if (snapshot != null)
+            {
+                TerminalSnapshot.Source = snapshot;
+                TerminalSnapshot.Visibility = Visibility.Visible;
+                await WaitForFramesAsync(2);
+            }
+            ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
+            return;
+        }
         if (_activeTab is BrowserTabItem browser)
         {
             await browser.Browser.SuspendContentAsync();
@@ -4333,6 +4523,14 @@ public partial class WorkspacePaneView : UserControl
     public void ResumeTerminal()
     {
         _overlaySuspended = false;
+        if (_activeSession != null && UsesClaudeGui(_activeSession))
+        {
+            ClaudeChatHostContainer.Visibility = Visibility.Visible;
+            TerminalSnapshot.Visibility = Visibility.Collapsed;
+            TerminalSnapshot.Source = null;
+            _claudeChat.FocusInput();
+            return;
+        }
         if (_activeSession is { IsExternal: true } externalSession)
         {
             ShowExternalSessionPreview(externalSession);
@@ -4357,7 +4555,8 @@ public partial class WorkspacePaneView : UserControl
     {
         if (_overlaySuspended || _activeSession is not { IsExternal: false }) return;
         Keyboard.ClearFocus();
-        _terminal.FocusTerminal();
+        if (UsesClaudeGui(_activeSession)) _claudeChat.FocusInput();
+        else _terminal.FocusTerminal();
     }
 
     /// <summary>스냅샷만(커튼 없이) 정지 — 우측 오버레이 드로어용.
@@ -4371,6 +4570,28 @@ public partial class WorkspacePaneView : UserControl
         // 숨겨진(Collapsed) WebView2 는 CapturePngAsync 가 <b>완료되지 않으므로</b> 여기서 await 하면
         // 호출자(최대화 커버·패널 토글 커버·종료 준비)가 그대로 매달린다.
         if (_overlaySuspended) return;
+        if (_activeSession != null && UsesClaudeGui(_activeSession))
+        {
+            // DOM 기반 채팅은 패널 리사이즈를 자체 처리하므로 webCover 경로에서는 그대로 둔다.
+            if (webCover) return;
+            double width = ClaudeChatHostContainer.ActualWidth, height = ClaudeChatHostContainer.ActualHeight;
+            var snapshot = await _claudeChat.CaptureSnapshotAsync();
+            if (snapshot != null)
+            {
+                if (anchorTopLeft)
+                {
+                    TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Left;
+                    TerminalSnapshot.VerticalAlignment = VerticalAlignment.Top;
+                    TerminalSnapshot.Width = width;
+                    TerminalSnapshot.Height = height;
+                }
+                TerminalSnapshot.Source = snapshot;
+                TerminalSnapshot.Visibility = Visibility.Visible;
+                await WaitForFramesAsync(2);
+            }
+            ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
+            return;
+        }
         if (_activeTab is BrowserTabItem browser)
         {
             await browser.Browser.SuspendContentAsync();
@@ -4424,7 +4645,7 @@ public partial class WorkspacePaneView : UserControl
     // 기존(각 패널이 캡처→대기→hide 를 순차 수행)은 패널·에디터 HWND 가 서로 다른 프레임에 사라져
     // 팝이 여러 번 어긋나 보였다(= 종료 시 깜빡임). 셸이 ①모든 패널 스냅샷 present → ②같은 프레임에
     // 일괄 hide 하도록 준비/커밋을 분리한다.
-    private enum ShutdownHide { None, Terminal, FileEditor }
+    private enum ShutdownHide { None, Terminal, FileEditor, ClaudeChat }
     private ShutdownHide _shutdownHide;
 
     /// <summary>①스냅샷만 올린다(HWND 유지). 숨길 대상은 기억해 뒀다 CommitShutdownHide 가 처리.</summary>
@@ -4436,6 +4657,17 @@ public partial class WorkspacePaneView : UserControl
         _overlaySuspended = true; // 종료 오버레이 중 훅발 UpdateEmptyState 가 HWND 를 되살리지 않게(해제 불필요 — 앱 종료)
         _shutdownHide = ShutdownHide.None;
         if (alreadySuspended) return;
+        if (_activeSession != null && UsesClaudeGui(_activeSession))
+        {
+            var snapshot = await _claudeChat.CaptureSnapshotAsync();
+            if (snapshot != null)
+            {
+                TerminalSnapshot.Source = snapshot;
+                TerminalSnapshot.Visibility = Visibility.Visible;
+            }
+            _shutdownHide = ShutdownHide.ClaudeChat;
+            return;
+        }
         if (_activeTab is FileTabItem file)
         {
             var snap = await file.Editor.CaptureSnapshotAsync();
@@ -4469,6 +4701,7 @@ public partial class WorkspacePaneView : UserControl
         {
             case ShutdownHide.FileEditor: FileEditorHostContainer.Visibility = Visibility.Collapsed; break;
             case ShutdownHide.Terminal: TerminalHostContainer.Visibility = Visibility.Collapsed; break;
+            case ShutdownHide.ClaudeChat: ClaudeChatHostContainer.Visibility = Visibility.Collapsed; break;
         }
         _shutdownHide = ShutdownHide.None;
     }
@@ -4496,6 +4729,18 @@ public partial class WorkspacePaneView : UserControl
         // 전체 오버레이가 떠 있는 동안은 되살리지 않는다(Suspend 를 스킵했으므로 되살릴 것도 없고,
         // 되살리면 라이브 HWND 가 오버레이를 뚫는다). 해제는 ResumeTerminal 이 담당.
         if (_overlaySuspended) return;
+        if (_activeSession != null && UsesClaudeGui(_activeSession))
+        {
+            if (webCover) return;
+            ClaudeChatHostContainer.Visibility = Visibility.Visible;
+            TerminalSnapshot.Visibility = Visibility.Collapsed;
+            TerminalSnapshot.Source = null;
+            TerminalSnapshot.Width = double.NaN;
+            TerminalSnapshot.Height = double.NaN;
+            TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
+            TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
+            return;
+        }
         if (_activeTab is BrowserTabItem browser)
         {
             UnparkBrowserHost();
@@ -4534,7 +4779,11 @@ public partial class WorkspacePaneView : UserControl
         TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
     }
 
-    public void DisposeTerminal() => _terminal.Dispose();
+    public void DisposeTerminal()
+    {
+        _claudeChat.Dispose();
+        _terminal.Dispose();
+    }
 
     private void OnTerminalFileOpenRequested(string rawPath, int? line, int? column)
     {

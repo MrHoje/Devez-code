@@ -575,6 +575,7 @@
               PreviewDragOver="PaneContent_PreviewDragOver"
               PreviewDrop="PaneContent_PreviewDrop">
             <ContentControl x:Name="TerminalHostContainer"/>
+            <ContentControl x:Name="ClaudeChatHostContainer" Visibility="Collapsed"/>
             <ContentControl x:Name="FileEditorHostContainer" Visibility="Collapsed"/>
             <ContentControl x:Name="BrowserHostContainer" Visibility="Collapsed"/>
             <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"

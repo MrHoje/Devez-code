@@ -8,6 +8,7 @@ using System.Windows.Media;
 using DevezCode.Behaviors;
 using DevezCode.Services;
 using DevezCode.Services.Terminal;
+using DevezCode.Services.ClaudeSdk;
 
 namespace DevezCode;
 
@@ -544,6 +545,8 @@ public partial class App : Application
         // 상한 = perGrace(2.5s) + postFlush cap(5s) + 정착(0.5s) + Dispose/스냅샷 여유.
         try { System.Threading.Tasks.Task.Run(() => TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500)).Wait(10000); }
         catch { /* best-effort */ }
+        try { System.Threading.Tasks.Task.Run(() => ClaudeSdkSessionManager.Instance.ShutdownAllAsync()).Wait(7000); }
+        catch { /* best-effort */ }
         try { DevezCode.Services.SessionUsageService.Save(); } catch { /* 토큰 집계 영속 best-effort */ }
         try { DevezCode.Services.BrowserBridgeServer.Instance.Stop(); } catch { /* 브리지 정리 best-effort */ }
         try { TerminalSessionManager.Instance.DisposeAll(); } catch { /* 종료 정리 best-effort */ }
@@ -820,6 +823,29 @@ public partial class App : Application
         res["ProjectMarkerBlueBrush"]   = new SolidColorBrush(markerBlue);
         res["ProjectMarkerPurpleBrush"] = new SolidColorBrush(markerPurple);
         res["ProjectMarkerPinkBrush"]   = new SolidColorBrush(markerPink);
+        var codeSyntaxString = theme switch
+        {
+            "soft" => Color.FromRgb(0x3f, 0x6f, 0x30),
+            "minimal" => Color.FromRgb(0x15, 0x80, 0x3d),
+            _ => markerGreen,
+        };
+        var codeSyntaxNumber = theme switch
+        {
+            "soft" => Color.FromRgb(0xb4, 0x53, 0x09),
+            "minimal" => Color.FromRgb(0xc2, 0x41, 0x0c),
+            _ => markerOrange,
+        };
+        var codeSyntaxType = theme switch
+        {
+            "soft" => Color.FromRgb(0x35, 0x6f, 0x67),
+            "minimal" => Color.FromRgb(0x0f, 0x76, 0x6e),
+            _ => markerTeal,
+        };
+        res["CodeSyntaxKeywordBrush"]  = new SolidColorBrush(markerPurple);
+        res["CodeSyntaxStringBrush"]   = new SolidColorBrush(codeSyntaxString);
+        res["CodeSyntaxNumberBrush"]   = new SolidColorBrush(codeSyntaxNumber);
+        res["CodeSyntaxFunctionBrush"] = new SolidColorBrush(markerBlue);
+        res["CodeSyntaxTypeBrush"]     = new SolidColorBrush(codeSyntaxType);
         res["TabFocusRingBrush"]      = new SolidColorBrush(Color.FromArgb(0x8C, primary.R, primary.G, primary.B));
         res["PrimaryOverlay50Brush"]  = new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
         res["ProjectCardHoverBrush"] = isDarkTheme

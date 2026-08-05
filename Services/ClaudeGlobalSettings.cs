@@ -33,6 +33,54 @@ public static class ClaudeGlobalSettings
     /// <summary>영구 보관(사실상 정리 안 함) 표현용 일수 — 약 273년.</summary>
     public const int PermanentDays = 99999;
 
+    public const string DefaultPermissionMode = "acceptEdits";
+
+    public static bool IsSupportedPermissionMode(string? value)
+        => value is "acceptEdits" or "plan" or "auto" or "bypassPermissions";
+
+    /// <summary>Claude Code 전역 <c>permissions.defaultMode</c>. GUI에서 지원하지 않는 값은 안전한 기본값으로 정규화한다.</summary>
+    public static string GetDefaultPermissionMode()
+    {
+        try
+        {
+            if (!File.Exists(SettingsJsonPath)) return DefaultPermissionMode;
+            using var doc = JsonDocument.Parse(File.ReadAllText(SettingsJsonPath));
+            if (doc.RootElement.TryGetProperty("permissions", out var permissions)
+                && permissions.ValueKind == JsonValueKind.Object
+                && permissions.TryGetProperty("defaultMode", out var mode)
+                && mode.ValueKind == JsonValueKind.String
+                && IsSupportedPermissionMode(mode.GetString()))
+                return mode.GetString()!;
+        }
+        catch { /* 손상/경합 시 GUI 기본값 */ }
+        return DefaultPermissionMode;
+    }
+
+    /// <summary>Claude Code 전역 <c>permissions.defaultMode</c>만 병합 저장하고 나머지 설정은 보존한다.</summary>
+    public static bool SetDefaultPermissionMode(string? value)
+    {
+        if (!IsSupportedPermissionMode(value)) return false;
+        var opts = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        };
+        return AtomicFile.TryUpdateAllText(SettingsJsonPath, original =>
+        {
+            JsonNode? root;
+            try { root = JsonNode.Parse(string.IsNullOrWhiteSpace(original) ? "{}" : original); }
+            catch { return null; }
+            if (root is not JsonObject rootObj) return null;
+            if (rootObj["permissions"] is not JsonObject permissions)
+            {
+                permissions = new JsonObject();
+                rootObj["permissions"] = permissions;
+            }
+            permissions["defaultMode"] = value;
+            return rootObj.ToJsonString(opts);
+        });
+    }
+
     /// <summary>세션 유지기간(cleanupPeriodDays). 미지정/파싱 실패 시 기본값.</summary>
     public static int GetCleanupPeriodDays()
     {

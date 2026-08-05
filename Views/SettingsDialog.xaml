@@ -650,6 +650,29 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="Claude GUI 모드" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="켜면 Claude Code 세션을 구독 로그인을 사용하는 SDK 대화 화면으로 실행합니다. 새로 여는 세션부터 적용됩니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                            <TextBlock Text="(개인 Claude 계정의 구독 로그인과 공식 Claude Agent SDK를 사용하는 방식으로, Anthropic의 SDK 사용 정책 및 계정 약관 범위 내에서 정상적으로 이용됩니다.)"
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ClaudeGuiModeToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="ClaudeGuiModeToggle_Changed" Unchecked="ClaudeGuiModeToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="세션 생성 시 세션명 바로 지정" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="켜면 세션을 추가할 때 이름 입력 팝업을 바로 표시합니다."

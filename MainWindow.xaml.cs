@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using DevezCode.Models;
 using DevezCode.Services;
+using DevezCode.Services.ClaudeSdk;
 using DevezCode.Services.Terminal;
 using DevezCode.Views;
 
@@ -4406,7 +4407,10 @@ public partial class MainWindow : Window
             await Task.WhenAll(_panes.Select(pane => pane.SetSessionExternalAsync(session)));
             foreach (var pane in _panes) pane.SetExternalLaunching(session); // 열리는 동안 스피너
             UpdateSessionBusyDisplay();
-            await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { session.Id });
+            if (ClaudeSdkSessionManager.Instance.IsStarted(session.Id))
+                await ClaudeSdkSessionManager.Instance.StopAsync(session.Id);
+            else
+                await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { session.Id });
             TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
             // 내부 dvz가 남긴 owner 파일은 새 외부 dvz의 상태 기록을 막는다. 내부 종료가 완료된 뒤
             // 소유권만 비워 외부 프로세스가 같은 방의 최신 thread ID를 계속 기록하게 한다.
@@ -5741,9 +5745,16 @@ public partial class MainWindow : Window
             || _sessionCommandInbox.HasPendingInjection(session.Id))
             return false;
 
-        if (TerminalSessionManager.Instance.Get(session.Id) is not { IsAlive: true }
-            || TerminalSessionManager.Instance.IsGracefulStopping(session.Id))
+        bool sdkSession = ClaudeSdkSessionManager.Instance.IsStarted(session.Id);
+        if (sdkSession)
+        {
+            if (string.IsNullOrWhiteSpace(SettingsService.LoadClaudeCodeRoomSession(session.Id))) return false;
+        }
+        else if (TerminalSessionManager.Instance.Get(session.Id) is not { IsAlive: true }
+                 || TerminalSessionManager.Instance.IsGracefulStopping(session.Id))
+        {
             return false;
+        }
 
         var agentId = string.IsNullOrWhiteSpace(session.AgentId)
             ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId;
@@ -5761,7 +5772,7 @@ public partial class MainWindow : Window
         if (nowUtc - lastActivity < TimeSpan.FromMinutes(_idleSessionShutdownMinutes))
             return false;
 
-        return TerminalSessionManager.CanSafelyResumeRoom(session.Id);
+        return sdkSession || TerminalSessionManager.CanSafelyResumeRoom(session.Id);
     }
 
     /// <summary>claude waiting 파일이 선택지/권한 대기 값인지. busy=false 보강 해제 시 ❗ 유지 판단용.</summary>
@@ -5861,7 +5872,10 @@ public partial class MainWindow : Window
         session.IsWaitingChoice = false;
         try
         {
-            await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { roomId });
+            if (ClaudeSdkSessionManager.Instance.IsStarted(roomId))
+                await ClaudeSdkSessionManager.Instance.StopAsync(roomId);
+            else
+                await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { roomId });
         }
         catch (Exception ex)
         {
@@ -5918,7 +5932,12 @@ public partial class MainWindow : Window
     private async Task ReloadAllSessionsForThemeOnceAsync()
     {
         var allSessions = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>()
-            .Where(session => !session.IsExternal).ToList();
+            .Where(session => !session.IsExternal)
+            .Where(session => !(SettingsService.LoadClaudeGuiMode()
+                && string.Equals(string.IsNullOrWhiteSpace(session.AgentId)
+                        ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId,
+                    "claude", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
         if (allSessions.Count == 0) return;
 
         // 숨겨진 PaneB도 이전 분할 화면의 터미널 배선을 보존할 수 있다. 두 패널 모두 먼저 detach 해야
