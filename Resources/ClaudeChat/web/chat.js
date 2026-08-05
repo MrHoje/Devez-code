@@ -1614,6 +1614,13 @@
         title.appendChild(hint);
       }
       copy.appendChild(title);
+      const descriptionText = typeof command.description === "string" ? command.description.trim() : "";
+      if (descriptionText) {
+        const description = document.createElement("span");
+        description.className = "menu-description command-description";
+        description.textContent = descriptionText;
+        copy.appendChild(description);
+      }
       button.appendChild(copy);
       commandMenu.appendChild(button);
     });

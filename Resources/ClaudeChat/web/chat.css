@@ -265,7 +265,7 @@ body[data-vibe="on"] .task-sheet { display: none; }
 .error-card { border-color: var(--danger); }
 .card-title { margin: 0 0 7px; color: var(--text); font-size: 13px; font-weight: 600; }
 .card-body { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.permission-input { width: 100%; min-height: 38px; max-height: 110px; margin-top: 10px; padding: 8px 10px; resize: vertical; color: var(--text); caret-color: var(--primary); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; outline: none; }
+.permission-input { width: 100%; min-height: 38px; max-height: 110px; margin-top: 10px; padding: 8px 10px; resize: vertical; color: var(--text); caret-color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; outline: none; }
 .permission-input:focus { border-color: var(--line); }
 .permission-actions { display: flex; gap: 8px; margin-top: 10px; }
 .permission-actions button { min-width: 72px; height: 32px; padding: 0 12px; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 8px; }
@@ -323,7 +323,7 @@ body[data-vibe="on"] .task-sheet { display: none; }
 .attachment-remove:hover { background: var(--danger); }
 .attachment-error { padding: 7px 13px 0; color: var(--danger); font-size: 11px; line-height: 1.4; }
 .attachment-error[hidden] { display: none; }
-#prompt { display: block; width: 100%; min-height: 52px; max-height: 147px; padding: 13px 14px 7px; resize: none; overflow-y: hidden; color: var(--text); caret-color: var(--primary); background: transparent; border: 0; outline: 0; font-size: 15px; line-height: 1.55; cursor: text; }
+#prompt { display: block; width: 100%; min-height: 52px; max-height: 147px; padding: 13px 14px 7px; resize: none; overflow-y: hidden; color: var(--text); caret-color: var(--text); background: transparent; border: 0; outline: 0; font-size: 15px; line-height: 1.55; cursor: text; }
 #prompt::placeholder { color: color-mix(in srgb, var(--muted) 82%, transparent); opacity: 1; }
 .composer-toolbar { display: flex; align-items: center; min-height: 43px; gap: 4px; padding: 4px 6px 6px; }
 .composer-control { display: inline-flex; align-items: center; min-width: 0; max-width: 210px; height: 34px; gap: 5px; padding: 0 7px; color: var(--muted); background: transparent; border: 0; border-radius: 7px; font-size: 13px; font-weight: 500; transition: color 120ms ease, background-color 120ms ease, transform 120ms cubic-bezier(.23,1,.32,1); }
@@ -371,6 +371,7 @@ body[data-vibe="on"] .task-sheet { display: none; }
 .menu-title code { color: var(--primary); font-size: 14px; font-weight: 600; }
 .command-argument { min-width: 0; flex: 1; overflow: hidden; color: var(--muted); font-size: 11.5px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .menu-description { display: -webkit-box; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.command-description { margin-top: 2px; font-size: 11.5px; line-height: 1.4; -webkit-line-clamp: 1; }
 .menu-hint { align-self: center; color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .menu-hint:empty { display: none; }
 .menu-check { align-self: center; margin-left: 12px; color: var(--primary); font-size: 13px; }
