@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using DevezCode.Models;
+using DevezCode.Services.Terminal;
 
 namespace DevezCode.Services.ClaudeSdk;
 
@@ -106,6 +107,13 @@ public sealed class ClaudeSdkSessionManager
             item.IsAlive = true;
             DiagLog.Write($"ClaudeSdk start room={item.Id} cwd={cwd}");
             var sessionId = SettingsService.LoadClaudeCodeRoomSession(item.Id);
+            if (!string.IsNullOrWhiteSpace(sessionId)
+                && TerminalSessionManager.FindClaudeTranscriptPath(cwd, sessionId) == null)
+            {
+                DiagLog.Write($"ClaudeSdk resume skipped room={item.Id} sid={sessionId}: transcript 없음");
+                SettingsService.RemoveClaudeCodeRoomSession(item.Id);
+                sessionId = null;
+            }
             var model = SettingsService.LoadClaudeCodeRoomModel(item.Id);
             var effort = SettingsService.LoadClaudeCodeRoomEffort(item.Id);
             var permissionMode = SettingsService.LoadClaudeCodeRoomPermissionMode(item.Id);

@@ -300,16 +300,21 @@
     if (value.endsWith("|")) value = value.slice(0, -1);
     const cells = [];
     let cell = "";
-    let escaped = false;
     let inCode = false;
-    for (const char of value) {
-      if (escaped) { cell += char; escaped = false; continue; }
-      if (char === "\\") { escaped = true; continue; }
+    for (let index = 0; index < value.length; index++) {
+      const char = value[index];
+      if (char === "\\") {
+        const next = value[index + 1];
+        if (next === "|" || next === "\\" || next === "`") {
+          cell += next;
+          index++;
+        } else cell += char;
+        continue;
+      }
       if (char === "`") { inCode = !inCode; cell += char; continue; }
       if (char === "|" && !inCode) { cells.push(cell.trim()); cell = ""; continue; }
       cell += char;
     }
-    if (escaped) cell += "\\";
     cells.push(cell.trim());
     return cells;
   }
@@ -435,6 +440,13 @@
       const alignments = index + 1 < lines.length ? tableAlignments(lines[index + 1]) : null;
       if (alignments && line.includes("|")) {
         const headers = splitTableRow(line);
+        if (headers.length !== alignments.length) {
+          const paragraph = [line];
+          index++;
+          while (index < lines.length && lines[index].trim()) paragraph.push(lines[index++]);
+          html.push(`<p>${paragraph.map(inlineMarkdown).join("<br>")}</p>`);
+          continue;
+        }
         const rows = [];
         index += 2;
         while (index < lines.length && lines[index].trim() && lines[index].includes("|"))
@@ -483,6 +495,23 @@
     }).join("");
   }
 
+  function patchMarkdownNode(current, next) {
+    if (current.nodeType === Node.TEXT_NODE && next.nodeType === Node.TEXT_NODE) {
+      current.nodeValue = next.nodeValue;
+      return true;
+    }
+    if (!(current instanceof HTMLElement) || !(next instanceof HTMLElement)) return false;
+    if (current.tagName !== next.tagName || current.className !== next.className) return false;
+
+    for (const attribute of Array.from(current.attributes))
+      if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+    for (const attribute of Array.from(next.attributes))
+      if (current.getAttribute(attribute.name) !== attribute.value)
+        current.setAttribute(attribute.name, attribute.value);
+    current.replaceChildren(...Array.from(next.childNodes, node => node.cloneNode(true)));
+    return true;
+  }
+
   function reconcileMarkdown(container, source) {
     markdownTemplate.innerHTML = renderMarkdown(source);
     const currentNodes = Array.from(container.childNodes);
@@ -492,6 +521,12 @@
       stableCount < currentNodes.length &&
       stableCount < nextNodes.length &&
       currentNodes[stableCount].isEqualNode(nextNodes[stableCount])
+    ) stableCount++;
+
+    while (
+      stableCount < currentNodes.length &&
+      stableCount < nextNodes.length &&
+      patchMarkdownNode(currentNodes[stableCount], nextNodes[stableCount])
     ) stableCount++;
 
     for (let index = currentNodes.length - 1; index >= stableCount; index--)
@@ -665,6 +700,22 @@
     requestAnimationFrame(() => turn.classList.add("is-visible"));
   }
 
+  function streamChunkLength(state, backlog, reduceMotion) {
+    if (reduceMotion) return backlog;
+    if (state.ended) return Math.min(backlog, Math.max(10, Math.ceil(backlog * .42)));
+    const minimum = state.text.length < 80 ? 2 : 3;
+    const maximum = state.text.length > 12000 ? 96 : 160;
+    return Math.min(backlog, maximum, Math.max(minimum, Math.ceil(backlog * .18)));
+  }
+
+  function safeStreamCut(text, count) {
+    let cut = Math.min(text.length, Math.max(0, count));
+    if (cut > 0 && cut < text.length && /[\uD800-\uDBFF]/.test(text[cut - 1])) cut++;
+    if (cut > 0 && cut < text.length && text[cut - 1] === "\r" && text[cut] === "\n") cut++;
+    while (cut < text.length && /\p{Mark}/u.test(text[cut])) cut++;
+    return cut;
+  }
+
   function scheduleAssistantFrame(streamId, state) {
     if (state.frame) return;
     state.frame = requestAnimationFrame(now => {
@@ -677,16 +728,13 @@
         return;
       }
 
-      const paintInterval = state.text.length > 12000 ? 48 : state.text.length > 4000 ? 36 : 24;
+      const paintInterval = state.text.length > 12000 ? 34 : state.text.length > 4000 ? 28 : 22;
       if (!state.ended && !reduceMotion && now - state.lastPaint < paintInterval) {
         scheduleAssistantFrame(streamId, state);
         return;
       }
 
-      let count = backlog;
-      if (!state.ended && !reduceMotion && backlog > 320)
-        count = Math.min(1600, Math.max(192, Math.ceil(backlog * .55)));
-      if (count > 0 && count < backlog && /[\uD800-\uDBFF]/.test(state.pending[count - 1])) count += 1;
+      const count = safeStreamCut(state.pending, streamChunkLength(state, backlog, reduceMotion));
       if (count > 0) {
         state.text += state.pending.slice(0, count);
         state.pending = state.pending.slice(count);

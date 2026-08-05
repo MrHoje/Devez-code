@@ -43,6 +43,7 @@ let latestContextTokens = 0;
 let currentContextWindow = 1_000_000;
 let partialMessageId = "";
 let lastRateLimitNotice = "";
+let resultErrorAt = 0;
 const partialBlocks = new Map();
 const streamedMessageIds = new Set();
 const SAFE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
@@ -486,6 +487,7 @@ async function start(command) {
       else if (message?.type === "result") {
         currentContextWindow = resolveContextWindow(message.modelUsage);
         write({ type: "context_usage", input: { usedTokens: latestContextTokens, contextWindow: currentContextWindow } });
+        resultErrorAt = message.is_error === true ? Date.now() : 0;
         write({
           type: "result",
           text: typeof message.result === "string" ? message.result : "",
@@ -497,7 +499,8 @@ async function start(command) {
     write({ type: "stopped" });
   } catch (error) {
     endPartialStreams();
-    write({ type: "error", text: error?.message ?? String(error) });
+    if (!resultErrorAt || Date.now() - resultErrorAt > 10_000)
+      write({ type: "error", text: error?.message ?? String(error) });
   } finally {
     conversation = null;
   }
@@ -509,6 +512,7 @@ async function handle(command) {
       void start(command);
       break;
     case "prompt":
+      resultErrorAt = 0;
       prompts.push(userMessage(command.text ?? "", command.images, command.files));
       break;
     case "permission": {
