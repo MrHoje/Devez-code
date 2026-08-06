@@ -5,7 +5,7 @@
   const conversation = document.getElementById("conversation");
   const messages = document.getElementById("messages");
   const emptyState = document.getElementById("empty-state");
-  const typing = document.getElementById("typing");
+  const workingIndicator = document.getElementById("working-indicator");
   const workingTime = document.getElementById("working-time");
   const prompt = document.getElementById("prompt");
   const action = document.getElementById("action");
@@ -731,7 +731,7 @@
   function setBusy(value) {
     if (busy === value) return;
     busy = value;
-    typing.hidden = !busy;
+    workingIndicator.hidden = !busy;
     action.classList.toggle("busy", busy);
     action.setAttribute("aria-label", busy ? "응답 중지" : "보내기");
     updateAction();

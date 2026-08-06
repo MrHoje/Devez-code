@@ -16,8 +16,10 @@
         <h1>Claude Code with DevezCode</h1>
       </div>
       <div id="messages" class="messages"></div>
-      <div id="typing" class="typing" hidden>
-        <span></span><span></span><span></span><time id="working-time">(0s)</time>
+      <div id="working-indicator" class="working-indicator" aria-hidden="true" hidden>
+        <span class="working-spinner" aria-hidden="true"></span>
+        <span class="working-label">Working</span>
+        <time id="working-time">(0s)</time>
       </div>
     </section>
     <div id="drop-overlay" class="drop-overlay" aria-hidden="true" hidden>
