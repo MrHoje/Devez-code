@@ -37,6 +37,7 @@ let conversation = null;
 let started = false;
 let sessionLoop = null;
 let shuttingDown = false;
+let turnActive = false;
 let sessionId = "";
 let currentModel = "";
 let currentEffort = "high";
@@ -55,6 +56,7 @@ const SAFE_PERMISSION_MODES = new Set(["acceptEdits", "plan", "auto", "bypassPer
 const SAFE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const MAX_IMAGES = 20;
 const SHUTDOWN_GUARD_MS = 6000;
+const INTERRUPT_WAIT_MS = 1500;
 const MAX_IMAGE_BASE64_LENGTH = 10 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BASE64_LENGTH = 28 * 1024 * 1024;
 const DEVEZCODE_GUI_INSTRUCTIONS = [
@@ -519,6 +521,7 @@ async function start(command) {
       else if (message?.type === "assistant") emitAssistant(message);
       else if (message?.type === "user") emitToolResults(message);
       else if (message?.type === "result") {
+        turnActive = false;
         currentContextWindow = resolveContextWindow(message.modelUsage);
         write({ type: "context_usage", input: { usedTokens: latestContextTokens, contextWindow: currentContextWindow } });
         resultErrorAt = message.is_error === true ? Date.now() : 0;
@@ -537,6 +540,7 @@ async function start(command) {
       write({ type: "error", text: error?.message ?? String(error) });
   } finally {
     conversation = null;
+    turnActive = false;
   }
 }
 
@@ -546,9 +550,20 @@ async function start(command) {
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  // 안전망을 제일 먼저 건다 — interrupt 는 CLI 응답을 기다리는 control 요청이라, CLI 가 멈춰 있으면
+  // 영영 settle 되지 않는다. 뒤에 걸면 그 사이 아무 상한 없이 매달린다.
+  const guard = setTimeout(() => process.exit(0), SHUTDOWN_GUARD_MS);
   prompts.close();
-  try { await conversation?.interrupt?.(); } catch { /* 진행 중 턴이 없으면 거부될 수 있다 */ }
-  const guard = setTimeout(() => process.exit(0), SHUTDOWN_GUARD_MS); // CLI 무응답 대비 안전망
+  // 턴이 없으면 interrupt 를 아예 보내지 않는다 — idle 세션에서 CLI 가 응답하지 않아 상한만 소진했다.
+  // 턴 중이면 상한을 따로 둔다(배수 자체는 prompts.close 만으로도 진행).
+  if (turnActive) {
+    try {
+      await Promise.race([
+        Promise.resolve(conversation?.interrupt?.()).catch(() => { }),
+        new Promise((resolve) => setTimeout(resolve, INTERRUPT_WAIT_MS)),
+      ]);
+    } catch { }
+  }
   try { await sessionLoop; } catch { /* 오류는 start() 가 이미 보고 */ }
   clearTimeout(guard);
   // stdout 이 파이프면 process.exit 가 남은 버퍼를 잘라먹는다 — 배수가 끝났으니 핸들이 정리되면
@@ -567,6 +582,7 @@ async function handle(command) {
       break;
     case "prompt":
       resultErrorAt = 0;
+      turnActive = true;
       prompts.push(userMessage(command.text ?? "", command.images, command.files));
       break;
     case "permission": {
