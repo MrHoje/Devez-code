@@ -570,12 +570,27 @@ public static class SettingsService
     {
         lock (_lock)
         {
+            // dvz 세션의 실체는 백엔드마다 다른 저장소다(codex rollout / claude transcript /
+            // opencode 내부). ID 접두사로 갈라 각 백엔드 보호 목록에 넣지 않으면, 예컨대
+            // claude 백엔드로 이어온 방의 transcript 가 claude 정리에 지워진다.
+            var devezVibe = Current.DevezVibeRoomSessions.Values
+                .Where(v => !string.IsNullOrWhiteSpace(v)).ToList();
+            var devezVibeClaude = devezVibe
+                .Where(v => v.StartsWith("claude:", StringComparison.Ordinal))
+                .Select(DevezVibeStateService.StripBackendPrefix);
+            var devezVibeOpenCode = devezVibe
+                .Where(v => v.StartsWith("ses_", StringComparison.Ordinal));
+            var devezVibeCodex = devezVibe
+                .Where(v => !v.StartsWith("claude:", StringComparison.Ordinal)
+                    && !v.StartsWith("ses_", StringComparison.Ordinal));
+
             return (
-                Current.ClaudeCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
-                Current.OpenCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                Current.ClaudeCodeRoomSessions.Values.Concat(devezVibeClaude)
+                    .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                Current.OpenCodeRoomSessions.Values.Concat(devezVibeOpenCode)
+                    .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 Current.GajaeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
-                // dvz 세션은 codex rollout 파일 그 자체라 codex 보호 목록에 합친다(클리너 카테고리도 codex).
-                Current.CodexRoomSessions.Values.Concat(Current.DevezVibeRoomSessions.Values)
+                Current.CodexRoomSessions.Values.Concat(devezVibeCodex)
                     .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 Current.GrokRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.AntigravityRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
