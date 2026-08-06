@@ -176,6 +176,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly Dictionary<string, int> _inlineFirstOutTick = new();
     /// <summary>풀스크린 방별 준비 폴백 1회성 타이머(alt-screen 미감지 대비). UI 스레드.</summary>
     private readonly Dictionary<string, System.Windows.Threading.DispatcherTimer> _fullscreenFallbackTimers = new();
+    /// <summary>dvz 복원 완료 파일을 기다리는 방. 초기 빈 프레임에서 준비 통지가 먼저 나가는 것을 막는다.</summary>
+    private readonly HashSet<string> _devezVibeReadyDeferred = new();
+    private readonly Dictionary<string, long> _devezVibeLoadingGeneration = new();
+    private readonly Dictionary<string, System.Windows.Threading.DispatcherTimer> _devezVibeLoadingTimers = new();
     /// <summary>인라인 TUI 준비 마커(\e[?2004h/\e[?2026h)가 안 와도 이만큼 지나면 준비로 본다(무한 스피너 방지).</summary>
     private const int InlineReadyFallbackMs = 8000;
     /// <summary>풀스크린 TUI(claude 등)에서 alt-screen 시퀀스가 안 걸려도 첫 출력 후 이만큼 지나면 준비로 본다.
@@ -339,6 +343,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         if (_fullscreenFallbackTimers.Remove(roomId, out var ft)) ft.Stop(); // 잔존 타이머 조기 발화 방지
+        _devezVibeReadyDeferred.Remove(roomId);
+        _devezVibeLoadingGeneration.Remove(roomId);
+        if (_devezVibeLoadingTimers.Remove(roomId, out var loading)) loading.Stop();
     }
 
     /// <summary>배치 재진입 플래그(claude·gjc — TerminalSessionManager.RoomReentering, FSW 스레드) 처리.
@@ -419,7 +426,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             {
                 t.Stop();
                 _settleTimers.Remove(roomId);
-                if (AgentFor(roomId) == "codex") RequestReadyPaint(roomId);
+                if (AgentFor(roomId) is "codex" or "devezvibe") RequestReadyPaint(roomId);
                 else NotifyReady(roomId);
             };
             _settleTimers[roomId] = t;
@@ -643,7 +650,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     if (_ready.Contains(roomId) && !_readyNotified.Contains(roomId) &&
                         _outputGenerations.TryGetValue(roomId, out var current) && current == generation)
                     {
-                        if (hasContent) NotifyReady(roomId);
+                        if (hasContent) NotifyPaintedReady(roomId, generation);
                         else BumpSettle(roomId); // 커서뿐이면 다음 페인트/출력을 기다린다.
                     }
                     break;
@@ -985,6 +992,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     PostJson(new { type = "restarted", roomId }); // xterm 클리어 + JS 가 실제 크기로 resize
                     return;
                 }
+                _devezVibeReadyDeferred.Remove(roomId);
+                _devezVibeLoadingGeneration.Remove(roomId);
+                if (_devezVibeLoadingTimers.Remove(roomId, out var loading)) loading.Stop();
                 PostJson(new { type = "exited", roomId });
                 SessionExited?.Invoke(roomId); // 끊김/죽음 → 회색 점
             });
@@ -2042,17 +2052,98 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>TerminalReady 통지(중복 방지).</summary>
     private void NotifyReady(string roomId)
     {
-        if (_readyNotified.Add(roomId))
+        if (AgentFor(roomId) == "devezvibe")
         {
-            DevezCode.Services.DiagLog.Write($"NotifyReady room={roomId}");
-            TerminalReady?.Invoke(roomId);
+            if (DevezCode.Services.DevezVibeStateService.IsSessionLoading(roomId))
+            {
+                _devezVibeReadyDeferred.Add(roomId);
+                _devezVibeLoadingGeneration[roomId] = _outputGenerations.GetValueOrDefault(roomId);
+                ArmDevezVibeLoadingWait(roomId);
+                return;
+            }
+            if (_devezVibeReadyDeferred.Contains(roomId))
+            {
+                // 파일 교체 순간의 일시적인 미검출을 idle 로 오인하지 않도록 폴러에서 연속 확인한다.
+                ArmDevezVibeLoadingWait(roomId);
+                return;
+            }
         }
+        CompleteReady(roomId);
+    }
+
+    private void CompleteReady(string roomId)
+    {
+        _devezVibeReadyDeferred.Remove(roomId);
+        _devezVibeLoadingGeneration.Remove(roomId);
+        if (_devezVibeLoadingTimers.Remove(roomId, out var loading)) loading.Stop();
+        if (!_readyNotified.Add(roomId)) return;
+        DevezCode.Services.DiagLog.Write($"NotifyReady room={roomId}");
+        TerminalReady?.Invoke(roomId);
+    }
+
+    private void NotifyPaintedReady(string roomId, long generation)
+    {
+        if (AgentFor(roomId) == "devezvibe")
+        {
+            if (DevezCode.Services.DevezVibeStateService.IsSessionLoading(roomId))
+            {
+                _devezVibeReadyDeferred.Add(roomId);
+                _devezVibeLoadingGeneration[roomId] = _outputGenerations.GetValueOrDefault(roomId);
+                ArmDevezVibeLoadingWait(roomId);
+                return;
+            }
+            if (_devezVibeReadyDeferred.Contains(roomId) &&
+                generation <= _devezVibeLoadingGeneration.GetValueOrDefault(roomId))
+            {
+                ArmDevezVibeLoadingWait(roomId);
+                return;
+            }
+        }
+        CompleteReady(roomId);
+    }
+
+    /// <summary>dvz가 복원 완료를 기록한 뒤 마지막 출력이 정착하고 브라우저에 페인트될 때까지 기다린다.</summary>
+    private void ArmDevezVibeLoadingWait(string roomId)
+    {
+        if (_devezVibeLoadingTimers.ContainsKey(roomId)) return;
+        int idlePolls = 0;
+        var timer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(100),
+        };
+        timer.Tick += (_, _) =>
+        {
+            if (DevezCode.Services.DevezVibeStateService.IsSessionLoading(roomId))
+            {
+                _devezVibeLoadingGeneration[roomId] = _outputGenerations.GetValueOrDefault(roomId);
+                idlePolls = 0;
+                return;
+            }
+            bool paintedAfterLoading = _outputGenerations.GetValueOrDefault(roomId) >
+                _devezVibeLoadingGeneration.GetValueOrDefault(roomId);
+            if (!paintedAfterLoading) { idlePolls = 0; return; }
+            if (++idlePolls < 2) return;
+            timer.Stop();
+            _devezVibeLoadingTimers.Remove(roomId);
+            _altSeenTick[roomId] = Environment.TickCount;
+            BumpSettle(roomId);
+        };
+        _devezVibeLoadingTimers[roomId] = timer;
+        timer.Start();
     }
 
     /// <summary>Codex 출력 정지 후 xterm 쓰기와 브라우저 페인트가 끝났는지 확인한다.</summary>
     private void RequestReadyPaint(string roomId)
     {
         if (!_outputGenerations.TryGetValue(roomId, out var generation)) return;
+        if (AgentFor(roomId) == "devezvibe" &&
+            DevezCode.Services.DevezVibeStateService.IsSessionLoading(roomId))
+        {
+            _devezVibeReadyDeferred.Add(roomId);
+            _devezVibeLoadingGeneration[roomId] = generation;
+            ArmDevezVibeLoadingWait(roomId);
+            return;
+        }
         PostJson(new { type = "readyPaintProbe", roomId, generation });
     }
 
@@ -2175,6 +2266,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         if (_fullscreenFallbackTimers.Remove(roomId, out var ft)) ft.Stop();
+        _devezVibeReadyDeferred.Remove(roomId);
+        _devezVibeLoadingGeneration.Remove(roomId);
+        if (_devezVibeLoadingTimers.Remove(roomId, out var loading)) loading.Stop();
         _pendingPreload.Remove(roomId);
         _grokCsiTails.Remove(roomId);
         lock (_outLock) { _outPending.Remove(roomId); _outScheduled.Remove(roomId); }
@@ -2197,6 +2291,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         FlushOutput(roomId);
         if (_settleTimers.Remove(roomId, out var settle)) settle.Stop();
         if (_fullscreenFallbackTimers.Remove(roomId, out var fallback)) fallback.Stop();
+        _devezVibeReadyDeferred.Remove(roomId);
+        _devezVibeLoadingGeneration.Remove(roomId);
+        if (_devezVibeLoadingTimers.Remove(roomId, out var loading)) loading.Stop();
         _externalPreviewRooms.Add(roomId);
         _externalOutputOffsets[roomId] = 0;
         _externalPreviewSizes.Remove(roomId);
@@ -2391,6 +2488,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _altSeenTick.Clear();
         foreach (var t in _settleTimers.Values) t.Stop();
         _settleTimers.Clear();
+        foreach (var t in _devezVibeLoadingTimers.Values) t.Stop();
+        _devezVibeLoadingTimers.Clear();
+        _devezVibeReadyDeferred.Clear();
+        _devezVibeLoadingGeneration.Clear();
         lock (_outLock) { _outPending.Clear(); _outScheduled.Clear(); }
     }
 }

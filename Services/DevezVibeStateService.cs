@@ -73,6 +73,16 @@ public sealed class DevezVibeStateService : IDisposable
             && status.Equals("running", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>복원 대화가 아직 화면에 재구성되는 중인지 확인한다.
+    /// 터미널의 초기 프레임만으로 로딩 커버가 먼저 걷히는 것을 막는 준비 게이트에서 사용한다.</summary>
+    public static bool IsSessionLoading(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return false;
+        var status = TryRead(Path.Combine(BusyDir, Sanitize(roomId) + ".txt"));
+        return !string.IsNullOrWhiteSpace(status)
+            && status.Equals("loading", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>방 종료·삭제 시 남은 상태 파일 정리.</summary>
     public static void DeleteRoomFiles(string room)
     {

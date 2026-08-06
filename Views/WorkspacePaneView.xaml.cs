@@ -2631,7 +2631,17 @@ public partial class WorkspacePaneView : UserControl
         _loadingTimeout.Start();
     }
 
-    private void LoadingTimeout_Tick(object? sender, EventArgs e) => HideSessionLoading();
+    private void LoadingTimeout_Tick(object? sender, EventArgs e)
+    {
+        // dvz 복원은 큰 transcript 재구성이 20초를 넘을 수 있다. 프로세스가 살아 있고 최종 페인트
+        // 준비 신호가 아직이면 공통 fail-open 으로 빈 화면을 노출하지 않고 다음 tick까지 커버를 유지한다.
+        if (_loadingRoomId is { } roomId &&
+            SettingsService.LoadAgentForRoom(roomId) == "devezvibe" &&
+            TerminalSessionManager.Instance.Get(roomId) is { IsAlive: true } &&
+            !_terminal.IsReady(roomId))
+            return;
+        HideSessionLoading();
+    }
 
     private void HideSessionLoading()
     {

@@ -641,7 +641,7 @@ public partial class MainWindow : Window
                 else _devezVibeLoadingRooms.Remove(roomId);
                 if (s != null)
                 {
-                    s.IsBusy = busy;
+                    s.IsBusy = busy || loading;
                     if (!busy) s.IsWaitingChoice = false;
                 }
                 // transcript 복원 완료의 loading→idle 은 응답 완료가 아니다.
