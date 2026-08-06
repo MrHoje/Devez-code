@@ -543,9 +543,15 @@ public partial class App : Application
         // 재실행 시 그 세션을 복원하지 못했다. opencode/gjc 는 실시간 추적이라 무관 → claude 만 증상이었다.)
         // UI 스레드 데드락을 피하려 Task.Run 으로 실행 후 상한 대기, 잔여는 DisposeAll 로 하드 정리.
         // 상한 = perGrace(2.5s) + postFlush cap(5s) + 정착(0.5s) + Dispose/스냅샷 여유.
-        try { System.Threading.Tasks.Task.Run(() => TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500)).Wait(10000); }
-        catch { /* best-effort */ }
-        try { System.Threading.Tasks.Task.Run(() => ClaudeSdkSessionManager.Instance.ShutdownAllAsync()).Wait(7000); }
+        // MainWindow 종료 경로가 이미 처리했으면 여기선 사실상 무동작(세션 목록이 비어 있음).
+        // 창을 거치지 않는 종료(업데이트 재시작 등)를 위한 폴백이라 둘을 병렬로 돌리고 상한만 둔다.
+        // 상한 = 터미널 perGrace(2.5s)+postFlush(5s) 와 SDK 배수(8s) 중 느린 쪽 + 여유.
+        try
+        {
+            System.Threading.Tasks.Task.Run(() => System.Threading.Tasks.Task.WhenAll(
+                TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500),
+                ClaudeSdkSessionManager.Instance.ShutdownAllAsync())).Wait(12000);
+        }
         catch { /* best-effort */ }
         try { DevezCode.Services.SessionUsageService.Save(); } catch { /* 토큰 집계 영속 best-effort */ }
         try { DevezCode.Services.BrowserBridgeServer.Instance.Stop(); } catch { /* 브리지 정리 best-effort */ }

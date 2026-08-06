@@ -119,8 +119,9 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
             await _webView.EnsureCoreWebView2Async(environment);
 
             _webView.AllowExternalDrop = false;
+            _webView.ZoomFactor = SettingsService.LoadClaudeGuiZoomFactor();
             var core = _webView.CoreWebView2;
-            core.Settings.AreDefaultContextMenusEnabled = true;
+            core.Settings.AreDefaultContextMenusEnabled = false;
             core.Settings.AreBrowserAcceleratorKeysEnabled = false;
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsZoomControlEnabled = false;
@@ -244,6 +245,27 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                                       && vibeValue.ValueKind == JsonValueKind.True;
                     SettingsService.SaveClaudeVibeMode(vibeEnabled);
                     UserInteracted?.Invoke();
+                    break;
+                case "setShowSkills":
+                    var showSkills = root.TryGetProperty("enabled", out var showSkillsValue)
+                                     && showSkillsValue.ValueKind == JsonValueKind.True;
+                    SettingsService.SaveClaudeShowSkills(showSkills);
+                    UserInteracted?.Invoke();
+                    break;
+                case "adjustZoom":
+                    if (_webView != null
+                        && root.TryGetProperty("direction", out var zoomDirectionValue)
+                        && zoomDirectionValue.TryGetInt32(out var zoomDirection)
+                        && zoomDirection != 0)
+                    {
+                        var zoomFactor = Math.Clamp(
+                            _webView.ZoomFactor + (zoomDirection > 0 ? 0.1 : -0.1),
+                            0.75,
+                            1.75);
+                        _webView.ZoomFactor = Math.Round(zoomFactor, 2);
+                        SettingsService.SaveClaudeGuiZoomFactor(_webView.ZoomFactor);
+                        UserInteracted?.Invoke();
+                    }
                     break;
                 case "refreshCapabilities":
                     if (_session != null)
@@ -482,6 +504,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
             effort = SettingsService.LoadClaudeCodeRoomEffort(_session.Id) ?? "high",
             permissionMode = SettingsService.LoadClaudeCodeRoomPermissionMode(_session.Id),
             vibeMode = SettingsService.LoadClaudeVibeMode(),
+            showSkills = SettingsService.LoadClaudeShowSkills(),
         });
     }
 
@@ -568,6 +591,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
             type = "setTheme",
             theme = App.CurrentTheme,
             dark = App.IsDarkTheme(App.CurrentTheme),
+            terminalBg = Hex("TerminalBgBrush", "#1f1f1e"),
             bg = Hex("BgBrush", "#1f1f1e"),
             panel = Hex("PanelBrush", "#272727"),
             panelSoft = Hex("PanelSoftBrush", "#2f2f2f"),
@@ -596,9 +620,9 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
 
     private static System.Drawing.Color CurrentBackgroundColor()
     {
-        if (Application.Current?.TryFindResource("PanelBrush") is SolidColorBrush brush)
+        if (Application.Current?.TryFindResource("TerminalBgBrush") is SolidColorBrush brush)
             return System.Drawing.Color.FromArgb(0xff, brush.Color.R, brush.Color.G, brush.Color.B);
-        return System.Drawing.Color.FromArgb(0xff, 0x27, 0x27, 0x27);
+        return System.Drawing.Color.FromArgb(0xff, 0x1f, 0x1f, 0x1e);
     }
 
     private static string Hex(string key, string fallback)

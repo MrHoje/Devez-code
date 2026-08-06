@@ -32,12 +32,14 @@
   let busy = false;
   let nearBottom = true;
   let commands = [];
+  let skillNames = new Set();
   let models = [];
   let currentModel = "";
   let defaultResolvedModel = "";
   let currentEffort = "high";
   let currentPermissionMode = "acceptEdits";
   let vibeMode = true;
+  let showSkills = false;
   let currentContextTokens = 0;
   let currentContextWindow = 1_000_000;
   let commandSelection = 0;
@@ -46,6 +48,7 @@
   let attachments = [];
   let attachmentErrorTimer = 0;
   let dragDepth = 0;
+  let lastZoomWheelAt = 0;
   let workingStartedAt = 0;
   let workingTimer = 0;
   let scrollFrame = 0;
@@ -82,6 +85,27 @@
     "clear", "color", "compact", "config", "context", "effort", "fast", "mcp",
     "model", "reload-skills", "rename", "usage", "usage-credits",
   ]);
+  const builtInSlashDescriptions = {
+    clear: "새 대화를 시작합니다",
+    compact: "대화를 요약해 컨텍스트를 확보합니다",
+    config: "설정을 변경합니다",
+    context: "컨텍스트 사용량을 봅니다",
+    fast: "빠른 응답 모드를 켜거나 끕니다",
+    init: "프로젝트용 CLAUDE.md를 만듭니다",
+    mcp: "MCP 서버를 관리합니다",
+    "reload-skills": "변경된 Skill을 다시 불러옵니다",
+    review: "GitHub PR을 검토합니다",
+    "security-review": "현재 변경사항의 보안을 검토합니다",
+    "usage-credits": "추가 사용 크레딧을 설정합니다",
+    usage: "사용량과 비용을 봅니다",
+    insights: "Claude Code 사용 분석 보고서를 만듭니다",
+    recap: "현재 세션을 한 줄로 요약합니다",
+    goal: "완료 조건까지 작업할 목표를 설정합니다",
+    design: "Design 프로젝트 접근 권한을 관리합니다",
+    "design-consent": "Design 프로젝트 접근을 허용합니다",
+    "design-revoke": "Design 프로젝트 접근을 해제합니다",
+    "team-onboarding": "팀원용 Claude Code 안내를 만듭니다",
+  };
 
   const permissionModes = [
     { id: "acceptEdits", label: "Accept edits", description: "파일 수정을 자동으로 허용합니다" },
@@ -1516,6 +1540,8 @@
         return true;
       });
     }
+    if (Array.isArray(input.skillNames))
+      skillNames = new Set(input.skillNames.map(value => String(value || "").trim().toLowerCase()).filter(Boolean));
     if (typeof input.currentModel === "string") currentModel = normalizeModel(input.currentModel);
     if (typeof input.currentEffort === "string") currentEffort = input.currentEffort;
     if (typeof input.currentPermissionMode === "string") currentPermissionMode = input.currentPermissionMode;
@@ -1566,16 +1592,57 @@
     return quietSlashCommands.has(name) || ["cost", "stats", "settings", "reset", "new"].includes(name);
   }
 
+  function isSkillCommand(command) {
+    return skillNames.has(String(command?.name || "").trim().toLowerCase());
+  }
+
+  function commandDescription(command) {
+    const original = typeof command?.description === "string" ? command.description.trim() : "";
+    if (isSkillCommand(command)) return original;
+    return builtInSlashDescriptions[String(command?.name || "").trim().toLowerCase()] || original;
+  }
+
+  function slashCommandColor(command) {
+    const name = String(command?.name || "").toLowerCase();
+    if (name === "model") {
+      const identity = `${currentModel} ${selectedModelInfo()?.displayName || ""}`.toLowerCase();
+      const family = ["haiku", "sonnet", "opus", "fable"].find(value => identity.includes(value));
+      return statusPalette[family] || statusPalette.text;
+    }
+    if (name === "effort") return statusPalette[currentEffort] || statusPalette.text;
+    if (["clear", "reset"].includes(name)) return statusPalette.max;
+    if (["compact", "review"].includes(name)) return statusPalette.xhigh;
+    if (["init", "new"].includes(name)) return statusPalette.medium;
+    return statusPalette.plan;
+  }
+
   function updateCommandMenu() {
     if (openControl) return;
     const range = slashRange();
     if (!range) { commandMenu.hidden = true; return; }
-    visibleCommands = commands.filter(command => commandMatches(command, range.query));
+    visibleCommands = commands.filter(command => (showSkills || !isSkillCommand(command)) && commandMatches(command, range.query));
     commandSelection = Math.min(commandSelection, Math.max(0, visibleCommands.length - 1));
     commandMenu.replaceChildren();
     const heading = document.createElement("div");
     heading.className = "menu-heading";
-    heading.textContent = "Claude 명령어";
+    const headingLabel = document.createElement("span");
+    headingLabel.textContent = "Claude 명령어";
+    const skillToggle = document.createElement("button");
+    skillToggle.type = "button";
+    skillToggle.className = "skill-toggle";
+    skillToggle.setAttribute("role", "switch");
+    skillToggle.setAttribute("aria-checked", String(showSkills));
+    skillToggle.setAttribute("aria-label", `설치된 Skill ${showSkills ? "숨기기" : "보기"}`);
+    skillToggle.innerHTML = `<span>Skill 보기</span><span class="skill-toggle-track" aria-hidden="true"></span>`;
+    skillToggle.addEventListener("click", event => {
+      event.stopPropagation();
+      showSkills = !showSkills;
+      commandSelection = 0;
+      post({ type: "setShowSkills", enabled: showSkills });
+      updateCommandMenu();
+      prompt.focus();
+    });
+    heading.append(headingLabel, skillToggle);
     commandMenu.appendChild(heading);
     if (!commands.length) {
       const empty = document.createElement("div");
@@ -1606,6 +1673,7 @@
       title.className = "menu-title";
       const code = document.createElement("code");
       code.textContent = `/${command.name}`;
+      code.style.color = slashCommandColor(command);
       title.appendChild(code);
       if (command.argumentHint) {
         const hint = document.createElement("span");
@@ -1614,7 +1682,7 @@
         title.appendChild(hint);
       }
       copy.appendChild(title);
-      const descriptionText = typeof command.description === "string" ? command.description.trim() : "";
+      const descriptionText = commandDescription(command);
       if (descriptionText) {
         const description = document.createElement("span");
         description.className = "menu-description command-description";
@@ -1853,9 +1921,11 @@
     currentEffort = typeof message.effort === "string" && message.effort ? message.effort : "high";
     currentPermissionMode = typeof message.permissionMode === "string" ? message.permissionMode : "acceptEdits";
     vibeMode = message.vibeMode !== false;
+    showSkills = message.showSkills === true;
     currentContextTokens = 0;
     currentContextWindow = 1_000_000;
     commands = [];
+    skillNames = new Set();
     models = [];
     clearAttachments();
     resetWorkingTimer();
@@ -1900,7 +1970,8 @@
   function applyTheme(message) {
     const root = document.documentElement;
     const values = {
-      "--bg": message.bg, "--panel": message.panel, "--panel-soft": message.panelSoft,
+      "--terminal-bg": message.terminalBg, "--bg": message.bg,
+      "--panel": message.panel, "--panel-soft": message.panelSoft,
       "--line": message.line, "--text": message.text, "--muted": message.muted,
       "--primary": message.primary, "--primary-soft": message.primarySoft,
       "--danger": message.danger, "--success": message.success,
@@ -2033,10 +2104,32 @@
         && !permissionControl.contains(event.target)) closeMenus();
   });
   document.addEventListener("keydown", event => {
+    if (event.ctrlKey && !event.altKey && !event.metaKey) {
+      const direction = event.key === "+" || event.key === "="
+        ? 1
+        : event.key === "-" || event.key === "_" ? -1 : 0;
+      if (direction) {
+        event.preventDefault();
+        post({ type: "adjustZoom", direction });
+        return;
+      }
+    }
     if (event.key !== "Escape" || !openControl) return;
     event.preventDefault();
     closeMenus();
     prompt.focus();
+  });
+  document.addEventListener("wheel", event => {
+    if (!event.ctrlKey || event.deltaY === 0) return;
+    event.preventDefault();
+    const now = performance.now();
+    if (now - lastZoomWheelAt < 80) return;
+    lastZoomWheelAt = now;
+    post({ type: "adjustZoom", direction: event.deltaY < 0 ? 1 : -1 });
+  }, { passive: false });
+  document.addEventListener("dragstart", event => {
+    if (!conversation.contains(event.target)) return;
+    if (![...(event.dataTransfer?.types || [])].includes("Files")) event.preventDefault();
   });
   document.addEventListener("dragenter", event => {
     if (![...(event.dataTransfer?.types || [])].includes("Files")) return;

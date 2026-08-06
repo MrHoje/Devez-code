@@ -35,10 +35,14 @@ const prompts = new PromptQueue();
 const permissions = new Map();
 let conversation = null;
 let started = false;
+let sessionLoop = null;
+let shuttingDown = false;
 let sessionId = "";
 let currentModel = "";
 let currentEffort = "high";
 let currentPermissionMode = "acceptEdits";
+let knownCommandNames = new Set();
+let knownSkillNames = new Set();
 let latestContextTokens = 0;
 let currentContextWindow = 1_000_000;
 let partialMessageId = "";
@@ -50,6 +54,7 @@ const SAFE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const SAFE_PERMISSION_MODES = new Set(["acceptEdits", "plan", "auto", "bypassPermissions"]);
 const SAFE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const MAX_IMAGES = 20;
+const SHUTDOWN_GUARD_MS = 6000;
 const MAX_IMAGE_BASE64_LENGTH = 10 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BASE64_LENGTH = 28 * 1024 * 1024;
 const DEVEZCODE_GUI_INSTRUCTIONS = [
@@ -70,15 +75,37 @@ const DEVEZCODE_GUI_INSTRUCTIONS = [
 async function publishCapabilities() {
   if (!conversation) return;
   try {
-    const [models, commands] = await Promise.all([
-      conversation.supportedModels(),
+    const modelsPromise = conversation.supportedModels();
+    let skills = [];
+    try {
+      const response = await conversation.reloadSkills();
+      skills = Array.isArray(response?.skills) ? response.skills : [];
+      knownSkillNames = new Set(skills
+        .map((skill) => String(skill?.name || "").trim().toLowerCase())
+        .filter(Boolean));
+    } catch { }
+    const [models, supportedCommands] = await Promise.all([
+      modelsPromise,
       conversation.supportedCommands(),
     ]);
+    const commands = Array.isArray(supportedCommands) ? [...supportedCommands] : [];
+    const commandNames = new Set(commands
+      .map((command) => String(command?.name || "").trim().toLowerCase())
+      .filter(Boolean));
+    for (const skill of skills) {
+      const name = String(skill?.name || "").trim().toLowerCase();
+      if (name && !commandNames.has(name)) {
+        commands.push(skill);
+        commandNames.add(name);
+      }
+    }
+    knownCommandNames = commandNames;
     write({
       type: "capabilities",
       input: {
         models: Array.isArray(models) ? models : [],
-        commands: Array.isArray(commands) ? commands : [],
+        commands,
+        skillNames: [...knownSkillNames],
         permissionModes: [...SAFE_PERMISSION_MODES],
         currentModel,
         currentEffort,
@@ -340,10 +367,17 @@ function emitSystemEvent(message) {
     return;
   }
   if (subtype === "commands_changed") {
+    const commands = Array.isArray(message.commands) ? message.commands : [];
+    const changedNames = new Set(commands
+      .map((command) => String(command?.name || "").trim().toLowerCase())
+      .filter(Boolean));
+    for (const name of changedNames) if (!knownCommandNames.has(name)) knownSkillNames.add(name);
+    knownCommandNames = changedNames;
     write({
       type: "capabilities",
       input: {
-        commands: Array.isArray(message.commands) ? message.commands : [],
+        commands,
+        skillNames: [...knownSkillNames],
         currentModel,
         currentEffort,
         currentPermissionMode,
@@ -506,10 +540,30 @@ async function start(command) {
   }
 }
 
+/// 종료: 즉시 process.exit 하지 않고 SDK 쿼리를 정상 배수한다. prompts 를 닫아야 claude CLI 자식이
+/// stdin EOF 를 받고 transcript(.jsonl)를 flush 한 뒤 종료하는데, 예전엔 interrupt 후 50ms 만에
+/// exit 해서 마지막 턴이 디스크에 안 남고 다음 resume 에서 통째로 유실됐다.
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  prompts.close();
+  try { await conversation?.interrupt?.(); } catch { /* 진행 중 턴이 없으면 거부될 수 있다 */ }
+  const guard = setTimeout(() => process.exit(0), SHUTDOWN_GUARD_MS); // CLI 무응답 대비 안전망
+  try { await sessionLoop; } catch { /* 오류는 start() 가 이미 보고 */ }
+  clearTimeout(guard);
+  // stdout 이 파이프면 process.exit 가 남은 버퍼를 잘라먹는다 — 배수가 끝났으니 핸들이 정리되면
+  // 자연 종료되고, 뭔가 붙잡고 있으면 unref 타이머가 마무리한다.
+  process.exitCode = 0;
+  input.close();
+  setTimeout(() => process.exit(0), 1000).unref();
+}
+
 async function handle(command) {
   switch (command?.type) {
     case "start":
-      void start(command);
+      sessionLoop = start(command).catch((error) => {
+        write({ type: "error", text: error?.message ?? String(error) });
+      });
       break;
     case "prompt":
       resultErrorAt = 0;
@@ -590,17 +644,19 @@ async function handle(command) {
       await conversation?.interrupt?.();
       break;
     case "shutdown":
-      prompts.close();
-      await conversation?.interrupt?.();
-      setTimeout(() => process.exit(0), 50);
+      await shutdown();
       break;
   }
 }
 
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on("line", (line) => {
-  try { void handle(JSON.parse(line)); }
-  catch (error) { write({ type: "error", text: error?.message ?? String(error) }); }
+  let command;
+  try { command = JSON.parse(line); }
+  catch (error) { write({ type: "error", text: error?.message ?? String(error) }); return; }
+  // handle 은 async — void 로 던지면 rejection 이 위 catch 를 지나쳐 프로세스를 즉사시킨다
+  // (종료 중이면 transcript flush 전에 죽는다). 반드시 promise 로 받아 잡는다.
+  handle(command).catch((error) => write({ type: "error", text: error?.message ?? String(error) }));
 });
-input.on("close", () => void handle({ type: "shutdown" }));
+input.on("close", () => { shutdown().catch(() => process.exit(0)); });
 write({ type: "ready" });

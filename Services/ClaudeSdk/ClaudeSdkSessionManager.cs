@@ -59,6 +59,12 @@ public sealed class ClaudeSdkSessionManager
         lock (_sessions) return _sessions.TryGetValue(roomId, out var session) && session.Bridge.IsRunning;
     }
 
+    /// <summary>앱 종료 시 graceful 배수가 필요한 GUI(SDK) 세션이 하나라도 있는가.</summary>
+    public bool HasSessions
+    {
+        get { lock (_sessions) return _sessions.Count > 0; }
+    }
+
     public IReadOnlyList<ClaudeSdkEvent> GetEvents(string roomId)
     {
         lock (_sessions)
@@ -110,8 +116,10 @@ public sealed class ClaudeSdkSessionManager
             if (!string.IsNullOrWhiteSpace(sessionId)
                 && TerminalSessionManager.FindClaudeTranscriptPath(cwd, sessionId) == null)
             {
+                // 이번 기동만 resume 을 건너뛴다. settings 에서 지우면 transcript 조회가 일시적으로
+                // 실패했을 때(폴더 권한·동기화 지연·경로 이동)도 방↔대화 연결이 영구히 끊긴다.
+                // 새 세션이 뜨면 session 이벤트가 어차피 같은 키를 덮어쓴다.
                 DiagLog.Write($"ClaudeSdk resume skipped room={item.Id} sid={sessionId}: transcript 없음");
-                SettingsService.RemoveClaudeCodeRoomSession(item.Id);
                 sessionId = null;
             }
             var model = SettingsService.LoadClaudeCodeRoomModel(item.Id);
@@ -623,6 +631,10 @@ internal sealed class ClaudeSdkBridgeProcess : IAsyncDisposable
         throw new FileNotFoundException($"{fileName} 실행 파일을 PATH에서 찾을 수 없습니다. Node.js 18 이상을 설치하세요.");
     }
 
+    /// <summary>브리지가 SDK 쿼리를 배수하고 claude CLI 자식이 transcript 를 flush 할 시간.
+    /// 브리지 자체 안전망(6s)보다 넉넉해야 정상 배수를 중간에 끊지 않는다.</summary>
+    private static readonly TimeSpan ShutdownWait = TimeSpan.FromSeconds(8);
+
     public async ValueTask DisposeAsync()
     {
         var process = _process;
@@ -634,8 +646,15 @@ internal sealed class ClaudeSdkBridgeProcess : IAsyncDisposable
             {
                 await SendDirectAsync(process, new { type = "shutdown" });
                 process.StandardInput.Close();
-                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                await process.WaitForExitAsync().WaitAsync(ShutdownWait);
             }
+        }
+        catch (TimeoutException)
+        {
+            // 여기까지 안 끝나면 브리지가 멈춘 것 — 트리째 정리하지 않으면 node 와 claude CLI 가
+            // 고아로 남아 transcript 파일을 계속 붙잡는다. (DevezCode 본체가 아닌 에이전트 자식 프로세스)
+            DiagLog.Write($"ClaudeSdk shutdown timeout room={_roomId}: 프로세스 트리 정리");
+            try { process.Kill(entireProcessTree: true); } catch { }
         }
         catch { }
         finally { process.Dispose(); }

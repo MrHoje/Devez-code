@@ -61,6 +61,10 @@ public static class SettingsService
         public bool ClaudeGuiMode { get; set; } = false;
         // Agent SDK GUI의 간결한 Vibe 표시. true면 Shell·Diff·도구 실행 내역을 숨긴다.
         public bool ClaudeVibeMode { get; set; } = true;
+        // Agent SDK GUI 슬래시 명령 목록에 설치된 Skill을 표시한다. 기본 false=숨김.
+        public bool ClaudeShowSkills { get; set; } = false;
+        // Agent SDK GUI 전체 확대 배율(Ctrl+휠/Ctrl+±). 앱 전체에서 공유한다.
+        public double ClaudeGuiZoomFactor { get; set; } = 1.0;
         // 세션 완료 기록 "한줄만 보기"/"전체보기" 토글 상태. 기본 한줄만 보기(=false).
         public bool   ShowFullPrompt { get; set; } = false;
         // 세션 완료 기록 사이드바 너비 (드래그로 조절, settings.json 에 영속).
@@ -340,6 +344,14 @@ public static class SettingsService
     public static void SaveClaudeGuiMode(bool value) { Current.ClaudeGuiMode = value; Save(); }
     public static bool LoadClaudeVibeMode() => Current.ClaudeVibeMode;
     public static void SaveClaudeVibeMode(bool value) { Current.ClaudeVibeMode = value; Save(); }
+    public static bool LoadClaudeShowSkills() => Current.ClaudeShowSkills;
+    public static void SaveClaudeShowSkills(bool value) { Current.ClaudeShowSkills = value; Save(); }
+    public static double LoadClaudeGuiZoomFactor() => Math.Clamp(Current.ClaudeGuiZoomFactor, 0.75, 1.75);
+    public static void SaveClaudeGuiZoomFactor(double value)
+    {
+        Current.ClaudeGuiZoomFactor = Math.Clamp(value, 0.75, 1.75);
+        Save();
+    }
 
     // ── 마크다운 뷰어 본문 너비 ────────────────────────────────────
     public static event Action<int>? MarkdownViewportWidthChanged;

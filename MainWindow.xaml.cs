@@ -1044,7 +1044,10 @@ public partial class MainWindow : Window
         // 하단 터미널 패널(pwsh)은 graceful 종료 대상이 아니다 — flush 할 훅/transcript 가 없고
         // Ctrl+C 로 죽지도 않아 perGrace 타임아웃만 소진한다. 종료 확정 즉시 하드 정리.
         try { TerminalSessionManager.Instance.DisposeRoom(ShellRoomId, purgeTracking: false); } catch { }
-        if (!TerminalSessionManager.Instance.HasSessionsToClose()) return; // 닫을 세션 없음(ConPTY 미생성)
+        // Claude GUI(SDK) 세션은 ConPTY 를 안 쓰므로 터미널 기준만 보면 "닫을 세션 없음"으로 새어나가
+        // 안전 종료(오버레이 + graceful 배수)를 통째로 건너뛴 채 창이 닫혔다 → 마지막 턴 유실.
+        if (!TerminalSessionManager.Instance.HasSessionsToClose()
+            && !ClaudeSdkSessionManager.Instance.HasSessions) return; // 닫을 세션 없음
 
         e.Cancel = true;
         _shuttingDown = true;
@@ -1104,7 +1107,13 @@ public partial class MainWindow : Window
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
         if (RestartingForUpdate) ShutdownRestartNote.Visibility = Visibility.Visible;
         ShutdownOverlay.Visibility = Visibility.Visible;
-        try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500); }
+        // 터미널 graceful 과 Claude GUI(SDK) 브리지 배수는 서로 독립이라 병렬로 — 순차면 종료 대기가 합산된다.
+        try
+        {
+            await Task.WhenAll(
+                TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500),
+                ClaudeSdkSessionManager.Instance.ShutdownAllAsync());
+        }
         catch { /* best effort */ }
         _readyToClose = true; // 이제부터의 재진입(아래 Close())만 통과 — 그 전 재진입은 위에서 취소됨.
         Close();
