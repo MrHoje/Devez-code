@@ -854,9 +854,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             fontFamily = cfg.FontFamily,
             fontSize = fontSizePx,
             windowsBuild = Environment.OSVersion.Version.Build, // xterm windowsPty 휴리스틱 판정용
-            // WebGL(GPU) 렌더러 사용 여부 — 원격/CRD 세션은 App.OnStartup 이 SoftwareOnly 로 강제하므로
-            // 그 경우 끈다(SwiftShader 소프트 GL 은 DOM 보다 느림). 로컬에선 GPU 렌더로 활성 탭 비용 절감.
-            enableWebgl = System.Windows.Media.RenderOptions.ProcessRenderMode != System.Windows.Interop.RenderMode.SoftwareOnly,
+            // WebGL(GPU) 렌더러 사용 여부 — 원격 제어 중(RDP/CRD)에만 끈다. 원격엔 쓸 GPU 가 없어
+            // Chromium 이 SwiftShader 소프트 GL 로 떨어지고, 그건 DOM 보다 느리다.
+            // ⚠ WPF 렌더모드(ProcessRenderMode)로 판정하지 말 것. WebView2 는 별 프로세스·별 렌더 경로라
+            // WPF SoftwareOnly 와 무관하며, 사용자가 CRD 대비로 WPF GPU 를 끈 것만으로 여기까지 꺼지면
+            // 모든 방이 DOM 렌더러가 된다 → devezvibe 컴포저/메시지 세로 바(▌·│)와 박스 테두리 이음새가
+            // 행마다 끊겨 보이는 회귀(terminal.html 의 customGlyphs 주석 참고).
+            enableWebgl = !DevezCode.App.IsRemoteControlSession(),
         });
         var pending = _pendingShowRoomId ?? _activeRoomId;
         _pendingShowRoomId = null;

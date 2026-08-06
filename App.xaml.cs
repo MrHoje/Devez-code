@@ -195,7 +195,7 @@ public partial class App : Application
         // 전달되지 않아 창이 검게/안 보이거나 멈춰 보인다. 원격이거나 사용자가 GPU 를 끈 경우
         // 소프트웨어 렌더링으로 강제한다. ProcessRenderMode 는 첫 비주얼 생성 전에 가장 확실하고,
         // 이후에는 타이틀 로고 세 번 클릭(ApplyRenderMode)으로 창 단위 전환이 가능하다.
-        if (IsRemoteSession() || IsCrdSessionActive() || !SettingsService.LoadUseGpuAcceleration())
+        if (IsRemoteControlSession() || !SettingsService.LoadUseGpuAcceleration())
             RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
 
         base.OnStartup(e);
@@ -477,6 +477,13 @@ public partial class App : Application
         try { return System.Diagnostics.Process.GetProcessesByName("remoting_desktop").Length > 0; }
         catch { return false; }
     }
+
+    /// <summary>RDP/CRD 로 "지금 원격 제어 중"인지. 원격에는 쓸 GPU 가 없어 GPU 경로가 소프트 에뮬레이션
+    /// (WebView2 는 SwiftShader)으로 떨어지므로, 원격일 때만 GPU 경로를 피하려는 판정에 쓴다.
+    /// ⚠ WPF 렌더모드(<see cref="IsSoftwareRenderingActive"/>)와 혼용 금지 — WebView2 는 별 프로세스·별
+    /// 렌더 경로라 WPF 가 SoftwareOnly 라는 사실만으로 WebView2 GPU 를 끌 이유가 없다(터미널 xterm
+    /// WebGL 을 껐다가 세로 바·박스 테두리 이음새가 끊긴 회귀 — terminal.html 렌더러 주석 참고).</summary>
+    public static bool IsRemoteControlSession() => IsRemoteSession() || IsCrdSessionActive();
 
     /// <summary>현재 프로세스/메인 창이 소프트웨어 렌더인지.</summary>
     public static bool IsSoftwareRenderingActive()
