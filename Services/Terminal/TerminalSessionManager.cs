@@ -2147,8 +2147,7 @@ public sealed class TerminalSessionManager
                   New-Item -ItemType Directory -Force -Path $dir | Out-Null
                   Set-Content -LiteralPath (Join-Path $dir 'ratelimit.json') -Value $raw -Encoding utf8 -Force
                 } catch { }
-                # 방별 실제 model/effort 를 떨군다(콤보 라이브 연동). claude statusLine JSON 의
-                # model.id / effort.level 이 곧 이 세션의 현재 적용값. roomId 는 claude 가 상속한 env.
+                # 방별 실제 model/effort/context/session ID 를 떨군다. GUI 전환 시 같은 상태를 복원한다.
                 $sig = ''
                 try {
                   if ($o) { $sig = (('' + $o.model.id) + '-' + ('' + $o.effort.level)) -replace '[^\w\-]', '' }
@@ -2157,7 +2156,7 @@ public sealed class TerminalSessionManager
                     $room = $room -replace '[^\w\-]', ''
                     $md = Join-Path $dir 'modeleffort'
                     New-Item -ItemType Directory -Force -Path $md | Out-Null
-                    Set-Content -LiteralPath (Join-Path $md ($room + '.txt')) -Value ("{0}`n{1}" -f $o.model.id, $o.effort.level) -Encoding utf8 -Force
+                    Set-Content -LiteralPath (Join-Path $md ($room + '.txt')) -Value ("{0}`n{1}`n{2}`n{3}`n{4}" -f $o.model.id, $o.effort.level, $o.context_window.total_input_tokens, $o.context_window.context_window_size, $o.session_id) -Encoding utf8 -Force
                   }
                 } catch { }
                 try {
@@ -2190,10 +2189,10 @@ public sealed class TerminalSessionManager
             ScriptFile.WritePs1(StatusLineScriptPath, statusScript);
 
             // statusLine 렌더 node 스크립트: powershell→cmd→node 체인(1.4~2초) 대신 node 한 번(~150ms)으로
-            // ① rate_limits 캡처(ratelimit.json) ② 방별 model/effort 기록 ③ 사용자 statusline.js 스폰 렌더.
+            // ① rate_limits 캡처(ratelimit.json) ② 방별 model/effort/context 기록 ③ 사용자 statusline.js 스폰 렌더.
             // DevezCode 내부 세션이 일반 터미널과 동일하게 빠르게 statusLine 을 그리게 한다(resume 빈 줄 해소).
             const string roomStatusJs = """
-                // DEVEZCODE-ROOM-STATUSLINE v2 (방별 statusline 캐시 기록 추가)
+                // DEVEZCODE-ROOM-STATUSLINE v3 (GUI 전환용 context/session ID 기록 추가)
                 const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process");
                 const roomArg = (process.argv[2] || process.env.DEVEZCODE_ROOM_ID || "").replace(/[^\w\-]/g, "");
                 let raw = "";
@@ -2211,14 +2210,18 @@ public sealed class TerminalSessionManager
                       fs.writeFileSync(path.join(dir, "ratelimit.json"), raw);
                     }
                   } catch (e) {}
-                  // 2) 방별 실제 model/effort 기록(콤보 라이브 연동).
+                  // 2) 방별 실제 model/effort/context/session ID 기록(GUI 전환 복원).
                   try {
                     if (appData && roomArg && o) {
                       const md = path.join(appData, "DevezCode", "claude", "modeleffort");
                       fs.mkdirSync(md, { recursive: true });
                       const mid = (o.model && o.model.id) || "";
                       const eff = (o.effort && o.effort.level) || "";
-                      fs.writeFileSync(path.join(md, roomArg + ".txt"), mid + "\n" + eff);
+                      const context = o.context_window || {};
+                      const used = Number.isFinite(context.total_input_tokens) ? context.total_input_tokens : "";
+                      const window = Number.isFinite(context.context_window_size) ? context.context_window_size : "";
+                      const sid = typeof o.session_id === "string" ? o.session_id : "";
+                      fs.writeFileSync(path.join(md, roomArg + ".txt"), [mid, eff, used, window, sid].join("\n"));
                     }
                   } catch (e) {}
                   // 3) 사용자 statusline.js 로 렌더 위임(사용자 커스터마이즈 보존). 같은 node 재사용.

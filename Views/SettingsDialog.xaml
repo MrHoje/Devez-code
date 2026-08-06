@@ -650,7 +650,7 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="Claude GUI 모드" FontSize="{DynamicResource Fs13}"
+                                            <TextBlock Text="Claude GUI 모드 (Beta)" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="켜면 Claude Code 세션을 구독 로그인을 사용하는 SDK 대화 화면으로 실행합니다. 새로 여는 세션부터 적용됩니다."
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"

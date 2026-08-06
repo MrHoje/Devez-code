@@ -45,6 +45,9 @@ public partial class MainWindow : Window
     // 테마 적용 중 추가 변경이 들어오면 현재 종료/복원을 겹쳐 실행하지 않는다. 실행 완료 시점에는
     // App.CurrentTheme의 최신 값으로 세션을 시작하므로 중간 요청은 자연스럽게 합쳐진다.
     private bool _themeReloadRunning;
+    private bool _claudeSurfaceReloadRunning;
+    private bool _claudeSurfaceReloadRequested;
+    private readonly SemaphoreSlim _sessionReloadGate = new(1, 1);
 
     // 좌/우 위치 교환은 콘텐츠 이동 없이 패널의 물리 컬럼만 맞바꿔 표현한다(터미널 재부착=세션 재로딩 방지).
     // _panesSwapped=false → PaneA 가 좌(col0)/PaneB 가 우(col2), true → 반대. 비분할 시엔 항상 false 로 정규화.
@@ -3190,6 +3193,7 @@ public partial class MainWindow : Window
             MarkSessionActivity(id);
         };
         pane.SessionActivity += MarkSessionActivity;
+        pane.SessionPromptSubmitted += OnPaneSessionPromptSubmitted;
         TerminalSessionManager.Instance.AgentModelCatalogRefreshRequested += pane.NotifyAgentModelCatalogRefreshRequested;
         _panes.Add(pane);
     }
@@ -5030,6 +5034,13 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private void OnPaneSessionPromptSubmitted(string roomId, string text)
+    {
+        var session = FindOwnedSession(roomId, "claude", "message");
+        if (session == null || !ApplyHeaderMessage(session, text)) return;
+        foreach (var pane in _panes) pane.NotifySessionStateChanged(session);
+    }
+
     // ── 사이드바 액션 → 포커스 패널로 위임 ────────────────────────────
 
     private void SelectProject(ProjectItem proj) => SelectProjectFromSidebar(proj);
@@ -5916,6 +5927,117 @@ public partial class MainWindow : Window
     /// <summary>MCP 저장 후 활성 Claude 세션 재시작.</summary>
     public bool TryRestartActiveClaudeSession() => _focusedPane.TryRestartActiveClaudeSession();
 
+    /// <summary>Claude GUI 사용 옵션 변경 — 현재 실행 중인 Claude 세션만 정상 종료한 뒤
+    /// 최신 옵션의 GUI/CLI 표면으로 모두 다시 연다.</summary>
+    public async void ReloadClaudeSessionsForGuiMode()
+    {
+        _claudeSurfaceReloadRequested = true;
+        if (_claudeSurfaceReloadRunning) return;
+
+        _claudeSurfaceReloadRunning = true;
+        try
+        {
+            while (_claudeSurfaceReloadRequested)
+            {
+                _claudeSurfaceReloadRequested = false;
+                await ReloadClaudeSessionsForGuiModeOnceAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"ReloadClaudeSessionsForGuiMode failed: {ex.Message}");
+        }
+        finally
+        {
+            _claudeSurfaceReloadRunning = false;
+        }
+    }
+
+    private async Task ReloadClaudeSessionsForGuiModeOnceAsync()
+    {
+        await _sessionReloadGate.WaitAsync();
+        IReadOnlyList<SessionItem> reloadSessions = Array.Empty<SessionItem>();
+        try
+        {
+            reloadSessions = _projects.SelectMany(project => project.Tabs).OfType<SessionItem>()
+                .Where(session => !session.IsExternal)
+                .Where(session => string.Equals(
+                    string.IsNullOrWhiteSpace(session.AgentId)
+                        ? SettingsService.LoadAgentForRoom(session.Id)
+                        : session.AgentId,
+                    "claude", StringComparison.OrdinalIgnoreCase))
+                .Where(session => ClaudeSdkSessionManager.Instance.IsStarted(session.Id)
+                    || TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true })
+                .ToList();
+            if (reloadSessions.Count == 0) return;
+
+            const string reloadLabel = "화면 방식 적용 중\n세션을 다시 여는 중입니다.";
+            foreach (var pane in _panes)
+            {
+                try { pane.BeginSessionReload(reloadSessions, reloadLabel); }
+                catch (Exception ex) { DiagLog.Write($"BeginSessionReload failed: {ex.Message}"); }
+            }
+
+            var sdkSessions = reloadSessions
+                .Where(session => ClaudeSdkSessionManager.Instance.IsStarted(session.Id))
+                .ToList();
+            var terminalSessions = reloadSessions
+                .Where(session => TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true })
+                .ToList();
+
+            var sdkStop = Task.WhenAll(sdkSessions.Select(async session =>
+            {
+                try { await ClaudeSdkSessionManager.Instance.StopAsync(session.Id); }
+                catch (Exception ex) { DiagLog.Write($"Claude GUI stop failed room={session.Id}: {ex.Message}"); }
+            }));
+            var terminalStop = TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(
+                terminalSessions.Select(session => session.Id));
+            try { await Task.WhenAll(sdkStop, terminalStop); }
+            catch (Exception ex) { DiagLog.Write($"Claude surface graceful stop failed: {ex.Message}"); }
+
+            var remainingIds = _projects.SelectMany(project => project.Tabs).OfType<SessionItem>()
+                .Select(session => session.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            reloadSessions = reloadSessions.Where(session => remainingIds.Contains(session.Id)).ToList();
+            foreach (var session in reloadSessions)
+            {
+                try { TerminalSessionManager.Instance.ClearDisposedRoom(session.Id); } catch { }
+                session.IsAlive = false;
+                session.IsBusy = false;
+                session.IsWaitingChoice = false;
+            }
+
+            await Task.Delay(150);
+            if (SettingsService.LoadClaudeGuiMode())
+            {
+                await Task.WhenAll(reloadSessions.Select(async session =>
+                {
+                    var project = _projects.FirstOrDefault(candidate => candidate.Tabs.Contains(session));
+                    if (project == null) return;
+                    try { await ClaudeSdkSessionManager.Instance.EnsureStartedAsync(session, project.Path); }
+                    catch (Exception ex) { DiagLog.Write($"Claude GUI restart failed room={session.Id}: {ex.Message}"); }
+                }));
+            }
+            else
+            {
+                foreach (var session in reloadSessions)
+                {
+                    try { PaneFor(session).PreloadSession(session); }
+                    catch (Exception ex) { DiagLog.Write($"Claude CLI restart failed room={session.Id}: {ex.Message}"); }
+                }
+            }
+        }
+        finally
+        {
+            foreach (var pane in _panes)
+            {
+                try { pane.CompleteSessionReload(reloadSessions); }
+                catch (Exception ex) { DiagLog.Write($"CompleteSessionReload failed: {ex.Message}"); }
+            }
+            _sessionReloadGate.Release();
+        }
+    }
+
     /// <summary>테마 변경 — 모든 패널의 배선을 먼저 끊고 전역 세션을 한 번만 종료한 뒤,
     /// 실제로 보이는 패널의 활성 세션만 다시 연다. 비활성 세션은 클릭 시 저장 ID로 resume 한다.</summary>
     public async void ReloadAllSessionsForTheme()
@@ -5939,6 +6061,19 @@ public partial class MainWindow : Window
     }
 
     private async Task ReloadAllSessionsForThemeOnceAsync()
+    {
+        await _sessionReloadGate.WaitAsync();
+        try
+        {
+            await ReloadAllSessionsForThemeCoreAsync();
+        }
+        finally
+        {
+            _sessionReloadGate.Release();
+        }
+    }
+
+    private async Task ReloadAllSessionsForThemeCoreAsync()
     {
         var allSessions = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>()
             .Where(session => !session.IsExternal)

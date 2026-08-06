@@ -36,6 +36,8 @@ public sealed record ClaudeSdkEvent(
 
 public sealed class ClaudeSdkSessionManager
 {
+    private const int DetailedTurnRetention = 12;
+    private const int MaxRetainedSessions = 24;
     private sealed class ManagedSession
     {
         public required SessionItem Item { get; init; }
@@ -99,8 +101,16 @@ public sealed class ClaudeSdkSessionManager
                 else previousEvents = Array.Empty<ClaudeSdkEvent>();
             }
 
+            var restore = ClaudeSessionRestoreService.Load(item.Id, cwd);
+
             var bridge = new ClaudeSdkBridgeProcess(item.Id);
             var managed = new ManagedSession { Item = item, Bridge = bridge };
+            if (!previousEvents.Any(evt => evt.Type is "user" or "assistant")
+                && !previousEvents.Any(evt => evt.Type == "conversation_reset"))
+            {
+                managed.Events.AddRange(restore.Transcript.Turns.Select(turn =>
+                    new ClaudeSdkEvent(turn.Role, turn.Text)));
+            }
             managed.Events.AddRange(previousEvents);
             bridge.EventReceived += evt => OnBridgeEvent(managed, evt);
             bridge.Exited += () => OnBridgeExited(managed);
@@ -122,11 +132,9 @@ public sealed class ClaudeSdkSessionManager
                 DiagLog.Write($"ClaudeSdk resume skipped room={item.Id} sid={sessionId}: transcript 없음");
                 sessionId = null;
             }
-            var model = SettingsService.LoadClaudeCodeRoomModel(item.Id);
-            var effort = SettingsService.LoadClaudeCodeRoomEffort(item.Id);
-            var permissionMode = SettingsService.LoadClaudeCodeRoomPermissionMode(item.Id);
             var claudePath = AgentRegistry.ResolvePath(AgentRegistry.Find("claude")!);
-            await bridge.StartAsync(cwd, sessionId, model, effort, permissionMode, claudePath);
+            await bridge.StartAsync(
+                cwd, sessionId, restore.Model, restore.Effort, restore.PermissionMode, claudePath);
             DiagLog.Write($"ClaudeSdk process started room={item.Id}");
         }
         catch (Exception ex)
@@ -155,39 +163,49 @@ public sealed class ClaudeSdkSessionManager
         lock (_sessions) _sessions.TryGetValue(item.Id, out session);
         if (session is not { Bridge.IsRunning: true }) return false;
 
-        item.IsAlive = true;
-        item.IsBusy = true;
-        item.IsWaitingChoice = false;
         var trimmed = text.Trim();
-        item.LastMessage = trimmed.Length > 0 ? trimmed : $"첨부 파일 {attachments.Count}개";
         var previews = attachments
             .Select(value => new ClaudeSdkAttachmentPreview(value.Kind, value.Name, value.Preview))
             .ToArray();
-        Publish(item.Id, new ClaudeSdkEvent("user", trimmed, Attachments: previews));
-        await session.Bridge.SendAsync(new
+        try
         {
-            type = "prompt",
-            text = trimmed,
-            images = attachments.Where(value => value.Kind == "image").Select(value => new
+            await session.Bridge.SendAsync(new
             {
-                name = value.Name,
-                mediaType = value.MediaType,
-                data = value.Data,
-                size = value.Size,
-                width = value.Width,
-                height = value.Height,
-            }).ToArray(),
-            files = attachments.Where(value => value.Kind == "file").Select(value => new
-            {
-                name = value.Name,
-                path = value.Path,
-                size = value.Size,
-            }).ToArray(),
-        });
-        return true;
+                type = "prompt",
+                text = trimmed,
+                images = attachments.Where(value => value.Kind == "image").Select(value => new
+                {
+                    name = value.Name,
+                    mediaType = value.MediaType,
+                    data = value.Data,
+                    size = value.Size,
+                    width = value.Width,
+                    height = value.Height,
+                }).ToArray(),
+                files = attachments.Where(value => value.Kind == "file").Select(value => new
+                {
+                    name = value.Name,
+                    path = value.Path,
+                    size = value.Size,
+                }).ToArray(),
+            });
+            item.IsAlive = true;
+            item.IsBusy = true;
+            item.IsWaitingChoice = false;
+            item.LastMessage = trimmed.Length > 0 ? trimmed : $"첨부 파일 {attachments.Count}개";
+            Publish(item.Id, new ClaudeSdkEvent("user", trimmed, Attachments: previews));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            item.IsBusy = false;
+            item.IsWaitingChoice = false;
+            DiagLog.Write($"ClaudeSdk prompt send failed room={item.Id}: {ex.Message}");
+            return false;
+        }
     }
 
-    public async Task RespondPermissionAsync(
+    public async Task<bool> RespondPermissionAsync(
         string roomId,
         string requestId,
         bool allow,
@@ -196,55 +214,79 @@ public sealed class ClaudeSdkSessionManager
     {
         ManagedSession? session;
         lock (_sessions) _sessions.TryGetValue(roomId, out session);
-        if (session == null) return;
-        session.Item.IsWaitingChoice = false;
-        await session.Bridge.SendAsync(new
+        if (session == null) return false;
+        try
         {
-            type = "permission",
-            requestId,
-            allow,
-            answer = answer ?? "",
-            answers = answers ?? new Dictionary<string, string>(),
-        });
-        Publish(roomId, new ClaudeSdkEvent(
-            "permission_resolved", Text: allow ? "allow" : "deny", RequestId: requestId), session);
+            await session.Bridge.SendAsync(new
+            {
+                type = "permission",
+                requestId,
+                allow,
+                answer = answer ?? "",
+                answers = answers ?? new Dictionary<string, string>(),
+            });
+            session.Item.IsWaitingChoice = false;
+            Publish(roomId, new ClaudeSdkEvent(
+                "permission_resolved", Text: allow ? "allow" : "deny", RequestId: requestId), session);
+            return true;
+        }
+        catch
+        {
+            session.Item.IsWaitingChoice = true;
+            throw;
+        }
     }
 
-    public async Task InterruptAsync(string roomId)
+    public async Task<bool> InterruptAsync(string roomId)
     {
         ManagedSession? session;
         lock (_sessions) _sessions.TryGetValue(roomId, out session);
-        if (session == null) return;
-        session.Item.IsBusy = false;
-        session.Item.IsWaitingChoice = false;
-        await session.Bridge.SendAsync(new { type = "interrupt" });
-        Publish(roomId, new ClaudeSdkEvent("interrupting"), session);
+        if (session == null) return false;
+        var wasBusy = session.Item.IsBusy;
+        var wasWaiting = session.Item.IsWaitingChoice;
+        try
+        {
+            await session.Bridge.SendAsync(new { type = "interrupt" });
+            session.Item.IsBusy = false;
+            session.Item.IsWaitingChoice = false;
+            Publish(roomId, new ClaudeSdkEvent("interrupting"), session);
+            return true;
+        }
+        catch
+        {
+            session.Item.IsBusy = wasBusy;
+            session.Item.IsWaitingChoice = wasWaiting;
+            throw;
+        }
     }
 
-    public async Task SetModelAsync(string roomId, string? model)
+    public async Task<bool> SetModelAsync(string roomId, string? model)
     {
         ManagedSession? session;
         lock (_sessions) _sessions.TryGetValue(roomId, out session);
-        if (session == null) return;
+        if (session == null) return false;
         await session.Bridge.SendAsync(new { type = "set_model", model = model ?? "" });
+        return true;
     }
 
-    public async Task SetEffortAsync(string roomId, string effort)
+    public async Task<bool> SetEffortAsync(string roomId, string effort)
     {
-        if (!SettingsService.IsSupportedClaudeCodeEffort(effort)) return;
+        if (!SettingsService.IsSupportedClaudeCodeEffort(effort)) return false;
         ManagedSession? session;
         lock (_sessions) _sessions.TryGetValue(roomId, out session);
-        if (session == null) return;
+        if (session == null) return false;
         await session.Bridge.SendAsync(new { type = "set_effort", effort });
+        return true;
     }
 
-    public async Task SetPermissionModeAsync(string roomId, string permissionMode)
+    public async Task<bool> SetPermissionModeAsync(string roomId, string permissionMode)
     {
-        if (!ClaudeGlobalSettings.IsSupportedPermissionMode(permissionMode)) return;
+        if (!ClaudeGlobalSettings.IsSupportedPermissionMode(permissionMode)) return false;
         ManagedSession? session;
         lock (_sessions) _sessions.TryGetValue(roomId, out session);
-        if (session == null) return;
+        if (session == null) return false;
         await session.Bridge.SendAsync(new { type = "set_permission_mode", permissionMode });
+        return true;
     }
 
     public async Task RefreshCapabilitiesAsync(string roomId)
@@ -270,7 +312,12 @@ public sealed class ClaudeSdkSessionManager
         lock (_sessions)
         {
             if (purge) _retainedEvents.Remove(roomId);
-            else _retainedEvents[roomId] = session.Events.ToList();
+            else
+            {
+                _retainedEvents[roomId] = session.Events.ToList();
+                while (_retainedEvents.Count > MaxRetainedSessions)
+                    _retainedEvents.Remove(_retainedEvents.Keys.First());
+            }
         }
         if (purge) SettingsService.SaveClaudeCodeRoomSession(roomId, "");
     }
@@ -325,10 +372,19 @@ public sealed class ClaudeSdkSessionManager
                                                && input.ValueKind == JsonValueKind.Object
                                                && input.TryGetProperty("persist", out var persist)
                                                && persist.ValueKind == JsonValueKind.True:
+            {
+                string? persistedModel = null;
+                string? persistedEffort = null;
                 if (input.TryGetProperty("model", out var model) && model.ValueKind == JsonValueKind.String)
-                    SettingsService.SaveClaudeCodeRoomModel(item.Id, model.GetString());
+                {
+                    persistedModel = model.GetString();
+                    SettingsService.SaveClaudeCodeRoomModel(item.Id, persistedModel);
+                }
                 if (input.TryGetProperty("effort", out var effort) && effort.ValueKind == JsonValueKind.String)
-                    SettingsService.SaveClaudeCodeRoomEffort(item.Id, effort.GetString());
+                {
+                    persistedEffort = effort.GetString();
+                    SettingsService.SaveClaudeCodeRoomEffort(item.Id, persistedEffort);
+                }
                 if (input.TryGetProperty("permissionMode", out var permission)
                     && permission.ValueKind == JsonValueKind.String)
                 {
@@ -337,7 +393,11 @@ public sealed class ClaudeSdkSessionManager
                     if (!ClaudeGlobalSettings.SetDefaultPermissionMode(permissionMode))
                         DiagLog.Write($"Claude permission default save failed mode={permissionMode}");
                 }
+                ModelEffortService.SavePersistedConfiguration(
+                    item.Id, persistedModel, persistedEffort,
+                    SettingsService.LoadClaudeCodeRoomSession(item.Id));
                 break;
+            }
             case "assistant":
             case "assistant_stream_start":
             case "thinking_stream_start":
@@ -415,6 +475,8 @@ public sealed class ClaudeSdkSessionManager
                 {
                     CommitBufferedDelta(session);
                     session.Events.Add(evt);
+                    if (evt.Type is "result" or "error" or "stopped")
+                        CompactCompletedHistory(session);
                 }
             }
         }
@@ -443,6 +505,64 @@ public sealed class ClaudeSdkSessionManager
             };
         session.BufferedDeltaIndex = -1;
         session.BufferedDeltaText = null;
+    }
+
+    private static void CompactCompletedHistory(ManagedSession session)
+    {
+        CommitBufferedDelta(session);
+        CollapseCompletedStreams(session);
+
+        var seenUsers = 0;
+        var detailCutoff = 0;
+        for (var index = session.Events.Count - 1; index >= 0; index--)
+        {
+            if (session.Events[index].Type != "user") continue;
+            seenUsers++;
+            if (seenUsers < DetailedTurnRetention) continue;
+            detailCutoff = index;
+            break;
+        }
+        for (var index = detailCutoff - 1; index >= 0; index--)
+            if (session.Events[index].Type is not ("user" or "assistant" or "conversation_reset"))
+                session.Events.RemoveAt(index);
+    }
+
+    private static void CollapseCompletedStreams(ManagedSession session)
+    {
+        var endedAssistant = session.Events
+            .Where(evt => evt.Type == "assistant_stream_end" && evt.StreamId.Length > 0)
+            .Select(evt => evt.StreamId)
+            .ToHashSet(StringComparer.Ordinal);
+        var endedThinking = session.Events
+            .Where(evt => evt.Type == "thinking_stream_end" && evt.StreamId.Length > 0)
+            .Select(evt => evt.StreamId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (endedAssistant.Count == 0 && endedThinking.Count == 0) return;
+
+        var assistantText = session.Events
+            .Where(evt => evt.Type == "assistant_delta" && endedAssistant.Contains(evt.StreamId))
+            .GroupBy(evt => evt.StreamId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => string.Concat(group.Select(evt => evt.Text)), StringComparer.Ordinal);
+        var emittedAssistant = new HashSet<string>(StringComparer.Ordinal);
+        var compacted = new List<ClaudeSdkEvent>(session.Events.Count);
+        foreach (var evt in session.Events)
+        {
+            if (endedThinking.Contains(evt.StreamId)
+                && (evt.Type is "thinking_stream_start" or "thinking_delta" or "thinking_stream_end"))
+                continue;
+            if (endedAssistant.Contains(evt.StreamId)
+                && (evt.Type is "assistant_stream_start" or "assistant_delta" or "assistant_stream_end"))
+            {
+                if (emittedAssistant.Add(evt.StreamId)
+                    && assistantText.TryGetValue(evt.StreamId, out var text)
+                    && !string.IsNullOrWhiteSpace(text))
+                    compacted.Add(new ClaudeSdkEvent("assistant", text));
+                continue;
+            }
+            compacted.Add(evt);
+        }
+        session.Events.Clear();
+        session.Events.AddRange(compacted);
     }
 }
 

@@ -11,5 +11,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="..\..\Services\AgentEventOwnership.cs" Link="AgentEventOwnership.cs" />
     <Compile Include="..\..\Services\PathCommandProcess.cs" Link="PathCommandProcess.cs" />
+    <Compile Include="..\..\Services\ClaudeTranscriptSnapshotParser.cs" Link="ClaudeTranscriptSnapshotParser.cs" />
+    <Compile Include="..\..\Services\ModelEffortService.cs" Link="ModelEffortService.cs" />
   </ItemGroup>
 </Project>

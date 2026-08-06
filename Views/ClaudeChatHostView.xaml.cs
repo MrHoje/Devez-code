@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -16,6 +17,9 @@ namespace DevezCode.Views;
 public partial class ClaudeChatHostView : UserControl, IDisposable
 {
     private const string VirtualHostSuffix = "devezcode.local";
+    public const double BaseFontSizePt = 12.0;
+    private const double MinZoomFactor = 10.0 / BaseFontSizePt;
+    private const double MaxZoomFactor = 28.0 / BaseFontSizePt;
     private const int MaxAttachments = 20;
     private const int MaxImageEncodedBytes = 10 * 1024 * 1024;
     private const int MaxTotalImageEncodedBytes = 28 * 1024 * 1024;
@@ -34,13 +38,21 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
     private bool _disposed;
     private System.Windows.Threading.DispatcherTimer? _readyTimeout;
     private bool _focusPending;
+    private readonly object _hanjaSuppressionOwner = new();
     private readonly Dictionary<string, string> _pendingInsertions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, SessionItem> _knownSessions = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _streamDeltaLock = new();
     private readonly Dictionary<(string Type, string StreamId), StringBuilder> _pendingStreamDeltas = new();
     private bool _streamDeltaFlushScheduled;
+    private string _trustedSource = "";
 
     public event Action? UserInteracted;
     public event Action<string>? ResponseCompleted;
+    public event Action<string, string>? PromptSubmitted;
+    public event Action<double>? ZoomFactorChanged;
+    public event Action<string, int>? SessionActionRequested;
+
+    public double ZoomFactor => _webView?.ZoomFactor ?? SettingsService.LoadClaudeGuiZoomFactor();
 
     public ClaudeChatHostView()
     {
@@ -61,6 +73,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
     {
         bool changed = !ReferenceEquals(_session, session);
         if (changed) ClearPendingStreamDeltas();
+        _knownSessions[session.Id] = session;
         _session = session;
         _cwd = cwd;
         _ = EnsureReadyAsync();
@@ -75,6 +88,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
 
     public void Deactivate()
     {
+        GlobalTabHotkey.SetHanjaInputSuppressed(_hanjaSuppressionOwner, false);
         _session = null;
         _focusPending = false;
     }
@@ -89,6 +103,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
             if (!_pageReady || _session == null) return;
             _webView?.Focus();
             PostJson(new { type = "focus" });
+            GlobalTabHotkey.SetHanjaInputSuppressed(_hanjaSuppressionOwner, true);
             _focusPending = false;
         }, System.Windows.Threading.DispatcherPriority.Input);
     }
@@ -113,6 +128,8 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
         try
         {
             _webView = new WebView2 { DefaultBackgroundColor = CurrentBackgroundColor() };
+            _webView.AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler(BlockHanjaKey), true);
+            _webView.AddHandler(Keyboard.PreviewKeyUpEvent, new KeyEventHandler(BlockHanjaKey), true);
             WebViewHost.Children.Add(_webView);
             var environment = await SharedEnvironment.Value;
             if (_disposed) return;
@@ -136,6 +153,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
             }
             catch { }
             var virtualHost = $"claude-chat-{version:x}.{VirtualHostSuffix}";
+            _trustedSource = $"https://{virtualHost}/";
             core.SetVirtualHostNameToFolderMapping(virtualHost, webRoot, CoreWebView2HostResourceAccessKind.Allow);
             core.WebMessageReceived += OnWebMessageReceived;
             core.NavigationCompleted += OnNavigationCompleted;
@@ -156,11 +174,32 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
 
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        string clientRequestId = "";
+        string requestType = "";
         try
         {
+            if (_trustedSource.Length == 0
+                || !e.Source.StartsWith(_trustedSource, StringComparison.OrdinalIgnoreCase))
+            {
+                DiagLog.Write($"ClaudeChat rejected web message source={e.Source}");
+                return;
+            }
             using var document = JsonDocument.Parse(e.WebMessageAsJson);
             var root = document.RootElement;
             var type = root.TryGetProperty("type", out var typeValue) ? typeValue.GetString() : null;
+            requestType = type ?? "";
+            clientRequestId = root.TryGetProperty("clientRequestId", out var clientRequestIdValue)
+                        && clientRequestIdValue.ValueKind == JsonValueKind.String
+                ? clientRequestIdValue.GetString() ?? ""
+                : "";
+            if (clientRequestId.Length > 0
+                && (!root.TryGetProperty("protocolVersion", out var protocolVersion)
+                    || !protocolVersion.TryGetInt32(out var version)
+                    || version != 1))
+            {
+                ReplyRequest(clientRequestId, false, "지원하지 않는 WebView 요청 버전입니다.");
+                return;
+            }
             switch (type)
             {
                 case "pageReady":
@@ -176,20 +215,38 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                         _focusPending = false;
                     }
                     break;
+                case "draftChanged":
+                    var draftRoomId = root.TryGetProperty("roomId", out var draftRoom)
+                        ? draftRoom.GetString() ?? ""
+                        : "";
+                    var draftText = root.TryGetProperty("text", out var draft)
+                        ? draft.GetString() ?? ""
+                        : "";
+                    if (_knownSessions.TryGetValue(draftRoomId, out var draftSession))
+                        draftSession.ComposerDraft = draftText;
+                    break;
                 case "send":
                     var promptText = root.TryGetProperty("text", out var text) ? text.GetString() ?? "" : "";
                     if (!TryReadAttachments(root, out var attachments, out var attachmentError))
                     {
-                        PostJson(new { type = "sendFailed", text = promptText, message = attachmentError });
+                        ReplyRequest(clientRequestId, false, attachmentError);
+                        if (clientRequestId.Length == 0)
+                            PostJson(new { type = "sendFailed", text = promptText, message = attachmentError });
                         break;
                     }
-                    await SendPromptAsync(promptText, attachments);
+                    var sent = await SendPromptAsync(promptText, attachments);
+                    ReplyRequest(clientRequestId, sent, sent ? "" : "Claude SDK에 요청을 전달하지 못했습니다.");
                     break;
                 case "pickAttachments":
                     await PickAttachmentsAsync();
                     break;
                 case "stop":
-                    if (_session != null) await ClaudeSdkSessionManager.Instance.InterruptAsync(_session.Id);
+                    if (_session == null) ReplyRequest(clientRequestId, false, "활성 Claude 세션이 없습니다.");
+                    else
+                    {
+                        var interrupted = await ClaudeSdkSessionManager.Instance.InterruptAsync(_session.Id);
+                        ReplyRequest(clientRequestId, interrupted, interrupted ? "" : "중단할 Claude 요청이 없습니다.");
+                    }
                     break;
                 case "permission":
                     if (_session != null)
@@ -206,9 +263,11 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                                 if (property.Value.ValueKind == JsonValueKind.String)
                                     answers[property.Name] = property.Value.GetString() ?? "";
                         }
-                        await ClaudeSdkSessionManager.Instance.RespondPermissionAsync(
+                        var responded = await ClaudeSdkSessionManager.Instance.RespondPermissionAsync(
                             _session.Id, requestId, allow, answer, answers);
+                        ReplyRequest(clientRequestId, responded, responded ? "" : "권한 요청이 만료되었습니다.");
                     }
+                    else ReplyRequest(clientRequestId, false, "활성 Claude 세션이 없습니다.");
                     break;
                 case "setModel":
                     if (_session != null)
@@ -217,8 +276,10 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                             ? modelValue.GetString() ?? ""
                             : "";
                         UserInteracted?.Invoke();
-                        await ClaudeSdkSessionManager.Instance.SetModelAsync(_session.Id, model);
+                        var modelUpdated = await ClaudeSdkSessionManager.Instance.SetModelAsync(_session.Id, model);
+                        ReplyRequest(clientRequestId, modelUpdated, modelUpdated ? "" : "모델을 변경할 Claude 세션이 없습니다.");
                     }
+                    else ReplyRequest(clientRequestId, false, "활성 Claude 세션이 없습니다.");
                     break;
                 case "setEffort":
                     if (_session != null)
@@ -227,8 +288,10 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                             ? effortValue.GetString() ?? ""
                             : "";
                         UserInteracted?.Invoke();
-                        await ClaudeSdkSessionManager.Instance.SetEffortAsync(_session.Id, effort);
+                        var effortUpdated = await ClaudeSdkSessionManager.Instance.SetEffortAsync(_session.Id, effort);
+                        ReplyRequest(clientRequestId, effortUpdated, effortUpdated ? "" : "지원하지 않는 effort이거나 활성 세션이 없습니다.");
                     }
+                    else ReplyRequest(clientRequestId, false, "활성 Claude 세션이 없습니다.");
                     break;
                 case "setPermissionMode":
                     if (_session != null)
@@ -237,20 +300,24 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                             ? permissionValue.GetString() ?? "default"
                             : "default";
                         UserInteracted?.Invoke();
-                        await ClaudeSdkSessionManager.Instance.SetPermissionModeAsync(_session.Id, permissionMode);
+                        var permissionModeUpdated = await ClaudeSdkSessionManager.Instance.SetPermissionModeAsync(_session.Id, permissionMode);
+                        ReplyRequest(clientRequestId, permissionModeUpdated, permissionModeUpdated ? "" : "지원하지 않는 권한 모드이거나 활성 세션이 없습니다.");
                     }
+                    else ReplyRequest(clientRequestId, false, "활성 Claude 세션이 없습니다.");
                     break;
                 case "setVibeMode":
                     var vibeEnabled = root.TryGetProperty("enabled", out var vibeValue)
                                       && vibeValue.ValueKind == JsonValueKind.True;
                     SettingsService.SaveClaudeVibeMode(vibeEnabled);
                     UserInteracted?.Invoke();
+                    ReplyRequest(clientRequestId, true);
                     break;
                 case "setShowSkills":
                     var showSkills = root.TryGetProperty("enabled", out var showSkillsValue)
                                      && showSkillsValue.ValueKind == JsonValueKind.True;
                     SettingsService.SaveClaudeShowSkills(showSkills);
                     UserInteracted?.Invoke();
+                    ReplyRequest(clientRequestId, true);
                     break;
                 case "adjustZoom":
                     if (_webView != null
@@ -258,18 +325,43 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                         && zoomDirectionValue.TryGetInt32(out var zoomDirection)
                         && zoomDirection != 0)
                     {
-                        var zoomFactor = Math.Clamp(
-                            _webView.ZoomFactor + (zoomDirection > 0 ? 0.1 : -0.1),
-                            0.75,
-                            1.75);
-                        _webView.ZoomFactor = Math.Round(zoomFactor, 2);
-                        SettingsService.SaveClaudeGuiZoomFactor(_webView.ZoomFactor);
+                        SetZoomFactor(_webView.ZoomFactor + (zoomDirection > 0 ? 0.1 : -0.1));
                         UserInteracted?.Invoke();
+                    }
+                    break;
+                case "sessionAction":
+                    var actionName = root.TryGetProperty("name", out var actionNameValue)
+                        ? actionNameValue.GetString() ?? ""
+                        : "";
+                    var actionIndex = root.TryGetProperty("index", out var actionIndexValue)
+                                      && actionIndexValue.TryGetInt32(out var parsedActionIndex)
+                        ? parsedActionIndex
+                        : 0;
+                    if (actionName.Length > 0)
+                    {
+                        UserInteracted?.Invoke();
+                        SessionActionRequested?.Invoke(actionName, actionIndex);
                     }
                     break;
                 case "refreshCapabilities":
                     if (_session != null)
                         await ClaudeSdkSessionManager.Instance.RefreshCapabilitiesAsync(_session.Id);
+                    break;
+                case "openLink":
+                    var url = root.TryGetProperty("url", out var urlValue) ? urlValue.GetString() ?? "" : "";
+                    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                        || (uri.Scheme != Uri.UriSchemeHttp
+                            && uri.Scheme != Uri.UriSchemeHttps
+                            && uri.Scheme != Uri.UriSchemeMailto))
+                    {
+                        ReplyRequest(clientRequestId, false, "허용되지 않은 링크입니다.");
+                        break;
+                    }
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri)
+                    {
+                        UseShellExecute = true,
+                    });
+                    ReplyRequest(clientRequestId, true);
                     break;
                 case "copy":
                     var copyText = root.TryGetProperty("text", out var clipboardText) ? clipboardText.GetString() ?? "" : "";
@@ -278,11 +370,19 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                 case "interact":
                     UserInteracted?.Invoke();
                     break;
+                case "composerFocus":
+                    var composerFocused = root.TryGetProperty("focused", out var focusedValue)
+                                          && focusedValue.ValueKind == JsonValueKind.True;
+                    GlobalTabHotkey.SetHanjaInputSuppressed(_hanjaSuppressionOwner, composerFocused);
+                    break;
             }
         }
         catch (Exception ex)
         {
             DiagLog.Write($"ClaudeChat web message failed: {ex}");
+            ReplyRequest(clientRequestId, false, ex.Message);
+            if (clientRequestId.Length == 0)
+                PostJson(new { type = "hostError", message = $"{requestType} 요청을 처리하지 못했습니다." });
         }
     }
 
@@ -314,14 +414,16 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
         _readyTimeout = null;
     }
 
-    private async Task SendPromptAsync(string text, IReadOnlyList<ClaudeSdkAttachment> attachments)
+    private async Task<bool> SendPromptAsync(string text, IReadOnlyList<ClaudeSdkAttachment> attachments)
     {
         var session = _session;
         text = text.Trim();
-        if (session == null || (text.Length == 0 && attachments.Count == 0)) return;
+        if (session == null || (text.Length == 0 && attachments.Count == 0)) return false;
         UserInteracted?.Invoke();
         if (!await ClaudeSdkSessionManager.Instance.SendPromptAsync(session, _cwd, text, attachments))
-            PostJson(new { type = "sendFailed", text, attachments, message = "Claude SDK에 요청을 전달하지 못했습니다." });
+            return false;
+        if (text.Length > 0) PromptSubmitted?.Invoke(session.Id, text);
+        return true;
     }
 
     private async Task PickAttachmentsAsync()
@@ -341,6 +443,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
         var paths = dialog.FileNames.Take(MaxAttachments).ToArray();
         var items = new List<object>(paths.Length);
         var errors = new List<string>();
+        long totalEncoded = 0;
         foreach (var path in paths)
         {
             try
@@ -353,13 +456,23 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                     continue;
                 }
 
-                var bytes = await File.ReadAllBytesAsync(info.FullName);
-                var data = Convert.ToBase64String(bytes);
-                if (data.Length > MaxImageEncodedBytes)
+                var estimatedEncoded = checked(((info.Length + 2L) / 3L) * 4L);
+                if (estimatedEncoded > MaxImageEncodedBytes
+                    || totalEncoded + estimatedEncoded > MaxTotalImageEncodedBytes)
                 {
-                    errors.Add($"{info.Name}: Base64 기준 10MB를 초과합니다.");
+                    errors.Add($"{info.Name}: 첨부 이미지 크기 제한을 초과합니다.");
                     continue;
                 }
+
+                var bytes = await File.ReadAllBytesAsync(info.FullName);
+                var data = Convert.ToBase64String(bytes);
+                if (data.Length > MaxImageEncodedBytes
+                    || totalEncoded + data.Length > MaxTotalImageEncodedBytes)
+                {
+                    errors.Add($"{info.Name}: 첨부 이미지 크기 제한을 초과합니다.");
+                    continue;
+                }
+                totalEncoded += data.Length;
                 items.Add(new { kind = "image", name = info.Name, mediaType, data, size = info.Length });
             }
             catch (Exception ex)
@@ -394,7 +507,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
             return false;
         }
 
-        var totalEncoded = 0;
+        long totalEncoded = 0;
         foreach (var value in values.EnumerateArray())
         {
             var kind = String(value, "kind");
@@ -485,24 +598,29 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
     private void SyncActiveSession()
     {
         if (!_pageReady || _session == null) return;
+        var restore = ClaudeSessionRestoreService.Load(_session.Id, _cwd);
         var events = ClaudeSdkSessionManager.Instance.GetEvents(_session.Id).ToList();
-        if (!events.Any(item => item.Type is "user" or "assistant"))
+        if (!events.Any(item => item.Type is "user" or "assistant")
+            && !events.Any(item => item.Type == "conversation_reset"))
         {
-            var transcript = SessionExporter.LoadClaudeConversation(_session.Id, _cwd)
-                .Select(item => new ClaudeSdkEvent(item.Role == "user" ? "user" : "assistant", item.Text));
+            var transcript = restore.Transcript.Turns
+                .Select(item => new ClaudeSdkEvent(item.Role, item.Text));
             events.InsertRange(0, transcript);
         }
         PostJson(new
         {
             type = "session",
             roomId = _session.Id,
+            draft = _session.ComposerDraft,
             events,
             busy = _session.IsBusy,
             waiting = _session.IsWaitingChoice,
             alive = _session.IsAlive,
-            model = SettingsService.LoadClaudeCodeRoomModel(_session.Id) ?? "",
-            effort = SettingsService.LoadClaudeCodeRoomEffort(_session.Id) ?? "high",
-            permissionMode = SettingsService.LoadClaudeCodeRoomPermissionMode(_session.Id),
+            model = restore.Model ?? "",
+            effort = restore.Effort,
+            permissionMode = restore.PermissionMode,
+            contextTokens = restore.ContextTokens,
+            contextWindow = restore.ContextWindow,
             vibeMode = SettingsService.LoadClaudeVibeMode(),
             showSkills = SettingsService.LoadClaudeShowSkills(),
         });
@@ -625,11 +743,40 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
         return System.Drawing.Color.FromArgb(0xff, 0x1f, 0x1f, 0x1e);
     }
 
+    private static void BlockHanjaKey(object sender, KeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey
+            : e.Key == Key.ImeProcessed ? e.ImeProcessedKey
+            : e.Key;
+        if (KeyInterop.VirtualKeyFromKey(key) == 0x19)
+            e.Handled = true;
+    }
+
+    public void SetZoomFactor(double value)
+    {
+        var zoomFactor = Math.Round(Math.Clamp(value, MinZoomFactor, MaxZoomFactor), 3);
+        if (_webView != null) _webView.ZoomFactor = zoomFactor;
+        SettingsService.SaveClaudeGuiZoomFactor(zoomFactor);
+        ZoomFactorChanged?.Invoke(zoomFactor);
+    }
+
     private static string Hex(string key, string fallback)
     {
         if (Application.Current?.TryFindResource(key) is not SolidColorBrush brush) return fallback;
         var color = brush.Color;
         return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+    }
+
+    private void ReplyRequest(string clientRequestId, bool success, string message = "")
+    {
+        if (clientRequestId.Length == 0) return;
+        PostJson(new
+        {
+            type = "commandResult",
+            clientRequestId,
+            success,
+            message,
+        });
     }
 
     private void PostJson(object message)
@@ -678,6 +825,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        GlobalTabHotkey.SetHanjaInputSuppressed(_hanjaSuppressionOwner, false);
         ClaudeSdkSessionManager.Instance.EventReceived -= OnSdkEvent;
         App.ThemeChanged -= OnThemeChanged;
         StopReadyTimeout();

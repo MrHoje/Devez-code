@@ -14,6 +14,11 @@
   const attachmentStrip = document.getElementById("attachment-strip");
   const attachmentError = document.getElementById("attachment-error");
   const dropOverlay = document.getElementById("drop-overlay");
+  const shortcutHint = document.getElementById("shortcut-hint");
+  const statusToast = document.getElementById("status-toast");
+  const statusToastLabel = document.getElementById("status-toast-label");
+  const statusToastValue = document.getElementById("status-toast-value");
+  const statusAnnouncer = document.getElementById("status-announcer");
   const commandMenu = document.getElementById("command-menu");
   const controlMenu = document.getElementById("control-menu");
   const composerShell = document.querySelector(".composer-shell");
@@ -57,6 +62,20 @@
   let pendingLocalCommand = "";
   let quietCommandInFlight = false;
   let pendingResult = null;
+  let interruptRequested = false;
+  let interruptWatchdog = 0;
+  let sessionEvents = [];
+  let historyStartIndex = 0;
+  const historyBatchTurns = 60;
+  const composerDrafts = new Map();
+  const composerAttachments = new Map();
+  const pendingHostRequests = new Map();
+  let shortcutHintShown = false;
+  let statusToastTimer = 0;
+  let statusToastTransitionTimer = 0;
+  let statusToastSequence = 0;
+  let lastStatusToastKey = "";
+  let lastStatusToastAt = 0;
   const markdownTemplate = document.createElement("template");
   const markdownBlockCache = new Map();
   let markdownBlockCacheWeight = 0;
@@ -85,6 +104,7 @@
     "clear", "color", "compact", "config", "context", "effort", "fast", "mcp",
     "model", "reload-skills", "rename", "usage", "usage-credits",
   ]);
+  const toastSlashCommands = new Set(["color", "effort", "fast", "model", "permission", "reload-skills", "rename"]);
   const builtInSlashDescriptions = {
     clear: "새 대화를 시작합니다",
     compact: "대화를 요약해 컨텍스트를 확보합니다",
@@ -131,6 +151,28 @@
   let statusPalette = statusPalettes.dark;
 
   function post(value) { bridge?.postMessage(value); }
+
+  function postRequest(type, payload = {}, timeoutMs = 8000) {
+    if (!bridge) return Promise.reject(new Error("WebView 호스트에 연결되지 않았습니다."));
+    const clientRequestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingHostRequests.delete(clientRequestId);
+        reject(new Error("호스트 응답 시간이 초과되었습니다."));
+      }, timeoutMs);
+      pendingHostRequests.set(clientRequestId, { resolve, reject, timer });
+      post({ protocolVersion: 1, ...payload, type, clientRequestId });
+    });
+  }
+
+  function completeHostRequest(message) {
+    const request = pendingHostRequests.get(message.clientRequestId);
+    if (!request) return;
+    pendingHostRequests.delete(message.clientRequestId);
+    clearTimeout(request.timer);
+    if (message.success === true) request.resolve(message);
+    else request.reject(new Error(message.message || "요청을 처리하지 못했습니다."));
+  }
 
   function formatElapsed(milliseconds) {
     const seconds = Math.max(0, Math.floor(milliseconds / 1000));
@@ -219,6 +261,7 @@
     }
     attachmentStrip.hidden = attachments.length === 0;
     composer.classList.toggle("has-attachments", attachments.length > 0);
+    if (roomId) composerAttachments.set(roomId, attachments.map(item => ({ ...item })));
     updateAction();
   }
 
@@ -350,9 +393,22 @@
     return output;
   }
 
+  function protectLinks(value, links) {
+    return String(value || "").replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, rawUrl) => {
+      try {
+        const url = new URL(rawUrl);
+        if (!new Set(["http:", "https:", "mailto:"]).has(url.protocol)) return match;
+        links.push({ label: escapeHtml(label), url: escapeHtml(url.href) });
+        return `\u0000L${links.length - 1}\u0000`;
+      } catch { return match; }
+    });
+  }
+
   function inlineMarkdown(value) {
     const code = [];
+    const links = [];
     let text = protectCodeSpans(value, code);
+    text = protectLinks(text, links);
     text = restoreTableEscapes(text);
     text = escapeHtml(text);
     text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -360,6 +416,10 @@
     text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
     text = text.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
     text = text.replace(/\u0000C(\d+)\u0000/g, (_, index) => `<code>${code[Number(index)]}</code>`);
+    text = text.replace(/\u0000L(\d+)\u0000/g, (_, index) => {
+      const link = links[Number(index)];
+      return `<a href="${link.url}" data-external-link="true" rel="noopener noreferrer">${link.label}</a>`;
+    });
     return text;
   }
 
@@ -517,16 +577,55 @@
     return `<div class="table-wrap" role="region" aria-label="표" tabindex="0"><table style="--table-columns:${headers.length}"><thead><tr>${head}</tr></thead>${tableBody}</table></div>`;
   }
 
+  function listLine(line) {
+    const match = /^(\s*)([-+*]|\d+[.)])\s+(.+)$/.exec(line);
+    if (!match) return null;
+    return {
+      indent: match[1].replace(/\t/g, "    ").length,
+      ordered: /^\d/.test(match[2]),
+      text: match[3],
+    };
+  }
+
+  function renderListBlock(lines, start, baseIndent, ordered) {
+    const items = [];
+    let index = start;
+    while (index < lines.length) {
+      const item = listLine(lines[index]);
+      if (!item || item.indent < baseIndent) break;
+      if (item.indent > baseIndent) {
+        if (!items.length) break;
+        const nested = renderListBlock(lines, index, item.indent, item.ordered);
+        items[items.length - 1].nested += nested.html;
+        index = nested.index;
+        continue;
+      }
+      if (item.ordered !== ordered) break;
+      items.push({ body: inlineMarkdown(item.text), nested: "" });
+      index++;
+    }
+    const tag = ordered ? "ol" : "ul";
+    return { html: `<${tag}>${items.map(item => `<li>${item.body}${item.nested}</li>`).join("")}</${tag}>`, index };
+  }
+
   function renderMarkdownBlock(source) {
     const lines = source.split("\n");
     const html = [];
     for (let index = 0; index < lines.length;) {
       const line = lines[index];
-      if (/^```/.test(line)) {
-        const language = line.slice(3).trim() || "code";
+      const openingFence = /^(?: {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
+      if (openingFence) {
+        const fence = openingFence[1];
+        const language = openingFence[2].trim().split(/\s+/)[0] || "code";
         const body = [];
         index++;
-        while (index < lines.length && !/^```/.test(lines[index])) body.push(lines[index++]);
+        while (index < lines.length) {
+          const candidate = lines[index].trim();
+          if (candidate[0] === fence[0]
+              && candidate.length >= fence.length
+              && candidate.split("").every(char => char === fence[0])) break;
+          body.push(lines[index++]);
+        }
         if (index < lines.length) index++;
         html.push(`<section class="code-block"><div class="code-head"><span>${escapeHtml(language)}</span><button class="copy-code" type="button">복사</button></div><pre><code>${highlightCode(body.join("\n"), language)}</code></pre></section>`);
         continue;
@@ -559,19 +658,18 @@
         html.push(`<blockquote>${body.map(inlineMarkdown).join("<br>")}</blockquote>`);
         continue;
       }
-      const unordered = /^\s*[-+*]\s+/.test(line);
-      const ordered = /^\s*\d+[.)]\s+/.test(line);
-      if (unordered || ordered) {
-        const tag = ordered ? "ol" : "ul";
-        const pattern = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-+*]\s+/;
-        const items = [];
-        while (index < lines.length && pattern.test(lines[index])) items.push(`<li>${inlineMarkdown(lines[index++].replace(pattern, ""))}</li>`);
-        html.push(`<${tag}>${items.join("")}</${tag}>`);
+      const list = listLine(line);
+      if (list) {
+        const rendered = renderListBlock(lines, index, list.indent, list.ordered);
+        html.push(rendered.html);
+        index = rendered.index;
         continue;
       }
       const paragraph = [line];
       index++;
-      while (index < lines.length && lines[index].trim() && !/^(#{1,4})\s+|^```|^>\s?|^\s*[-+*]\s+|^\s*\d+[.)]\s+/.test(lines[index])) paragraph.push(lines[index++]);
+      while (index < lines.length && lines[index].trim()
+             && !/^(#{1,4})\s+|^(?: {0,3})(?:`{3,}|~{3,})|^>\s?|^\s*[-+*]\s+|^\s*\d+[.)]\s+/.test(lines[index]))
+        paragraph.push(lines[index++]);
       html.push(`<p>${paragraph.map(inlineMarkdown).join("<br>")}</p>`);
     }
     return html.join("");
@@ -750,7 +848,10 @@
     scrollAfterAppend(forceScroll);
   }
 
-  function setStatus() {}
+  function setStatus(message = "") {
+    if (!statusAnnouncer || statusAnnouncer.textContent === message) return;
+    statusAnnouncer.textContent = message;
+  }
 
   function setBusy(value) {
     if (busy === value) return;
@@ -762,7 +863,9 @@
     requestAnimationFrame(updateScrollBoundary);
   }
 
-  function updateAction() { action.disabled = !busy && !prompt.value.trim() && attachments.length === 0; }
+  function updateAction() {
+    action.disabled = interruptRequested || (!busy && !prompt.value.trim() && attachments.length === 0);
+  }
 
   function makeTurn(role, text, attached = []) {
     const turn = document.createElement("article");
@@ -810,13 +913,44 @@
     const turn = makeTurn("assistant", "");
     turn.classList.add("stream-enter");
     const state = {
-      bubble: turn.querySelector(".bubble"), text: "", pending: "", frame: 0, ended: false,
+      turn, bubble: turn.querySelector(".bubble"), text: "", pending: "", frame: 0, ended: false,
       lastPaint: performance.now(),
     };
     assistantStreams.set(streamId, state);
     append(turn);
     requestAnimationFrame(() => turn.classList.add("is-visible"));
     turn.addEventListener("transitionend", () => turn.classList.remove("stream-enter", "is-visible"), { once: true });
+  }
+
+  const requestInterruptedMarkerPrefix = "[Request interrupted";
+
+  function stripRequestInterruptedMarker(text, allowPartial = false) {
+    const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+    return lines.filter((line, index) => {
+      const value = line.trim();
+      if (value.startsWith(requestInterruptedMarkerPrefix)) return false;
+      return !(allowPartial && index === lines.length - 1 && value && requestInterruptedMarkerPrefix.startsWith(value));
+    }).join("\n").replace(/^(?:[\t ]*\n)+|(?:\n[\t ]*)+$/g, "");
+  }
+
+  function isInternalCommandEnvelope(text) {
+    const value = String(text || "").trimStart().toLowerCase();
+    return value.startsWith("<command-name>")
+      || value.startsWith("<command-message>")
+      || value.startsWith("<command-args>")
+      || value.startsWith("<local-command-");
+  }
+
+  function renderAssistantStream(state, final = false) {
+    const text = stripRequestInterruptedMarker(state.text, !final);
+    reconcileMarkdown(state.bubble, text);
+    if (final && !text.trim()) state.turn.remove();
+  }
+
+  function finishAssistantStream(streamId, state) {
+    renderAssistantStream(state, true);
+    assistantStreams.delete(streamId);
+    finishPendingResult();
   }
 
   function streamChunkLength(state, backlog, reduceMotion) {
@@ -857,8 +991,7 @@
       const backlog = state.pending.length;
       if (!backlog) {
         if (state.ended) {
-          assistantStreams.delete(streamId);
-          finishPendingResult();
+          finishAssistantStream(streamId, state);
         }
         return;
       }
@@ -875,12 +1008,11 @@
         state.pending = state.pending.slice(count);
       }
       state.lastPaint = now;
-      reconcileMarkdown(state.bubble, state.text);
+      renderAssistantStream(state);
       scrollAfterAppend();
       if (state.pending.length) scheduleAssistantFrame(streamId, state);
       else if (state.ended) {
-        assistantStreams.delete(streamId);
-        finishPendingResult();
+        finishAssistantStream(streamId, state);
       }
     });
   }
@@ -902,7 +1034,7 @@
       state.frame = 0;
       state.text += state.pending;
       state.pending = "";
-      reconcileMarkdown(state.bubble, state.text);
+      renderAssistantStream(state, true);
       assistantStreams.delete(streamId);
       scrollAfterAppend();
       finishPendingResult();
@@ -1217,7 +1349,7 @@
     element.querySelector(".compact-meta").textContent = parts.join(" · ");
   }
 
-  function resetConversationView() {
+  function resetRenderedMessages() {
     for (const state of assistantStreams.values()) if (state.frame) cancelAnimationFrame(state.frame);
     for (const state of thinkingStreams.values()) if (state.frame) cancelAnimationFrame(state.frame);
     messages.replaceChildren();
@@ -1231,9 +1363,90 @@
     pendingResult = null;
     assistantStreams.clear();
     thinkingStreams.clear();
+  }
+
+  function resetConversationView() {
+    resetRenderedMessages();
     resetWorkingTimer();
+    clearStatusToast();
     setBusy(false);
     updateEmpty();
+  }
+
+  function historyBatchStart(events, beforeIndex = events.length) {
+    let users = 0;
+    for (let index = Math.min(beforeIndex, events.length) - 1; index >= 0; index--) {
+      if (events[index]?.type !== "user") continue;
+      users += 1;
+      if (users === historyBatchTurns) return index;
+    }
+    return 0;
+  }
+
+  function makeHistoryLoader() {
+    const row = document.createElement("div");
+    row.className = "history-loader";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "이전 대화 불러오기";
+    button.addEventListener("click", loadOlderHistory);
+    row.appendChild(button);
+    return row;
+  }
+
+  function renderSessionHistory() {
+    resetRenderedMessages();
+    nearBottom = false;
+    for (const event of sessionEvents.slice(historyStartIndex)) renderEvent(event, false);
+    if (historyStartIndex > 0) messages.prepend(makeHistoryLoader());
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
+    scrollFrame = 0;
+    updateEmpty();
+  }
+
+  function loadOlderHistory() {
+    if (historyStartIndex <= 0) return;
+    const oldHeight = conversation.scrollHeight;
+    const oldTop = conversation.scrollTop;
+    const wasBusy = busy;
+    historyStartIndex = historyBatchStart(sessionEvents, historyStartIndex);
+    renderSessionHistory();
+    setBusy(wasBusy);
+    requestAnimationFrame(() => {
+      conversation.scrollTop = oldTop + Math.max(0, conversation.scrollHeight - oldHeight);
+      updateScrollBoundary();
+    });
+  }
+
+  function compactClientHistory(events) {
+    const endedAssistant = new Set(events.filter(event => event.type === "assistant_stream_end").map(event => event.streamId).filter(Boolean));
+    const endedThinking = new Set(events.filter(event => event.type === "thinking_stream_end").map(event => event.streamId).filter(Boolean));
+    const text = new Map();
+    for (const event of events) {
+      if (event.type !== "assistant_delta" || !endedAssistant.has(event.streamId)) continue;
+      text.set(event.streamId, (text.get(event.streamId) || "") + (event.text || ""));
+    }
+    const emitted = new Set();
+    const compacted = [];
+    for (const event of events) {
+      if (endedThinking.has(event.streamId) && ["thinking_stream_start", "thinking_delta", "thinking_stream_end"].includes(event.type)) continue;
+      if (endedAssistant.has(event.streamId) && ["assistant_stream_start", "assistant_delta", "assistant_stream_end"].includes(event.type)) {
+        if (!emitted.has(event.streamId) && text.get(event.streamId)?.trim()) {
+          emitted.add(event.streamId);
+          compacted.push({ type: "assistant", text: text.get(event.streamId) });
+        }
+        continue;
+      }
+      compacted.push(event);
+    }
+    let users = 0;
+    let cutoff = 0;
+    for (let index = compacted.length - 1; index >= 0; index--) {
+      if (compacted[index].type !== "user") continue;
+      users += 1;
+      if (users === 12) { cutoff = index; break; }
+    }
+    return compacted.filter((event, index) => index >= cutoff || ["user", "assistant", "conversation_reset"].includes(event.type));
   }
 
   function stripTerminalFormatting(text) {
@@ -1245,11 +1458,171 @@
     return /\S/.test(value) ? value : "";
   }
 
-  function makeSystemOutput(event) {
+  function commandNameFromText(text) {
+    const match = /^\/([^\s]+)/.exec(String(text || "").trim());
+    return match ? match[1].toLowerCase() : "";
+  }
+
+  function commandTagValue(text, tag) {
+    const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i").exec(String(text || ""));
+    return match ? match[1].trim() : "";
+  }
+
+  function parseLocalCommandEnvelope(text) {
+    const source = String(text || "");
+    if (!/<command-name>/i.test(source)) return null;
+    const rawName = commandTagValue(source, "command-name");
+    const name = rawName.replace(/^\//, "").trim().toLowerCase();
+    if (!name) return null;
+    const stdout = commandTagValue(source, "local-command-stdout");
+    const stderr = commandTagValue(source, "local-command-stderr");
+    return {
+      name,
+      args: commandTagValue(source, "command-args"),
+      output: stdout || stderr,
+      failed: Boolean(stderr),
+    };
+  }
+
+  function inferStateCommand(text) {
+    const value = String(text || "");
+    if (/\b(?:set|changed?) effort(?: level)? to\b|\beffort level (?:set|changed?) to\b/i.test(value)) return "effort";
+    if (/\b(?:set|changed?) model to\b|\bmodel (?:set|changed?) to\b/i.test(value)) return "model";
+    if (/\bfast mode\b/i.test(value)) return "fast";
+    return "";
+  }
+
+  function commandOutputFailed(text) {
+    return /(?:^|\n)\s*(?:error|failed|failure|오류|실패)(?:\b|\s|:)/i.test(String(text || ""));
+  }
+
+  function syncLocalCommandState(name, output, args) {
+    const text = stripTerminalFormatting(output);
+    if (name === "effort") {
+      const candidate = String(args || "").trim().split(/\s+/)[0]
+        || /(?:set|changed?) effort(?: level)? to\s+([a-z-]+)|effort level (?:set|changed?) to\s+([a-z-]+)/i.exec(text)?.slice(1).find(Boolean)
+        || "";
+      const effort = candidate.toLowerCase();
+      if (effortLevels.some(level => level.value === effort)) currentEffort = effort;
+    } else if (name === "model") {
+      const haystack = `${args || ""} ${text}`.toLowerCase();
+      const match = models
+        .map(model => ({
+          model,
+          keys: [model.value, model.resolvedModel, model.displayName]
+            .filter(Boolean)
+            .map(value => String(value).toLowerCase())
+            .sort((a, b) => b.length - a.length),
+        }))
+        .find(entry => entry.keys.some(key => key.length > 2 && haystack.includes(key)));
+      if (match) currentModel = normalizeModel(match.model.value || match.model.resolvedModel);
+      else if (args && !/\s/.test(args.trim())) currentModel = normalizeModel(args);
+    } else if (name === "permission") {
+      const haystack = `${args || ""} ${text}`.toLowerCase();
+      const mode = permissionModes.find(item => haystack.includes(item.id.toLowerCase()) || haystack.includes(item.label.toLowerCase()));
+      if (mode) currentPermissionMode = mode.id;
+    }
+    updateControlLabels();
+  }
+
+  function statusToastDetails(name, output, args, failed = false) {
+    const command = String(name || "").toLowerCase();
+    const text = stripTerminalFormatting(output);
+    const isError = failed || commandOutputFailed(text);
+    if (!isError) syncLocalCommandState(command, text, args);
+    if (isError) {
+      const firstLine = text.split("\n").map(line => line.trim()).find(Boolean) || "명령을 적용하지 못했습니다";
+      return { label: `/${command}`, value: firstLine.slice(0, 110), kind: "error", accent: "var(--danger)" };
+    }
+    if (command === "effort")
+      return { label: "Effort", value: `${effortName(currentEffort)} 적용됨`, kind: "success", accent: statusPalette[currentEffort] || statusPalette.text };
+    if (command === "model")
+      return { label: "Model", value: `${modelName(currentModel)} 적용됨`, kind: "success", accent: slashCommandColor({ name: "model" }) };
+    if (command === "permission")
+      return { label: "Permission", value: `${permissionName(currentPermissionMode)} 적용됨`, kind: "success", accent: statusPalette[currentPermissionMode] || statusPalette.text };
+    if (command === "fast") {
+      const off = /\b(?:disabled|off)\b|꺼짐|해제/i.test(text);
+      const on = /\b(?:enabled|on)\b|켜짐|활성/i.test(text);
+      return { label: "Fast mode", value: off ? "꺼짐" : on ? "켜짐" : "설정이 적용됨", kind: "success", accent: statusPalette.haiku || statusPalette.plan };
+    }
+    if (command === "reload-skills")
+      return { label: "Skill", value: "다시 불러옴", kind: "success", accent: statusPalette.medium || statusPalette.plan };
+    if (command === "rename")
+      return { label: "Session", value: "이름 변경됨", kind: "success", accent: statusPalette.plan };
+    if (command === "color")
+      return { label: "Theme", value: "색상 설정이 적용됨", kind: "success", accent: statusPalette.plan };
+    return { label: `/${command}`, value: "설정이 적용됨", kind: "success", accent: statusPalette.plan || "var(--success)" };
+  }
+
+  function clearStatusToast() {
+    statusToastSequence += 1;
+    clearTimeout(statusToastTimer);
+    clearTimeout(statusToastTransitionTimer);
+    statusToastTimer = 0;
+    statusToastTransitionTimer = 0;
+    if (!statusToast) return;
+    statusToast.hidden = true;
+    statusToast.classList.remove("is-visible", "is-replacing", "is-leaving");
+  }
+
+  function hideStatusToast(sequence = statusToastSequence) {
+    if (!statusToast || sequence !== statusToastSequence || statusToast.hidden) return;
+    statusToast.classList.remove("is-visible", "is-replacing");
+    statusToast.classList.add("is-leaving");
+    statusToastTransitionTimer = setTimeout(() => {
+      if (sequence !== statusToastSequence) return;
+      statusToast.hidden = true;
+      statusToast.classList.remove("is-leaving");
+    }, 280);
+  }
+
+  function showStatusToast(details) {
+    if (!statusToast || !details) return;
+    const now = performance.now();
+    const key = `${details.kind}|${details.label}|${details.value}`;
+    clearTimeout(statusToastTimer);
+    clearTimeout(statusToastTransitionTimer);
+    if (key === lastStatusToastKey && now - lastStatusToastAt < 650 && !statusToast.hidden) {
+      const sequence = statusToastSequence;
+      statusToastTimer = setTimeout(() => hideStatusToast(sequence), details.kind === "error" ? 3600 : 2200);
+      return;
+    }
+    lastStatusToastKey = key;
+    lastStatusToastAt = now;
+    const sequence = ++statusToastSequence;
+    const reveal = () => {
+      if (sequence !== statusToastSequence) return;
+      statusToastLabel.textContent = details.label;
+      statusToastValue.textContent = details.value;
+      statusToast.dataset.kind = details.kind || "success";
+      statusToast.style.setProperty("--toast-accent", details.accent || "var(--success)");
+      statusToast.setAttribute("aria-label", `${details.label}: ${details.value}`);
+      statusToast.hidden = false;
+      statusToast.classList.remove("is-visible", "is-replacing", "is-leaving");
+      requestAnimationFrame(() => {
+        if (sequence !== statusToastSequence) return;
+        statusToast.classList.add("is-visible");
+        statusToastTimer = setTimeout(() => hideStatusToast(sequence), details.kind === "error" ? 3600 : 2200);
+      });
+    };
+    if (!statusToast.hidden && statusToast.classList.contains("is-visible")) {
+      statusToast.classList.remove("is-visible", "is-leaving");
+      statusToast.classList.add("is-replacing");
+      statusToastTransitionTimer = setTimeout(reveal, 90);
+    } else reveal();
+  }
+
+  function makeSystemOutput(event, live = true) {
     const text = stripTerminalFormatting(event.text);
     if (!text) return null;
     let kind = event.input?.kind || "information";
     if (pendingLocalCommand && kind === "information") kind = "command";
+    const command = String(pendingLocalCommand || inferStateCommand(text)).toLowerCase();
+    if (kind === "command" && toastSlashCommands.has(command)) {
+      if (live) showStatusToast(statusToastDetails(command, text, event.input?.args || "", event.input?.level === "error"));
+      pendingLocalCommand = "";
+      return null;
+    }
     if (kind === "information" || kind === "notification") {
       const notice = document.createElement("section");
       notice.className = `system-notice ${event.input?.level || "notice"}`;
@@ -1381,7 +1754,11 @@
       }
       allow.disabled = deny.disabled = true;
       for (const control of card.querySelectorAll("button, textarea")) control.disabled = true;
-      post({ type: "permission", requestId: event.requestId || "", allow: approved, answers });
+      void postRequest("permission", { requestId: event.requestId || "", allow: approved, answers })
+        .catch(error => {
+          for (const control of card.querySelectorAll("button, textarea")) control.disabled = false;
+          showStatusToast({ label: "권한", value: error?.message || "응답 전달 실패", kind: "error", accent: "var(--danger)" });
+        });
     };
     allow.addEventListener("click", () => respond(true));
     deny.addEventListener("click", () => respond(false));
@@ -1391,8 +1768,18 @@
   function resolvePermission(requestId, allowed) {
     const card = [...document.querySelectorAll(".permission")].find(node => node.dataset.requestId === requestId);
     if (!card) return;
+    card.dataset.resolved = "true";
     card.querySelector(".card-title").textContent = allowed ? "응답을 전달했습니다" : "요청을 거부했습니다";
     for (const control of card.querySelectorAll("button, textarea")) control.disabled = true;
+  }
+
+  function finalizePermissions(canceled = false) {
+    for (const card of document.querySelectorAll(".permission:not([data-resolved='true'])")) {
+      card.dataset.resolved = "true";
+      const title = card.querySelector(".card-title");
+      if (title) title.textContent = canceled ? "요청이 중단되었습니다" : "요청이 종료되었습니다";
+      for (const control of card.querySelectorAll("button, textarea")) control.disabled = true;
+    }
   }
 
   function compactModelName(model) {
@@ -1475,13 +1862,27 @@
   }
 
   function selectedModelInfo() {
-    return models.find(model => model.value === currentModel || model.resolvedModel === currentModel);
+    const exact = models.find(model => model.value === currentModel || model.resolvedModel === currentModel);
+    if (exact) return exact;
+
+    const selectedLabel = compactModelName(currentModel).toLowerCase();
+    const labelMatch = models.find(model => compactModelName(model).toLowerCase() === selectedLabel);
+    if (labelMatch) return labelMatch;
+
+    const identity = String(currentModel || "").toLowerCase();
+    const family = ["opus", "sonnet", "haiku", "fable"].find(name => identity.includes(name));
+    return family
+      ? models.find(model => [model.displayName, model.value, model.resolvedModel]
+        .some(value => String(value || "").toLowerCase().includes(family)))
+      : undefined;
   }
 
   function supportedEffortEntries() {
     const model = selectedModelInfo();
-    if (!model) return models.length ? [] : effortLevels;
-    if (model.supportsEffort !== true) return [];
+    // resume 모델이 오래된 explicit ID라 현재 capability 목록에 없거나,
+    // SDK가 선택 필드인 supportsEffort를 생략한 경우를 미지원으로 오판하지 않는다.
+    // 명시적으로 false인 모델만 숨긴다.
+    if (model?.supportsEffort === false) return [];
     const supported = Array.isArray(model?.supportedEffortLevels)
       ? new Set(model.supportedEffortLevels)
       : null;
@@ -1510,6 +1911,14 @@
     permissionControl.setAttribute("aria-label", `권한 모드 변경 · ${permissionLabel.textContent}`);
   }
 
+  function rotateCommandsFromClear(values) {
+    const clearIndex = values.findIndex(command =>
+      String(command?.name || "").trim().toLowerCase() === "clear");
+    return clearIndex > 0
+      ? [...values.slice(clearIndex), ...values.slice(0, clearIndex)]
+      : values;
+  }
+
   function applyCapabilities(input) {
     if (!input || typeof input !== "object") return;
     if (Array.isArray(input.models)) {
@@ -1531,14 +1940,14 @@
     }
     if (Array.isArray(input.commands)) {
       const seen = new Set();
-      commands = input.commands.filter(command => {
+      commands = rotateCommandsFromClear(input.commands.filter(command => {
         const name = typeof command?.name === "string" ? command.name.trim() : "";
         const key = name.toLowerCase();
         const description = typeof command?.description === "string" ? command.description.trim() : "";
         if (!name || hiddenSlashCommands.has(key) || description.toLowerCase().startsWith("(removed)") || seen.has(key)) return false;
         seen.add(key);
         return true;
-      });
+      }));
     }
     if (Array.isArray(input.skillNames))
       skillNames = new Set(input.skillNames.map(value => String(value || "").trim().toLowerCase()).filter(Boolean));
@@ -1546,6 +1955,7 @@
     if (typeof input.currentEffort === "string") currentEffort = input.currentEffort;
     if (typeof input.currentPermissionMode === "string") currentPermissionMode = input.currentPermissionMode;
     updateControlLabels();
+    if (openControl) openControlMenu(openControl, true);
     updateCommandMenu();
   }
 
@@ -1586,9 +1996,8 @@
   }
 
   function isQuietSlashCommand(text) {
-    const match = /^\/([^\s]+)/.exec(String(text || "").trim());
-    if (!match) return false;
-    const name = match[1].toLowerCase();
+    const name = parseLocalCommandEnvelope(text)?.name || commandNameFromText(text);
+    if (!name) return false;
     return quietSlashCommands.has(name) || ["cost", "stats", "settings", "reset", "new"].includes(name);
   }
 
@@ -1636,9 +2045,14 @@
     skillToggle.innerHTML = `<span>Skill 보기</span><span class="skill-toggle-track" aria-hidden="true"></span>`;
     skillToggle.addEventListener("click", event => {
       event.stopPropagation();
+      const previous = showSkills;
       showSkills = !showSkills;
       commandSelection = 0;
-      post({ type: "setShowSkills", enabled: showSkills });
+      void postRequest("setShowSkills", { enabled: showSkills }).catch(error => {
+        showSkills = previous;
+        updateCommandMenu();
+        showStatusToast({ label: "Skill", value: error?.message || "표시 설정 저장 실패", kind: "error", accent: "var(--danger)" });
+      });
       updateCommandMenu();
       prompt.focus();
     });
@@ -1702,14 +2116,15 @@
     if (!command || !range) return;
     const replacement = `/${command.name} `;
     prompt.setRangeText(replacement, range.start, range.end, "end");
+    storeComposerDraft();
     commandMenu.hidden = true;
     commandSelection = 0;
     resizePrompt();
     prompt.focus();
   }
 
-  function openControlMenu(type) {
-    const next = openControl === type ? "" : type;
+  function openControlMenu(type, refreshOpen = false) {
+    const next = refreshOpen ? type : openControl === type ? "" : type;
     closeMenus();
     if (!next) { prompt.focus(); return; }
     openControl = next;
@@ -1722,6 +2137,7 @@
         ? supportedEffortEntries()
         : permissionModes.map(mode => ({ value: mode.id, displayName: mode.label, description: mode.description }));
     const selected = isModel ? currentModel : isEffort ? currentEffort : currentPermissionMode;
+    const selectedModel = isModel ? selectedModelInfo() : null;
     controlMenu.replaceChildren();
     const heading = document.createElement("div");
     heading.className = "menu-heading";
@@ -1732,7 +2148,7 @@
       button.type = "button";
       button.className = "menu-item";
       button.dataset.value = entry.value;
-      button.dataset.selected = String(entry.value === selected || (isModel && entry.resolvedModel === selected));
+      button.dataset.selected = String(isModel ? entry === selectedModel : entry.value === selected);
       const copy = document.createElement("span");
       copy.className = "menu-copy";
       const title = document.createElement("span");
@@ -1753,7 +2169,7 @@
       empty.className = "menu-empty";
       empty.textContent = "모델 목록을 불러오는 중…";
       controlMenu.appendChild(empty);
-      post({ type: "refreshCapabilities" });
+      if (!refreshOpen) post({ type: "refreshCapabilities" });
     } else if (isEffort && entries.length === 0) {
       const empty = document.createElement("div");
       empty.className = "menu-empty";
@@ -1767,32 +2183,55 @@
   }
 
   function selectControl(value) {
-    if (openControl === "model") {
+    const control = openControl;
+    const previous = { model: currentModel, effort: currentEffort, permissionMode: currentPermissionMode };
+    let request;
+    if (control === "model") {
       currentModel = value;
-      post({ type: "setModel", model: value });
+      request = postRequest("setModel", { model: value });
       setStatus("모델을 변경하는 중…");
-    } else if (openControl === "effort") {
+    } else if (control === "effort") {
       currentEffort = value;
-      post({ type: "setEffort", effort: value });
+      request = postRequest("setEffort", { effort: value });
       setStatus("Effort를 변경하는 중…");
-    } else if (openControl === "permission") {
+    } else if (control === "permission") {
       currentPermissionMode = value;
-      post({ type: "setPermissionMode", permissionMode: value });
+      request = postRequest("setPermissionMode", { permissionMode: value });
       setStatus("권한 모드를 변경하는 중…");
     }
     updateControlLabels();
     closeMenus();
     prompt.focus();
+    void request?.catch(error => {
+      applyConfiguration(previous);
+      showStatusToast({ label: "설정", value: error?.message || "설정 변경 실패", kind: "error", accent: "var(--danger)" });
+    });
   }
 
   function completeResult(event, live) {
-    finalizeRunningTools(false);
+    const interrupted = interruptRequested && event.isError === true;
+    interruptRequested = false;
+    clearInterruptWatchdog();
+    finalizeRunningTools(interrupted);
+    finalizePermissions(interrupted);
+    const localCommand = String(pendingLocalCommand || "").toLowerCase();
+    const toastCommand = toastSlashCommands.has(localCommand);
+    if (interrupted) {
+      pendingLocalCommand = "";
+      quietCommandInFlight = false;
+      setBusy(false);
+      if (live) finishWorkingTimer(false);
+      setStatus("대화 준비됨", "ready");
+      return;
+    }
+    if (live && toastCommand)
+      showStatusToast(statusToastDetails(localCommand, event.text || "", "", event.isError === true));
     pendingLocalCommand = "";
     setBusy(false);
     if (live) finishWorkingTimer(!event.isError && !quietCommandInFlight);
     quietCommandInFlight = false;
     setStatus(event.isError ? "요청 실패" : "대화 준비됨", event.isError ? "error" : "ready");
-    if (event.isError) append(makeError("요청 실패", event.text || "알 수 없는 오류"), true);
+    if (event.isError && !toastCommand) append(makeError("요청 실패", event.text || "알 수 없는 오류"), true);
   }
 
   function finishPendingResult() {
@@ -1819,6 +2258,7 @@
       case "config_error":
         applyConfiguration(event.input);
         setStatus(event.text || "설정을 변경하지 못했습니다", "error");
+        if (live) showStatusToast({ label: "설정", value: event.text || "설정을 변경하지 못했습니다", kind: "error", accent: "var(--danger)" });
         break;
       case "context_usage": updateContextUsage(event.input); break;
       case "conversation_reset":
@@ -1829,19 +2269,47 @@
       case "compact_boundary": renderCompactBoundary(event); break;
       case "system_output":
         sealToolGroup();
-        makeSystemOutput(event);
+        makeSystemOutput(event, live);
         break;
       case "user":
+        if (isInternalCommandEnvelope(event.text)) break;
+        interruptRequested = false;
+        clearInterruptWatchdog();
         pendingResult = null;
         if (compactMarker && !compactMarker.classList.contains("running")) compactMarker = null;
         sealToolGroup();
+        {
+          const localCommand = parseLocalCommandEnvelope(event.text);
+          if (localCommand) {
+            pendingLocalCommand = localCommand.name;
+            quietCommandInFlight = true;
+            if (localCommand.output) {
+              makeSystemOutput({
+                type: "system_output",
+                text: localCommand.output,
+                input: { kind: "command", level: localCommand.failed ? "error" : "notice", args: localCommand.args },
+              }, live);
+              setBusy(false);
+              if (live) setStatus(localCommand.failed ? "명령 적용 실패" : "대화 준비됨", localCommand.failed ? "error" : "ready");
+            } else {
+              setBusy(true);
+              if (live) {
+                setStatus("명령을 적용하는 중…", "busy");
+                startWorkingTimer();
+              }
+            }
+            break;
+          }
+        }
         setBusy(true); setStatus("Claude가 작업 중…", "busy");
         if (live) startWorkingTimer();
         quietCommandInFlight = isQuietSlashCommand(event.text);
-        if (quietCommandInFlight) pendingLocalCommand = /^\/([^\s]+)/.exec(String(event.text || "").trim())?.[1] || "";
+        if (quietCommandInFlight) pendingLocalCommand = commandNameFromText(event.text);
         if (!isQuietSlashCommand(event.text)) append(makeTurn("user", event.text || "", event.attachments), true);
         break;
       case "assistant":
+        event.text = stripRequestInterruptedMarker(event.text);
+        if (!event.text) break;
         sealToolGroup();
         setBusy(true); setStatus("Claude가 응답하는 중…", "busy");
         if (live) {
@@ -1888,23 +2356,34 @@
         append(makePermission(event), true);
         break;
       case "permission_resolved": resolvePermission(event.requestId || "", event.text === "allow"); break;
-      case "interrupting": setBusy(false); setStatus("응답 중지 요청됨"); break;
+      case "interrupting": interruptRequested = true; setBusy(false); setStatus("응답 중지 요청됨"); break;
       case "result":
         if (live && assistantStreams.size > 0) pendingResult = { event, live };
         else completeResult(event, live);
         break;
       case "error":
-        pendingResult = null;
-        finalizeRunningTools(false);
-        pendingLocalCommand = "";
-        quietCommandInFlight = false;
-        setBusy(false); setStatus("Claude SDK 오류", "error");
-        if (live) finishWorkingTimer(false);
+        {
+          const interrupted = interruptRequested;
+          interruptRequested = false;
+          clearInterruptWatchdog();
+          pendingResult = null;
+          finalizeRunningTools(interrupted);
+          finalizePermissions(interrupted);
+          pendingLocalCommand = "";
+          quietCommandInFlight = false;
+          setBusy(false);
+          if (live) finishWorkingTimer(false);
+          if (interrupted) { setStatus("대화 준비됨", "ready"); break; }
+        }
+        setStatus("Claude SDK 오류", "error");
         append(makeError("Claude SDK 오류", event.text || "알 수 없는 오류"), true);
         break;
       case "stopped":
+        interruptRequested = false;
+        clearInterruptWatchdog();
         pendingResult = null;
         finalizeRunningTools(true);
+        finalizePermissions(true);
         pendingLocalCommand = "";
         quietCommandInFlight = false;
         setBusy(false);
@@ -1915,50 +2394,57 @@
   }
 
   function loadSession(message) {
-    roomId = message.roomId || "";
+    const nextRoomId = message.roomId || "";
+    if (roomId) storeComposerDraft();
+    const nextDraft = composerDrafts.has(nextRoomId)
+      ? composerDrafts.get(nextRoomId)
+      : String(message.draft || "");
+    const nextAttachments = composerAttachments.get(nextRoomId)?.map(item => ({ ...item })) || [];
+    roomId = nextRoomId;
+    prompt.value = nextDraft;
+    attachments = nextAttachments;
+    if (roomId) composerDrafts.set(roomId, nextDraft);
     defaultResolvedModel = "";
     currentModel = normalizeModel(message.model);
     currentEffort = typeof message.effort === "string" && message.effort ? message.effort : "high";
     currentPermissionMode = typeof message.permissionMode === "string" ? message.permissionMode : "acceptEdits";
     vibeMode = message.vibeMode !== false;
     showSkills = message.showSkills === true;
-    currentContextTokens = 0;
-    currentContextWindow = 1_000_000;
+    currentContextTokens = Number.isFinite(message.contextTokens)
+      ? Math.max(0, message.contextTokens)
+      : 0;
+    currentContextWindow = Number.isFinite(message.contextWindow) && message.contextWindow > 0
+      ? message.contextWindow
+      : 1_000_000;
     commands = [];
     skillNames = new Set();
     models = [];
-    clearAttachments();
+    renderAttachments();
     resetWorkingTimer();
+    clearStatusToast();
     closeMenus();
     updateControlLabels();
     updateContextUsage();
     updateVibeMode();
-    messages.replaceChildren();
-    tools.clear();
-    tasks.clear();
-    toolGroups.clear();
-    currentToolGroup = null;
-    compactMarker = null;
-    pendingLocalCommand = "";
-    quietCommandInFlight = false;
-    pendingResult = null;
-    assistantStreams.clear();
-    thinkingStreams.clear();
-    setBusy(false);
+    resetConversationView();
+    interruptRequested = false;
+    clearInterruptWatchdog();
     setStatus("Claude SDK를 준비하는 중…");
-    const events = message.events || [];
-    for (const event of events) renderEvent(event, false);
+    sessionEvents = Array.isArray(message.events) ? message.events : [];
+    historyStartIndex = historyBatchStart(sessionEvents);
+    renderSessionHistory();
     setBusy(message.busy === true);
     if (message.busy) startWorkingTimer();
     if (message.waiting) setStatus("사용자 확인 대기", "waiting");
     else if (message.busy) setStatus("Claude가 작업 중…", "busy");
     else {
-      const last = events[events.length - 1];
+      const last = sessionEvents[sessionEvents.length - 1];
       const failed = last?.type === "error" || (last?.type === "result" && last?.isError);
       if (last?.type === "starting") setStatus("Claude에 연결하는 중…", "busy");
       else if (last?.type === "ready") setStatus("SDK 브리지 준비됨");
       else if (message.alive && !failed) setStatus("대화 준비됨", "ready");
     }
+    resizePrompt();
     updateEmpty();
     requestAnimationFrame(() => {
       conversation.scrollTop = conversation.scrollHeight;
@@ -1987,6 +2473,7 @@
     statusPalette = statusPalettes[message.theme] || statusPalettes.dark;
     updateControlLabels();
     updateVibeMode();
+    root.dataset.theme = message.theme || "dark";
     root.dataset.dark = String(message.dark === true);
     root.style.colorScheme = message.dark ? "dark" : "light";
   }
@@ -1994,11 +2481,35 @@
   function insertText(text) {
     const spacer = prompt.value && !/\s$/.test(prompt.value) ? " " : "";
     prompt.value += spacer + (text || "");
+    storeComposerDraft();
     resizePrompt();
     prompt.focus();
   }
 
+  function storeComposerDraft() {
+    if (!roomId) return;
+    composerDrafts.set(roomId, prompt.value);
+    post({ type: "draftChanged", roomId, text: prompt.value });
+  }
+
+  function restoreFailedSend(targetRoomId, text, attached, message) {
+    const previous = composerDrafts.get(targetRoomId) || "";
+    composerDrafts.set(targetRoomId, [text, previous].filter(Boolean).join(previous ? "\n" : ""));
+    composerAttachments.set(targetRoomId, attached.map(item => ({ ...item, id: crypto.randomUUID() })));
+    if (roomId === targetRoomId) {
+      prompt.value = composerDrafts.get(targetRoomId) || "";
+      attachments = composerAttachments.get(targetRoomId)?.map(item => ({ ...item })) || [];
+      renderAttachments();
+      resizePrompt();
+      setBusy(false);
+      finishWorkingTimer(false);
+      prompt.focus();
+    }
+    showAttachmentError(message || "요청 전송 실패");
+  }
+
   function send() {
+    if (interruptRequested) return;
     const text = prompt.value.trim();
     if (!text && attachments.length === 0) return;
     const attached = attachments.map(item => ({
@@ -2006,13 +2517,43 @@
       preview: item.preview || "", path: item.path || "", size: item.size || 0,
       width: item.width || 0, height: item.height || 0,
     }));
+    const targetRoomId = roomId;
     closeMenus();
     prompt.value = "";
+    storeComposerDraft();
     clearAttachments();
     resizePrompt();
+    interruptRequested = false;
     setBusy(true);
     startWorkingTimer();
-    post({ type: "send", text, attachments: attached });
+    void postRequest("send", { text, attachments: attached }, 15000)
+      .catch(error => restoreFailedSend(targetRoomId, text, attached, error?.message));
+  }
+
+  function clearInterruptWatchdog() {
+    clearTimeout(interruptWatchdog);
+    interruptWatchdog = 0;
+  }
+
+  function recoverInterruptedRequest(message, keepBusy = false) {
+    clearInterruptWatchdog();
+    if (!interruptRequested) return;
+    interruptRequested = false;
+    setBusy(keepBusy);
+    updateAction();
+    showStatusToast({ label: "중단", value: message, kind: "error", accent: "var(--danger)" });
+  }
+
+  function requestStop() {
+    if (!busy) return;
+    interruptRequested = true;
+    setBusy(false);
+    setStatus("응답 중지 요청됨");
+    clearInterruptWatchdog();
+    interruptWatchdog = setTimeout(
+      () => recoverInterruptedRequest("중단 응답이 지연되어 입력을 다시 열었습니다"), 10000);
+    void postRequest("stop", {}, 6000)
+      .catch(error => recoverInterruptedRequest(error?.message || "중단 요청 실패", true));
   }
 
   function resizePrompt() {
@@ -2022,15 +2563,65 @@
     updateAction();
   }
 
-  action.addEventListener("click", () => busy ? post({ type: "stop" }) : send());
+  function showShortcutHint() {
+    if (shortcutHintShown) return;
+    shortcutHintShown = true;
+    shortcutHint?.classList.add("on");
+    shortcutHint?.setAttribute("aria-hidden", "false");
+  }
+
+  function hideShortcutHint() {
+    if (!shortcutHintShown) return;
+    shortcutHintShown = false;
+    shortcutHint?.classList.remove("on");
+    shortcutHint?.setAttribute("aria-hidden", "true");
+  }
+
+  function sessionShortcut(event) {
+    if (event.altKey || event.metaKey) return null;
+    const key = event.key;
+    if (event.ctrlKey && event.shiftKey) {
+      if (key === "t" || key === "T" || key === "d" || key === "D") return { name: "newSession" };
+      if (key === "n" || key === "N") return { name: "renameSession" };
+      if (key === "h" || key === "H") return { name: "hideSession" };
+      if (key === "w" || key === "W") return { name: "closeSession" };
+      if (key === "Delete" || event.code === "Delete") return { name: "deleteSession" };
+    }
+    if (event.ctrlKey && key === "Tab") return { name: event.shiftKey ? "prevSession" : "nextSession" };
+    if (event.ctrlKey && !event.shiftKey && /^Digit[1-9]$/.test(event.code)) {
+      const index = Number(event.code.slice(5));
+      return { name: "gotoSession", index: index === 9 ? -1 : index - 1 };
+    }
+    return null;
+  }
+
+  function isHanjaKey(event) {
+    return event.key === "HanjaMode"
+      || event.code === "Lang2"
+      || event.keyCode === 0x19
+      || event.which === 0x19;
+  }
+
+  function blockComposerHanja(event) {
+    if (document.activeElement !== prompt || !isHanjaKey(event)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  action.addEventListener("click", () => busy ? requestStop() : send());
   modelControl.addEventListener("click", () => openControlMenu("model"));
   effortControl.addEventListener("click", () => openControlMenu("effort"));
   permissionControl.addEventListener("click", () => openControlMenu("permission"));
   vibeControl.addEventListener("click", () => {
+    const previous = vibeMode;
     vibeMode = !vibeMode;
     closeMenus();
     updateVibeMode();
-    post({ type: "setVibeMode", enabled: vibeMode });
+    void postRequest("setVibeMode", { enabled: vibeMode }).catch(error => {
+      vibeMode = previous;
+      updateVibeMode();
+      showStatusToast({ label: "Vibe", value: error?.message || "설정 저장 실패", kind: "error", accent: "var(--danger)" });
+    });
     prompt.focus();
   });
   attachControl.addEventListener("click", () => post({ type: "pickAttachments" }));
@@ -2043,7 +2634,7 @@
     const button = event.target.closest(".menu-item[data-index]");
     if (button) selectCommand(Number(button.dataset.index));
   });
-  prompt.addEventListener("input", () => { resizePrompt(); commandSelection = 0; updateCommandMenu(); });
+  prompt.addEventListener("input", () => { storeComposerDraft(); resizePrompt(); commandSelection = 0; updateCommandMenu(); });
   prompt.addEventListener("paste", event => {
     const images = [...(event.clipboardData?.items || [])]
       .filter(item => item.kind === "file" && item.type.startsWith("image/"))
@@ -2076,20 +2667,32 @@
       }
     }
     if (event.key === "Escape" && !controlMenu.hidden) { event.preventDefault(); closeMenus(); prompt.focus(); return; }
-    if (event.key === "Escape" && busy) { event.preventDefault(); post({ type: "stop" }); return; }
+    if (event.key === "Escape" && busy) { event.preventDefault(); requestStop(); return; }
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
   });
   prompt.addEventListener("focus", () => {
     if (openControl) closeMenus();
+    post({ type: "composerFocus", focused: true });
     post({ type: "interact" });
     updateCommandMenu();
   });
+  prompt.addEventListener("blur", () => post({ type: "composerFocus", focused: false }));
+  document.addEventListener("keydown", blockComposerHanja, true);
+  document.addEventListener("keyup", blockComposerHanja, true);
   conversation.addEventListener("scroll", () => {
     nearBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 120;
   }, { passive: true });
   new ResizeObserver(updateScrollBoundary).observe(conversation);
   window.addEventListener("resize", updateScrollBoundary, { passive: true });
   messages.addEventListener("click", event => {
+    const link = event.target.closest("a[data-external-link]");
+    if (link) {
+      event.preventDefault();
+      void postRequest("openLink", { url: link.href }).catch(error => {
+        showStatusToast({ label: "링크", value: error?.message || "링크 열기 실패", kind: "error", accent: "var(--danger)" });
+      });
+      return;
+    }
     const button = event.target.closest(".copy-code");
     if (!button) return;
     const text = button.closest(".code-block")?.querySelector("code")?.textContent || "";
@@ -2102,6 +2705,32 @@
     if (!controlMenu.hidden && !controlMenu.contains(event.target)
         && !modelControl.contains(event.target) && !effortControl.contains(event.target)
         && !permissionControl.contains(event.target)) closeMenus();
+  });
+  document.addEventListener("keydown", event => {
+    const modifierOnly = event.key === "Control" || event.key === "Shift" || event.key === "Alt";
+    if (modifierOnly) {
+      if (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) showShortcutHint();
+      else hideShortcutHint();
+      return;
+    }
+
+    hideShortcutHint();
+    const shortcut = sessionShortcut(event);
+    if (!shortcut) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) post({ type: "sessionAction", ...shortcut });
+  }, true);
+  document.addEventListener("keyup", event => {
+    if (event.key === "Control" || event.key === "Shift" || event.key === "Alt") hideShortcutHint();
+  }, true);
+  window.addEventListener("blur", hideShortcutHint);
+  window.addEventListener("beforeunload", () => {
+    for (const request of pendingHostRequests.values()) {
+      clearTimeout(request.timer);
+      request.reject(new Error("화면이 종료되었습니다."));
+    }
+    pendingHostRequests.clear();
   });
   document.addEventListener("keydown", event => {
     if (event.ctrlKey && !event.altKey && !event.metaKey) {
@@ -2160,8 +2789,21 @@
 
   bridge?.addEventListener("message", ({ data }) => {
     switch (data?.type) {
+      case "commandResult": completeHostRequest(data); break;
       case "session": loadSession(data); break;
-      case "event": if (data.roomId === roomId) renderEvent(data.event); break;
+      case "event":
+        if (data.roomId === roomId) {
+          if (data.event?.type === "conversation_reset") {
+            sessionEvents = [data.event];
+            historyStartIndex = 0;
+          } else sessionEvents.push(data.event);
+          renderEvent(data.event);
+          if (["result", "error", "stopped"].includes(data.event?.type)) {
+            sessionEvents = compactClientHistory(sessionEvents);
+            historyStartIndex = historyBatchStart(sessionEvents);
+          }
+        }
+        break;
       case "setTheme": applyTheme(data); break;
       case "focus": prompt.focus(); break;
       case "insertText": insertText(data.text); break;

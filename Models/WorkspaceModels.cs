@@ -178,6 +178,10 @@ public sealed class SessionItem : TabItemBase
     private string _lastMessage = "";
     public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
 
+    /// <summary>Claude GUI composer의 전송 전 초안. 탭 전환 동안만 유지하며 workspace.json에는 저장하지 않는다.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string ComposerDraft { get; set; } = "";
+
     /// <summary>이 세션이 현재 워크스페이스 패널에서 활성(보고 있는) 세션인지 여부.
     /// 좌측 트리에서 PrimaryBrush 배경 하이라이트에 사용.</summary>
     private bool _isActive;

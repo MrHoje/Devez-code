@@ -8,7 +8,7 @@
 </head>
 <body>
   <main id="app">
-    <section id="conversation" class="conversation" aria-live="polite">
+    <section id="conversation" class="conversation">
       <div id="empty-state" class="empty-state">
         <div class="empty-mark" aria-hidden="true">
           <img src="assets/claude_code.png" alt="" draggable="false">
@@ -22,6 +22,7 @@
         <time id="working-time">(0s)</time>
       </div>
     </section>
+    <div id="status-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="drop-overlay" class="drop-overlay" aria-hidden="true" hidden>
       <div class="drop-card">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
@@ -29,15 +30,35 @@
         <span>PNG, JPEG, GIF, WebP</span>
       </div>
     </div>
+    <div id="shortcut-hint" aria-hidden="true">
+      <div class="sh-title">세션 단축키</div>
+      <div class="sh-row"><span class="sh-key">Ctrl+Shift+T</span><span class="sh-label">새 세션</span></div>
+      <div class="sh-row"><span class="sh-key">Ctrl+Shift+N</span><span class="sh-label">이름 바꾸기</span></div>
+      <div class="sh-row"><span class="sh-key">Ctrl+Shift+H</span><span class="sh-label">세션 숨기기</span></div>
+      <div class="sh-row"><span class="sh-key">Ctrl+Shift+W</span><span class="sh-label">세션 닫기</span></div>
+      <div class="sh-row"><span class="sh-key">Ctrl+Shift+Del</span><span class="sh-label">세션 삭제</span></div>
+    </div>
 
     <footer class="composer-shell">
       <div class="composer-wrap">
+        <div id="status-toast-region" class="status-toast-region" aria-live="polite" aria-atomic="true">
+          <div id="status-toast" class="status-toast" role="status" hidden>
+            <span class="status-toast-icon" aria-hidden="true">
+              <svg class="status-toast-success-icon" viewBox="0 0 24 24"><path d="m7 12 3.2 3.2L17.5 8"/></svg>
+              <svg class="status-toast-error-icon" viewBox="0 0 24 24"><path d="M12 7v6"/><path d="M12 17h.01"/></svg>
+            </span>
+            <span class="status-toast-copy">
+              <span id="status-toast-label" class="status-toast-label"></span>
+              <span id="status-toast-value" class="status-toast-value"></span>
+            </span>
+          </div>
+        </div>
         <div id="command-menu" class="floating-menu command-menu" role="listbox" aria-label="명령어" hidden></div>
         <div id="control-menu" class="floating-menu control-menu" role="listbox" hidden></div>
       <div class="composer">
         <div id="attachment-strip" class="attachment-strip" aria-label="첨부 파일" hidden></div>
         <div id="attachment-error" class="attachment-error" role="status" aria-live="polite" hidden></div>
-        <textarea id="prompt" rows="1" placeholder="Claude에게 요청하기" aria-label="Claude에게 요청하기"></textarea>
+        <textarea id="prompt" rows="1" aria-label="Claude에게 요청하기" spellcheck="false"></textarea>
         <div class="composer-toolbar">
           <button id="attach-control" class="composer-control attachment-control" type="button" aria-label="사진 또는 파일 첨부">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>

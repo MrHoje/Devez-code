@@ -104,6 +104,8 @@ public partial class WorkspacePaneView : UserControl
     public event Action<FileTabItem>? FileTabCloseRequested;
     /// <summary>브라우저 탭 닫기를 실제 활성/표시 패널로 라우팅하도록 셸에 위임한다.</summary>
     public event Action<BrowserTabItem>? BrowserTabCloseRequested;
+    /// <summary>Claude GUI에서 프롬프트 전송 성공 — 셸이 기존 헤더 메시지 규칙으로 반영한다.</summary>
+    public event Action<string, string>? SessionPromptSubmitted;
 
     public TerminalHostView Terminal => _terminal;
 
@@ -118,6 +120,8 @@ public partial class WorkspacePaneView : UserControl
             if (_activeSession != null) SessionActivity?.Invoke(_activeSession.Id);
         };
         _claudeChat.ResponseCompleted += FlushPendingModelEffort;
+        _claudeChat.PromptSubmitted += (roomId, text) => SessionPromptSubmitted?.Invoke(roomId, text);
+        _claudeChat.SessionActionRequested += OnClaudeChatSessionAction;
         // 빈 패널로 시작(자동복원 off 가 기본)하면 UpdateEmptyState 가 안 불려 컨테이너가 XAML 기본값(풀사이즈)로
         // 방치된다. 그 상태에서 PrewarmWebView 가 WebView2(#0C0C0C)를 만들면 airspace HWND 가 풀사이즈로 떠
         // EmptyState 위를 덮어 시작 시 검정이 한 번 번쩍인다. 초기 상태를 0×0 주차로 맞춰 prewarm 이 안 보이게
@@ -174,9 +178,10 @@ public partial class WorkspacePaneView : UserControl
         ApplyTerminalBgToCovers();
         App.ThemeChanged += _ => ApplyTerminalBgToCovers();
         Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);
-        // 터미널 폰트 크기 dock: 항상 노출(모델과 무관), Ctrl+휠/Ctrl+0 로 바뀌어도 콤보 선택값 동기화.
+        // 글꼴 크기 dock: CLI는 터미널 px, Claude GUI는 WebView 배율과 선택값을 동기화한다.
         FontSizeCombo.ItemsSource = FontSizeOptions;
         _terminal.FontSizePxChanged += SyncFontSizeCombo;
+        _claudeChat.ZoomFactorChanged += SyncClaudeGuiFontSizeCombo;
         Loaded += (_, _) => SyncFontSizeCombo(_terminal.EffectiveFontSizePx);
         _agentModelStateTimer.Tick += (_, _) => RefreshExternalAgentModelStateIfChanged();
         _agentModelStateTimer.Tick += (_, _) => RefreshUsageDock(); // 활성 세션 토큰 사용량 주기 갱신(busy 중에도)
@@ -943,19 +948,19 @@ public partial class WorkspacePaneView : UserControl
     }
 
     /// <summary>이 패널에 보이는(FilterTab 통과 + Hidden 아님) 세션 탭이 하나라도 있는지.
-    /// 없으면(전부 다른 패널로 이동/닫힘, 파일 탭만 있음, 빈 패널 등) 브랜치·터미널 폰트 정보를 숨긴다.</summary>
+    /// 없으면(전부 다른 패널로 이동/닫힘, 파일 탭만 있음, 빈 패널 등) 브랜치·글꼴 정보를 숨긴다.</summary>
     private bool PaneHasAnySessionTab()
         => _activeProject != null && _activeProject.Tabs.Any(t => t is SessionItem s && !s.IsEffectivelyHidden && FilterTab(t));
 
     /// <summary>탭 이동/숨김/복원 또는 활성 탭 전환 시 헤더 dock 상태를 갱신한다.
-    /// 터미널 폰트는 활성 세션에서만 조절할 수 있고, 브랜치 정보는 보이는 세션 탭 기준으로 유지한다.</summary>
+    /// 글꼴은 활성 세션에서만 조절할 수 있고, 브랜치 정보는 보이는 세션 탭 기준으로 유지한다.</summary>
     private void RefreshHeaderSessionGate()
     {
         if (AttachFileBtn != null)
             AttachFileBtn.Visibility = _activeTab is SessionItem { IsExternal: false } session && !UsesClaudeGui(session)
                 ? Visibility.Visible : Visibility.Collapsed;
         if (FontSizeCombo != null)
-            FontSizeCombo.Visibility = _activeTab is SessionItem { IsExternal: false } session && !UsesClaudeGui(session)
+            FontSizeCombo.Visibility = _activeTab is SessionItem { IsExternal: false }
                 ? Visibility.Visible : Visibility.Collapsed;
         UpdateProjectBranchBubble(_activeProject);
     }
@@ -1110,6 +1115,14 @@ public partial class WorkspacePaneView : UserControl
         // 이 액션들은 터미널 안에서 키로 들어온다 — 모달을 띄우거나 방을 바꾸기 전에 조합 상태를
         // 끊어, 모달 뒤/새 방에서 첫 한글이 중복 입력되는 것을 막는다(TerminalHostView.AbortIme 참고).
         _terminal.AbortIme();
+        HandleSessionAction(name, index);
+    });
+
+    private void OnClaudeChatSessionAction(string name, int index) => Dispatcher.BeginInvoke(() =>
+        HandleSessionAction(name, index));
+
+    private void HandleSessionAction(string name, int index)
+    {
         switch (name)
         {
             case "newSession": if (_activeProject != null) AddSession(_activeProject); break;
@@ -1121,7 +1134,7 @@ public partial class WorkspacePaneView : UserControl
             case "prevSession": CycleSession(-1); break;
             case "gotoSession": GotoSession(index); break;
         }
-    });
+    }
 
     private void GotoSession(int index)
     {
@@ -1417,9 +1430,13 @@ public partial class WorkspacePaneView : UserControl
     // 테마 적용으로 종료 중인 방 id 들. 완료 전 사용자가 다른 탭을 눌러도 죽어가는 프로세스에 붙지 않고
     // 같은 안내 문구를 보여준 뒤, 정리가 끝났을 때 실제로 보고 있는 방만 다시 열기 위한 추적셋.
     private readonly HashSet<string> _themeReloadRoomIds = new();
+    private readonly Dictionary<string, string> _sessionReloadLabels = new(StringComparer.OrdinalIgnoreCase);
     // 재시작 중이라 연결을 미룬 탭 id 들. 정리가 끝나면(finally) 아직 그 탭을 보고 있는 경우에만 재연결.
     private readonly HashSet<string> _pendingReactivateAfterReload = new();
     private const string ThemeReloadLabel = "테마 적용 중\n세션을 다시 여는 중입니다.";
+
+    private string SessionReloadLabel(string roomId)
+        => _sessionReloadLabels.TryGetValue(roomId, out var label) ? label : ThemeReloadLabel;
 
     // 숨김 후 실제 종료 대기(유예) CTS. 3초 안에 다시 열면 취소 → 프로세스 그대로 복귀.
     private readonly Dictionary<string, CancellationTokenSource> _pendingHideStopCts = new();
@@ -1510,7 +1527,7 @@ public partial class WorkspacePaneView : UserControl
         {
             _pendingReactivateAfterReload.Add(session.Id);
             UpdateEmptyState();
-            ShowSessionLoading(session.Id, ThemeReloadLabel);
+            ShowSessionLoading(session.Id, SessionReloadLabel(session.Id));
             EnsureSelectedTabVisible(session);
             RefreshModelEffortDock();
             ActiveChanged?.Invoke(this);
@@ -1574,7 +1591,7 @@ public partial class WorkspacePaneView : UserControl
         // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
         // 기대 크기를 캡처해야 웹 스피너 게이트(뷰포트=목표 일치 대기)의 목표가 처음부터 정확하다.
         // 테마 재시작 중인 방이면 그 안내 문구를 그대로 — 종료/재시작 어느 시점에 눌러도 동일하게 보인다.
-        if (needGate) ShowSessionLoading(session.Id, _themeReloadRoomIds.Contains(session.Id) ? ThemeReloadLabel : null); // 커버 유지 — 준비된 세션은 RevealTerminalAfterGate 가 걷음
+        if (needGate) ShowSessionLoading(session.Id, _themeReloadRoomIds.Contains(session.Id) ? SessionReloadLabel(session.Id) : null); // 커버 유지 — 준비된 세션은 RevealTerminalAfterGate 가 걷음
         else HideSessionLoading();
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
@@ -1624,6 +1641,17 @@ public partial class WorkspacePaneView : UserControl
         _activeSession = session;
         session.IsActive = true;
         RecordActiveTab(parent, "S:" + session.Id);
+
+        if (_themeReloadRoomIds.Contains(session.Id))
+        {
+            _pendingReactivateAfterReload.Add(session.Id);
+            UpdateEmptyState();
+            ShowSessionLoading(session.Id, SessionReloadLabel(session.Id));
+            EnsureSelectedTabVisible(session);
+            RefreshModelEffortDock();
+            ActiveChanged?.Invoke(this);
+            return;
+        }
 
         _gateUnpark = false;
         _unparkFallback?.Stop();
@@ -1868,7 +1896,7 @@ public partial class WorkspacePaneView : UserControl
     };
     private string? _lastAgentModelStateSignature;
 
-    // ── 메타바 터미널 폰트 크기 dock(claude 여부와 무관, 항상 노출) ─────────
+    // ── 메타바 글꼴 크기 dock(CLI 터미널 + Claude GUI 공용) ─────────────
     private static readonly ModelEffortOption[] FontSizeOptions =
     {
         new("10pt", "10"), new("11pt", "11"), new("12pt", "12"), new("13pt", "13"),
@@ -1892,10 +1920,25 @@ public partial class WorkspacePaneView : UserControl
 
     private void SyncFontSizeCombo(double px)
     {
+        if (_activeSession != null && UsesClaudeGui(_activeSession)) return;
         int pt = (int)Math.Round(px / PtToPxRatio);
         _suppressFontSize = true;
         try { FontSizeCombo.SelectedValue = pt.ToString(); }
         finally { _suppressFontSize = false; }
+    }
+
+    private void SyncClaudeGuiFontSizeCombo(double zoomFactor)
+    {
+        if (_activeSession == null || !UsesClaudeGui(_activeSession)) return;
+        var targetPt = zoomFactor * ClaudeChatHostView.BaseFontSizePt;
+        var pt = FontSizeOptions
+            .Select(option => int.Parse(option.Value))
+            .OrderBy(value => Math.Abs(value - targetPt))
+            .First();
+        _suppressFontSize = true;
+        try { FontSizeCombo.SelectedValue = pt.ToString(); }
+        finally { _suppressFontSize = false; }
+        ApplyHeaderFontSize(pt * PtToPxRatio);
     }
 
     private void FontSizeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1903,6 +1946,11 @@ public partial class WorkspacePaneView : UserControl
         if (_suppressFontSize) return;
         if (_activeSession is null or { IsExternal: true }) return;
         if (FontSizeCombo.SelectedValue is not string val || !int.TryParse(val, out var pt)) return;
+        if (UsesClaudeGui(_activeSession))
+        {
+            _claudeChat.SetZoomFactor(pt / ClaudeChatHostView.BaseFontSizePt);
+            return;
+        }
         _terminal.SetRoomFontSizePt(_activeSession.Id, pt); // 지금 보고 있는 방에만 적용, 다른 방/새 방엔 영향 없음
     }
 
@@ -1990,18 +2038,24 @@ public partial class WorkspacePaneView : UserControl
 
     private void RefreshModelEffortDock()
     {
-        RefreshHeaderSessionGate(); // 활성 세션이 아니면 터미널 폰트는 숨기고, 브랜치는 보이는 세션 탭 기준 갱신
+        RefreshHeaderSessionGate(); // 활성 세션이 아니면 글꼴 콤보를 숨기고, 브랜치는 보이는 세션 탭 기준 갱신
         RefreshUsageDock();         // 활성 세션 토큰 사용량(입/출력/비용) 즉시 반영
         if (ModelEffortDock == null) return;
         var s = _activeSession;
 
-        // 폰트 크기는 에이전트 종류와 무관하게 항상 동기화(방별 값, 없으면 전역 기본값).
-        // 방마다 크기가 다를 수 있으므로 콤보·헤더 타이틀 모두 활성 방 크기에 맞춘다.
+        // CLI는 방별 터미널 크기, Claude GUI는 저장된 WebView 배율을 콤보·헤더 타이틀에 반영한다.
         if (s != null)
         {
-            var roomPx = _terminal.RoomEffectiveFontSizePx(s.Id);
-            SyncFontSizeCombo(roomPx);
-            ApplyHeaderFontSize(roomPx);
+            if (UsesClaudeGui(s))
+            {
+                SyncClaudeGuiFontSizeCombo(_claudeChat.ZoomFactor);
+            }
+            else
+            {
+                var roomPx = _terminal.RoomEffectiveFontSizePx(s.Id);
+                SyncFontSizeCombo(roomPx);
+                ApplyHeaderFontSize(roomPx);
+            }
         }
 
         var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
@@ -3027,17 +3081,29 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>테마 전역 재시작 1단계. 이 패널의 xterm/이벤트 배선만 모두 끊는다.
     /// 실제 ConPTY 종료는 MainWindow가 전역에서 한 번만 수행한다.</summary>
     public void BeginThemeReload(IReadOnlyList<SessionItem> allSessions)
+        => BeginSessionReload(allSessions, ThemeReloadLabel);
+
+    /// <summary>실행 표면 변경을 포함한 세션 재시작 1단계. 대상 화면을 숨기고 재연결을 잠근다.</summary>
+    public void BeginSessionReload(IReadOnlyList<SessionItem> allSessions, string label)
     {
         // 이 목록의 방들이 전부 같이 종료된다 — 정리가 끝나기 전에 다른 탭을 눌러도 ActivateSession의
         // 콜드 게이트가 같은 안내 문구를 보여주고, 완료 후 현재 보이는 방만 열 수 있게 추적한다.
-        foreach (var s in allSessions) _themeReloadRoomIds.Add(s.Id);
+        foreach (var s in allSessions)
+        {
+            _themeReloadRoomIds.Add(s.Id);
+            _sessionReloadLabels[s.Id] = label;
+        }
 
         // 숨겨진 PaneB도 예전 분할의 배선을 보존할 수 있어 전부 detach 한다. 다만 안내 스피너는
         // 실제 화면에 보이는 패널의 활성 세션에만 표시한다.
         try
         {
-            if (Visibility == Visibility.Visible && _activeSession != null)
-                ShowSessionLoading(_activeSession.Id, ThemeReloadLabel);
+            if (Visibility == Visibility.Visible && _activeSession != null
+                && allSessions.Any(s => string.Equals(s.Id, _activeSession.Id, StringComparison.OrdinalIgnoreCase)))
+            {
+                UpdateEmptyState();
+                ShowSessionLoading(_activeSession.Id, SessionReloadLabel(_activeSession.Id));
+            }
         }
         catch { /* 배선 해제는 계속 */ }
 
@@ -3050,17 +3116,23 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>테마 전역 재시작 2단계. 실제로 보이는 이 패널의 현재 활성 세션만 다시 연다.
     /// 비활성 탭·다른 프로젝트·숨겨진 PaneB 세션은 dormant로 두고 사용자가 클릭할 때 resume 한다.</summary>
     public void CompleteThemeReload(IReadOnlyList<SessionItem> allSessions)
+        => CompleteSessionReload(allSessions);
+
+    /// <summary>세션 재시작 2단계. 잠금을 풀고 현재 보이는 세션을 새 표면으로 다시 연다.</summary>
+    public void CompleteSessionReload(IReadOnlyList<SessionItem> allSessions)
     {
         foreach (var s in allSessions)
         {
             _themeReloadRoomIds.Remove(s.Id);
             _pendingReactivateAfterReload.Remove(s.Id);
+            _sessionReloadLabels.Remove(s.Id);
         }
 
         var active = _activeSession;
         var parent = active == null ? null : ParentOf(active);
         bool shouldRestart = Visibility == Visibility.Visible
             && active != null
+            && allSessions.Any(s => string.Equals(s.Id, active.Id, StringComparison.OrdinalIgnoreCase))
             && parent != null
             && ReferenceEquals(_activeProject, parent)
             && ReferenceEquals(_activeTab, active)
@@ -4170,7 +4242,15 @@ public partial class WorkspacePaneView : UserControl
         else
         {
             HideExternalSessionPreview();
-            if (_activeTab is SessionItem guiSession && UsesClaudeGui(guiSession))
+            if (_activeTab is SessionItem reloadingSession && _themeReloadRoomIds.Contains(reloadingSession.Id))
+            {
+                ParkTerminalHost();
+                ParkFileEditorHost();
+                ParkBrowserHost();
+                ClaudeChatHostContainer.Visibility = Visibility.Collapsed;
+                _claudeChat.Deactivate();
+            }
+            else if (_activeTab is SessionItem guiSession && UsesClaudeGui(guiSession))
             {
                 ParkTerminalHost();
                 ParkFileEditorHost();

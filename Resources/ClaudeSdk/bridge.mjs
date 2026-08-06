@@ -47,7 +47,6 @@ let knownSkillNames = new Set();
 let latestContextTokens = 0;
 let currentContextWindow = 1_000_000;
 let partialMessageId = "";
-let lastRateLimitNotice = "";
 let resultErrorAt = 0;
 const partialBlocks = new Map();
 const streamedMessageIds = new Set();
@@ -200,12 +199,25 @@ async function requestPermission(toolName, input, context) {
   });
 }
 
+const requestInterruptedMarkerPrefix = "[Request interrupted";
+
+function stripRequestInterruptedMarker(text) {
+  return String(text ?? "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .filter(line => !line.trim().startsWith(requestInterruptedMarkerPrefix))
+    .join("\n")
+    .trim();
+}
+
 function emitAssistant(message) {
   const blocks = Array.isArray(message?.message?.content) ? message.message.content : [];
   const wasStreamed = streamedMessageIds.delete(message?.message?.id ?? "");
   for (const block of blocks) {
-    if (block?.type === "text" && block.text && !wasStreamed)
-      write({ type: "assistant", text: block.text });
+    if (block?.type === "text" && block.text && !wasStreamed) {
+      const text = stripRequestInterruptedMarker(block.text);
+      if (text) write({ type: "assistant", text });
+    }
     else if (block?.type === "thinking" && block.thinking && !wasStreamed)
       write({ type: "thinking", text: block.thinking });
     else if (block?.type === "tool_use")
@@ -213,11 +225,11 @@ function emitAssistant(message) {
   }
   if (!message?.parent_tool_use_id && message?.message?.usage) {
     const usage = message.message.usage;
+    // Claude CLI statusLine의 context_window.total_input_tokens와 같은 입력 컨텍스트 기준.
     latestContextTokens = [
       usage.input_tokens,
       usage.cache_creation_input_tokens,
       usage.cache_read_input_tokens,
-      usage.output_tokens,
     ].reduce((total, value) => total + (Number.isFinite(value) ? value : 0), 0);
     write({ type: "context_usage", input: { usedTokens: latestContextTokens, contextWindow: currentContextWindow } });
   }
@@ -500,23 +512,6 @@ async function start(command) {
         });
       } else if (message?.type === "auth_status" && message.error) {
         write({ type: "system_output", text: message.error, input: { kind: "notification", level: "warning" } });
-      } else if (message?.type === "rate_limit_event") {
-        const info = message.rate_limit_info ?? {};
-        const key = `${info.status}:${info.rateLimitType || ""}:${info.resetsAt || ""}`;
-        if (info.status !== "allowed" && key !== lastRateLimitNotice) {
-          lastRateLimitNotice = key;
-          const utilization = Number(info.utilization);
-          const percent = Number.isFinite(utilization)
-            ? Math.round((utilization <= 1 ? utilization * 100 : utilization))
-            : 0;
-          write({
-            type: "system_output",
-            text: info.status === "rejected"
-              ? "Claude 사용 한도에 도달했습니다. 초기화 후 다시 시도하세요."
-              : `Claude 사용 한도에 가까워졌습니다${percent ? ` · ${percent}%` : ""}.`,
-            input: { kind: "notification", level: "warning" },
-          });
-        } else if (info.status === "allowed") lastRateLimitNotice = "";
       } else if (message?.type === "stream_event") emitPartial(message);
       else if (message?.type === "assistant") emitAssistant(message);
       else if (message?.type === "user") emitToolResults(message);

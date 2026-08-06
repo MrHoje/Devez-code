@@ -21,7 +21,8 @@ namespace DevezCode.Views;
 /// <summary>설정창 (devez 이식). 오버레이로 사용: 최상위 Grid에 올린 뒤 <see cref="CloseRequested"/> 로 닫는다.
 /// 옵션은 <b>변경 즉시 저장</b>된다(저장/취소 버튼 없음). 컨트롤 변경 이벤트를 루트에서 받아
 /// 짧게 디바운스한 뒤 <see cref="ApplySettings"/> 로 확정한다.
-/// 테마 변경만 예외로, 세션 재시작이 필요하므로 저장은 즉시 하고 재시작 여부는 창을 닫을 때 묻는다.</summary>
+/// 테마 변경만 예외로, 세션 재시작이 필요하므로 저장은 즉시 하고 재시작 여부는 창을 닫을 때 묻는다.
+/// Claude GUI 사용값은 저장 직후 실행 중인 Claude 세션을 새 화면 방식으로 전환한다.</summary>
 public partial class SettingsDialog : UserControl
 {
     /// <summary>닫기 요청 시 발생.</summary>
@@ -100,7 +101,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.22.8", "2026-08-05", true, new[]
+          ("v1.23.0", "2026-08-06", true, new[]
+          {
+              "Claude GUI (Beta) 버전이 추가되었습니다.",
+          }),
+          ("v1.22.8", "2026-08-05", false, new[]
           {
               "Claude 응답 출력 중 Backspace로 입력을 지울 때 글자와 diff 화면이 밀려 보이던 문제를 수정했습니다.",
           }),
@@ -1913,7 +1918,10 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveFontScale(_selectedFontScale);
         SettingsService.SavePreloadAllProjectSessions(_selectedPreloadAllSessions);
         if (_selectedClaudeGuiMode != _originalClaudeGuiMode)
+        {
             SettingsService.SaveClaudeGuiMode(_selectedClaudeGuiMode);
+            (Application.Current.MainWindow as MainWindow)?.ReloadClaudeSessionsForGuiMode();
+        }
         if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes)
         {
             SettingsService.SaveIdleSessionShutdownMinutes(_selectedIdleSessionShutdownMinutes);

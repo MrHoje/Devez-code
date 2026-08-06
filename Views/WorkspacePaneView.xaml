@@ -107,7 +107,7 @@
                 </StackPanel>
               </StackPanel>
 
-              <!-- 우측 dock: model/effort(지원 에이전트) + 터미널 폰트 크기(항상 노출) -->
+              <!-- 우측 dock: model/effort(지원 에이전트) + 활성 세션 글꼴 크기 -->
               <StackPanel Grid.Column="1" Orientation="Horizontal"
                           VerticalAlignment="Center" HorizontalAlignment="Right">
                   <Button x:Name="AttachFileBtn" Style="{StaticResource TabNavButton}"
@@ -145,7 +145,7 @@
                             SelectedValuePath="Value"
                             SelectionChanged="FontSizeCombo_SelectionChanged"
                             DropDownClosed="DockCombo_DropDownClosed"
-                            ToolTip="터미널 폰트 크기"/>
+                            ToolTip="글꼴 크기"/>
               </StackPanel>
             </Grid>
         </Border>

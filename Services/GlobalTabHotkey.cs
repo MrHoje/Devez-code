@@ -36,6 +36,7 @@ public static class GlobalTabHotkey
     private static volatile int _modVk  = 0x19;
     private static volatile int _prevVk = 0x25;
     private static volatile int _nextVk = 0x27;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<object, byte> HanjaSuppressors = new();
 
     private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -91,6 +92,13 @@ public static class GlobalTabHotkey
     public static void BeginCapture(Action<int> onKey) => _captureCallback = onKey;
     public static void CancelCapture() => _captureCallback = null;
 
+    /// <summary>컴포저처럼 한자키 자체 동작은 막되 한자+방향키 탭 전환은 유지해야 하는 포커스 소유자를 등록한다.</summary>
+    public static void SetHanjaInputSuppressed(object owner, bool suppressed)
+    {
+        if (suppressed) HanjaSuppressors[owner] = 0;
+        else HanjaSuppressors.TryRemove(owner, out _);
+    }
+
     public static void Uninstall()
     {
         var t = _hookThread;
@@ -132,6 +140,12 @@ public static class GlobalTabHotkey
                     Application.Current?.Dispatcher.BeginInvoke(() => cb(next));
                 return (IntPtr)1; // 모든 앱에서 전파 차단(우리 앱이 포그라운드가 아니어도)
             }
+
+            // WebView/브라우저 이벤트까지 보내면 Windows IME가 먼저 한자 변환을 시작한다.
+            // 저수준 훅에서 VK_HANJA 자체만 소비하되 위에서 modifier 상태는 기록했으므로
+            // 이어지는 방향키는 기존 탭 전환 분기에서 정상 처리된다.
+            if (vk == 0x19 && (isDown || isUp) && !HanjaSuppressors.IsEmpty && IsCurrentProcessForeground())
+                return (IntPtr)1;
         }
         return CallNextHookEx(_hook, nCode, wParam, lParam);
     }
@@ -162,6 +176,14 @@ public static class GlobalTabHotkey
         catch { return $"0x{vk:X2}"; }
     }
 
+    private static bool IsCurrentProcessForeground()
+    {
+        var foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(foreground, out var processId);
+        return processId == (uint)Environment.ProcessId;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct MSG
     {
@@ -185,4 +207,6 @@ public static class GlobalTabHotkey
     [DllImport("user32.dll")] private static extern IntPtr DispatchMessage(ref MSG lpMsg);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostThreadMessage(uint idThread, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 }

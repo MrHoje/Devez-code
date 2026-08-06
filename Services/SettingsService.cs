@@ -346,10 +346,10 @@ public static class SettingsService
     public static void SaveClaudeVibeMode(bool value) { Current.ClaudeVibeMode = value; Save(); }
     public static bool LoadClaudeShowSkills() => Current.ClaudeShowSkills;
     public static void SaveClaudeShowSkills(bool value) { Current.ClaudeShowSkills = value; Save(); }
-    public static double LoadClaudeGuiZoomFactor() => Math.Clamp(Current.ClaudeGuiZoomFactor, 0.75, 1.75);
+    public static double LoadClaudeGuiZoomFactor() => Math.Clamp(Current.ClaudeGuiZoomFactor, 0.8, 2.4);
     public static void SaveClaudeGuiZoomFactor(double value)
     {
-        Current.ClaudeGuiZoomFactor = Math.Clamp(value, 0.75, 1.75);
+        Current.ClaudeGuiZoomFactor = Math.Clamp(value, 0.8, 2.4);
         Save();
     }
 

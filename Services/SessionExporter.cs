@@ -15,7 +15,16 @@ public static class SessionExporter
 {
     /// <summary>Claude GUI가 기존 대화를 복원할 때 사용하는 사용자/어시스턴트 텍스트 목록.</summary>
     public static IReadOnlyList<(string Role, string Text)> LoadClaudeConversation(string roomId, string? cwd)
-        => FromClaude(roomId, cwd).Select(turn => (turn.role, turn.text)).ToArray();
+        => LoadClaudeConversationSnapshot(roomId, cwd).Turns
+            .Select(turn => (turn.Role, turn.Text)).ToArray();
+
+    /// <summary>Claude GUI 초기 표시용 주 대화와 model/effort/permission/context 메타데이터.</summary>
+    public static ClaudeTranscriptSnapshot LoadClaudeConversationSnapshot(string roomId, string? cwd)
+    {
+        var sid = SettingsService.LoadClaudeCodeRoomSession(roomId);
+        var path = TerminalSessionManager.FindClaudeTranscriptPath(cwd, sid);
+        return ClaudeTranscriptSnapshotParser.ParseFile(path);
+    }
 
     /// <summary>세션 마크다운 생성. 대화가 없거나 미지원이면 null. (opencode 는 CLI export 를 스폰하므로
     /// 호출부는 백그라운드 스레드에서 부르는 게 좋다.)</summary>
@@ -201,18 +210,8 @@ public static class SessionExporter
 
     // ── claude: %USERPROFILE%\.claude\projects\<enc>\<sid>.jsonl (type=user/assistant, content=str|[text]) ──
     private static List<(string role, string text)> FromClaude(string roomId, string? cwd)
-    {
-        var turns = new List<(string, string)>();
-        var sid = SettingsService.LoadClaudeCodeRoomSession(roomId);
-        var path = TerminalSessionManager.FindClaudeTranscriptPath(cwd, sid);
-        if (path == null) return turns;
-        foreach (var line in ReadLinesShared(path))
-        {
-            var turn = ParseTurn(line, requireType: true, typeIsMessageMarker: false);
-            if (turn != null) turns.Add(turn.Value);
-        }
-        return turns;
-    }
+        => LoadClaudeConversationSnapshot(roomId, cwd).Turns
+            .Select(turn => (turn.Role, turn.Text)).ToList();
 
     // ── gajae(gjc): 방 dir 최신 jsonl (type=="message" + role, content=[text]; model_change 등 메타 제외) ──
     private static List<(string role, string text)> FromGajae(string roomId)
