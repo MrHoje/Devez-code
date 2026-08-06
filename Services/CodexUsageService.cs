@@ -47,6 +47,10 @@ public sealed class CodexUsageService : IDisposable
     private readonly UsageDropGuard _dropGuard = new();
     private bool _guardSeeded;
     private string? _guardAccountKey; // 가드 기준값을 만든 계정 키(토큰 회전에도 안정적인 account ID 지문)
+    // 초기화권 소비 성공 직후 서버가 소비 전 사용량을 잠시 돌려줘도, 실제 0 응답이 올 때까지
+    // 화면 값을 되돌리지 않는다(_pollGate 안에서만 접근).
+    private bool _forceZeroUntilConfirmed;
+    private ProviderUsage? _lastPublished;
 
     // 초기화권 조회는 사용량과 별개 엔드포인트라 간헐적으로 실패한다(타임아웃/429/5xx).
     // 실패를 "0개"로 게시하면 카드의 초기화권 영역이 폴링마다 사라졌다 나타난다.
@@ -130,6 +134,7 @@ public sealed class CodexUsageService : IDisposable
             if (_guardAccountKey != null && !string.Equals(_guardAccountKey, accountKey, StringComparison.Ordinal))
             {
                 _dropGuard.Reset();
+                _forceZeroUntilConfirmed = false;
                 // 이전 계정의 초기화권 목록을 새 계정 화면에 이어 쓰지 않는다.
                 _lastCredits = null;
                 _lastCreditsAccountKey = null;
@@ -207,6 +212,15 @@ public sealed class CodexUsageService : IDisposable
                 samples.Add(new("5h", primary.UsedPercent, primary.ResetsAt));
             if (weekly != null)
                 samples.Add(new("weekly", weekly.UsedPercent, weekly.ResetsAt));
+
+            // 초기화권 소비 직후에는 소비 전 값이 늦게 도착할 수 있다. 실제 응답의 모든
+            // 사용량 창이 0이 되기 전까지는 강제 0 표시를 유지하고, 0 응답이 오면 가드를
+            // 새 기준으로 다시 시작한다.
+            if (_forceZeroUntilConfirmed && HasOnlyZeroUsage(primary, weekly))
+            {
+                _forceZeroUntilConfirmed = false;
+                _dropGuard.Reset();
+            }
             if (!_dropGuard.ShouldPublish(
                     samples,
                     DateTimeOffset.Now,
@@ -229,6 +243,11 @@ public sealed class CodexUsageService : IDisposable
                 }
                 return;
             }
+            if (_forceZeroUntilConfirmed)
+            {
+                DiagLog.Write("CodexUsage reset-credit 후 0 응답 대기 중 — 소비 전 사용량 표시 생략");
+                return;
+            }
             if (dropReason != null)
                 DiagLog.Write(
                     $"CodexUsage accepted confirmed drop: {dropReason} "
@@ -247,6 +266,7 @@ public sealed class CodexUsageService : IDisposable
                 $"CodexUsage updated: 5h={primary?.UsedPercent:F0} reset5={primary?.ResetsAt:O}, "
                 + $"weekly={weekly?.UsedPercent:F0} resetW={weekly?.ResetsAt:O} "
                 + $"({credentialSource}, credential={fingerprint})");
+            _lastPublished = usage;
             Updated?.Invoke(usage);
         }
         catch (Exception ex)
@@ -538,6 +558,8 @@ public sealed class CodexUsageService : IDisposable
                 // 소비한 초기화권은 이어 쓰기 캐시에서도 지운다. 직후 조회가 실패하면
                 // 옛 목록이 그대로 이어 써져 이미 쓴 초기화권이 남아 보인다.
                 DropConsumedCredit(creditId);
+                _forceZeroUntilConfirmed = true;
+                PublishForcedZeroUsage();
             }
             return outcome;
         }
@@ -600,6 +622,35 @@ public sealed class CodexUsageService : IDisposable
             };
         }
         catch { return ConsumeOutcome.Unknown; }
+    }
+
+    private static bool HasOnlyZeroUsage(UsageWindow? primary, UsageWindow? weekly)
+    {
+        var windows = new[] { primary, weekly }.Where(window => window != null).ToArray();
+        return windows.Length > 0 && windows.All(window => window!.UsedPercent <= 0);
+    }
+
+    private void PublishForcedZeroUsage()
+    {
+        if (_lastPublished == null) return;
+
+        UsageWindow? ResetToZero(UsageWindow? window) => window == null ? null : new UsageWindow
+        {
+            UsedPercent = 0,
+            ResetsAt = window.ResetsAt,
+        };
+
+        var usage = new ProviderUsage
+        {
+            Provider = "codex",
+            Primary = ResetToZero(_lastPublished.Primary),
+            Weekly = ResetToZero(_lastPublished.Weekly),
+            PlanLabel = _lastPublished.PlanLabel,
+            ResetCredits = _lastCredits ?? _lastPublished.ResetCredits,
+        };
+        _lastPublished = usage;
+        DiagLog.Write("CodexUsage reset-credit 성공 — 서버 0 응답 전까지 사용량 0 표시");
+        Updated?.Invoke(usage);
     }
 
     // ── 초기화권 소비 후 1시간 쿨다운(중복 사용 방지 UX 가드, 재시작을 넘어 유지) ──
