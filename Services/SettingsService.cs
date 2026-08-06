@@ -1160,8 +1160,9 @@ public static class SettingsService
 
     public static void SaveDevezVibeRoomSession(string roomId, string sessionId)
     {
-        // codex thread id = UUID. 형식이 어긋난 값(내부 에이전트 ID 등)은 resume 이 불가능하므로 버린다.
-        if (!Guid.TryParse(sessionId, out _)) return;
+        // codex thread = UUID, claude 세션 = claude:UUID, opencode 세션 = ses_….
+        // 형식이 어긋난 값(내부 에이전트 ID 등)은 resume 이 불가능하므로 버린다.
+        if (!DevezVibeStateService.LooksLikeSessionId(sessionId)) return;
         Current.DevezVibeRoomSessions[roomId] = sessionId;
         Save();
     }

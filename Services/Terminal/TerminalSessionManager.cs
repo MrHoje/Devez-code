@@ -208,7 +208,7 @@ public sealed class TerminalSessionManager
                 // 훅이 없어 설치기도 없다 — CLI 가 DEVEZCODE_ROOM_ID 를 직접 보고 기록한다.
                 // 앱레벨 자동 재진입(codex/grok 패턴).
                 startDir = ccDir;
-                var direct = TryBuildDevezVibeDirectLaunch(roomId, out inject);
+                var direct = TryBuildDevezVibeDirectLaunch(roomId, ccDir, out inject);
                 if (direct != null) commandLine = direct;
             }
             else if (ccDir != null && agent.Id == "grok")
@@ -821,10 +821,11 @@ public sealed class TerminalSessionManager
 
     /// <summary>Devez Vibe(dvz) 방 직접 실행. dvz 가 기록한 thread ID 가 있으면 <c>dvz -r &lt;id&gt;</c>,
     /// 없으면 신규. 배치 끝 exit + cmd /c → ConPTY 종료 → IsAutoReenterRoom(devezvibe) 앱레벨 재진입.
-    /// <para>세션 실체는 codex thread 라 유효성은 codex rollout 존재로 판정한다(같은 파일).
+    /// <para>세션 실체는 백엔드마다 다른 파일이라 유효성은 <see cref="DevezVibeSessionExists"/> 가
+    /// ID 접두사로 판정한다(codex rollout / claude transcript / opencode).
     /// 포크는 rollout 복사본의 새 ID 가 <see cref="SettingsService.SaveDevezVibeRoomSession"/> 에
     /// 들어오는 방식이라 여기서 따로 분기하지 않는다 — 그냥 -r 로 열린다.</para></summary>
-    private string? TryBuildDevezVibeDirectLaunch(string roomId, out string? injectFallback)
+    private string? TryBuildDevezVibeDirectLaunch(string roomId, string? workingDir, out string? injectFallback)
     {
         injectFallback = null;
         // 이 메서드는 DevezCode가 새 최상위 dvz 프로세스를 만들 때만 호출된다.
@@ -843,14 +844,14 @@ public sealed class TerminalSessionManager
             ? "dvz"
             : $"\"{exePath.Replace("\"", "\"\"")}\"";
 
-        // dvz 가 방금 떨군 값 우선, 없으면 settings. rollout 이 사라졌으면(세션 삭제) 폐기하고 새 대화.
+        // dvz 가 방금 떨군 값 우선, 없으면 settings. 대화 기록이 사라졌으면(세션 삭제) 폐기하고 새 대화.
         var tracked = DevezVibeStateService.LoadTrackedSessionId(roomId);
         var saved = SettingsService.LoadDevezVibeRoomSession(roomId);
         string? sessionId = null;
         foreach (var candidate in new[] { tracked, saved })
         {
             if (string.IsNullOrWhiteSpace(candidate)) continue;
-            if (FindCodexTranscriptPath(candidate) == null) continue;
+            if (!DevezVibeSessionExists(candidate, workingDir)) continue;
             sessionId = candidate;
             break;
         }
@@ -1121,6 +1122,20 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
+    /// <summary>dvz 세션의 실체가 디스크에 있는지 확인한다. dvz 는 한 방 안에서 Codex thread(UUID)·
+    /// Claude 세션(<c>claude:UUID</c>)·OpenCode 세션(<c>ses_…</c>)을 오가므로 ID 접두사로 어느
+    /// 저장소를 볼지 고른다. codex rollout 만 보면 Claude 로 대화한 방은 항상 폐기된다.</summary>
+    public static bool DevezVibeSessionExists(string? sessionId, string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return false;
+        if (sessionId!.StartsWith("claude:", StringComparison.Ordinal))
+            return FindClaudeTranscriptPath(
+                workingDir, DevezVibeStateService.StripBackendPrefix(sessionId)) != null;
+        // OpenCode 세션 저장소는 CLI 내부라 여기서 볼 수 없다 — 유효성 판정은 dvz 에 맡긴다.
+        if (sessionId.StartsWith("ses_", StringComparison.Ordinal)) return true;
+        return FindCodexTranscriptPath(sessionId) != null;
+    }
+
     private sealed record CodexTranscriptCandidate(
         string SessionId, string WorkingDir, DateTimeOffset? CreatedAt, DateTime LastWriteTimeUtc);
 
@@ -1326,7 +1341,9 @@ public sealed class TerminalSessionManager
                     SettingsService.LoadGrokRoomSession(roomId),
                     SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
                 "kimi" => ResolveKimiSessionId(roomId, SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
-                "devezvibe" => FindCodexTranscriptPath(SettingsService.LoadDevezVibeRoomSession(roomId)) != null,
+                "devezvibe" => DevezVibeSessionExists(
+                    SettingsService.LoadDevezVibeRoomSession(roomId),
+                    SettingsService.LoadClaudeCodeRoomDir(roomId)),
                 _ => false,
             };
         }
@@ -3013,7 +3030,8 @@ public sealed class TerminalSessionManager
                     // SessionChanged(워처)가 라이브 저장하지만, 종료 직전 write 를 놓치면 stale ID 로
                     // resume 돼 "예전 대화가 뜨는" 버그가 된다(codex 와 같은 유형).
                     var dz = DevezVibeStateService.LoadTrackedSessionId(roomId);
-                    if (dz != null && FindCodexTranscriptPath(dz) != null
+                    if (dz != null
+                        && DevezVibeSessionExists(dz, SettingsService.LoadClaudeCodeRoomDir(roomId))
                         && dz != SettingsService.LoadDevezVibeRoomSession(roomId))
                         SettingsService.SaveDevezVibeRoomSession(roomId, dz);
                     break;

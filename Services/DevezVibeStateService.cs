@@ -48,9 +48,21 @@ public sealed class DevezVibeStateService : IDisposable
         return LooksLikeSessionId(sid) ? sid : null;
     }
 
-    /// <summary>dvz(=codex thread) 세션 ID 형식 검증.</summary>
+    /// <summary>dvz 세션 ID 형식 검증. dvz 는 한 방에서 Codex thread(UUID) 외에 Claude 세션
+    /// (<c>claude:UUID</c>)과 OpenCode 세션(<c>ses_…</c>)도 기록한다 — UUID 만 통과시키면
+    /// 그 방은 복원 대상이 없다고 판정돼 매번 새 대화로 열린다.</summary>
     public static bool LooksLikeSessionId(string? sid)
-        => !string.IsNullOrWhiteSpace(sid) && Guid.TryParse(sid, out _);
+    {
+        if (string.IsNullOrWhiteSpace(sid)) return false;
+        if (sid!.StartsWith("ses_", StringComparison.Ordinal)) return sid.Length > 4;
+        return Guid.TryParse(StripBackendPrefix(sid), out _);
+    }
+
+    /// <summary>dvz 가 화면에 쓰는 ID 에서 백엔드 접두사를 뗀 실제 세션 ID.</summary>
+    public static string StripBackendPrefix(string sid)
+        => sid.StartsWith("claude:", StringComparison.Ordinal)
+            ? sid.Substring("claude:".Length)
+            : sid;
 
     /// <summary>방이 턴 진행 중인지(종료 계획의 Esc 선행 판단용). 인스턴스 없이 파일만 본다.</summary>
     public static bool IsBusyRunning(string roomId)

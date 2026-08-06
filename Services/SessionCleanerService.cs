@@ -149,12 +149,19 @@ public static class SessionCleanerService
             var antigravityIds = ToSet(antigravity);
             var kimiIds = ToSet(kimi);
 
+            var openCodeIdRegex = new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled);
+            var devezVibeDir = Path.Combine(appData, "DevezCode", "devezvibe", "sessions");
+
             AddTrackedFileIds(claudeIds, Path.Combine(appData, "DevezCode", "claude", "sessions"), GuidRegex);
-            AddTrackedFileIds(openCodeIds, Path.Combine(appData, "DevezCode", "opencode", "sessions"), new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled));
+            AddTrackedFileIds(openCodeIds, Path.Combine(appData, "DevezCode", "opencode", "sessions"), openCodeIdRegex);
             AddTrackedFileIds(gajaeIds, Path.Combine(appData, "DevezCode", "gajae", "sessions"), GuidRegex, fromGajaeRoomDir: true);
             AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "codex", "sessions"), GuidRegex);
-            // dvz 세션은 codex rollout 그 자체라 codex 보호 목록에 합친다 — 안 그러면 codex 정리에 쓸려간다.
-            AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "devezvibe", "sessions"), GuidRegex);
+            // dvz 의 codex 세션은 codex rollout 그 자체라 codex 보호 목록에 합친다 — 안 그러면 codex 정리에 쓸려간다.
+            AddTrackedFileIds(codexIds, devezVibeDir, GuidRegex);
+            // 같은 방을 Claude/OpenCode 로 이어간 dvz 세션은 각 백엔드 저장소에 남는다 — 그쪽 보호 목록에
+            // 넣지 않으면 그 정리에 지워진다.
+            AddTrackedFileIds(claudeIds, devezVibeDir, GuidRegex, claudeBackedOnly: true);
+            AddTrackedFileIds(openCodeIds, devezVibeDir, openCodeIdRegex);
             AddTrackedFileIds(grokIds, Path.Combine(appData, "DevezCode", "grok", "sessions"), GuidRegex);
             AddTrackedFileIds(antigravityIds, Path.Combine(appData, "DevezCode", "antigravity", "sessions"), GuidRegex);
             AddTrackedFileIds(kimiIds, Path.Combine(appData, "DevezCode", "kimi", "sessions"), KimiIdRegex);
@@ -173,7 +180,9 @@ public static class SessionCleanerService
         private static HashSet<string> ToSet(IEnumerable<string> values)
             => values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        private static void AddTrackedFileIds(HashSet<string> target, string dir, Regex valid, bool fromGajaeRoomDir = false)
+        private static void AddTrackedFileIds(
+            HashSet<string> target, string dir, Regex valid,
+            bool fromGajaeRoomDir = false, bool claudeBackedOnly = false)
         {
             try
             {
@@ -193,6 +202,11 @@ public static class SessionCleanerService
                     string id;
                     try { id = File.ReadAllText(f).Trim(); }
                     catch { continue; }
+                    if (claudeBackedOnly)
+                    {
+                        if (!id.StartsWith("claude:", StringComparison.Ordinal)) continue;
+                        id = DevezVibeStateService.StripBackendPrefix(id);
+                    }
                     if (valid.IsMatch(id)) target.Add(id);
                 }
             }

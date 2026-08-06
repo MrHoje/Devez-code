@@ -1327,9 +1327,17 @@ public partial class WorkspacePaneView : UserControl
             forkedId = TerminalSessionManager.TryForkGajaeSession(source.Id, session.Id);
         else if (agentId == "claude")
             forkedId = TerminalSessionManager.TryForkClaudeSession(srcSid!, proj.Path);
-        else if (agentId == "codex" || agentId == "devezvibe")
-            // dvz 세션은 codex rollout 그 자체라 같은 복사기를 쓴다(새 id 로 복사 + 내부 id 치환).
+        else if (agentId == "codex")
             forkedId = TerminalSessionManager.TryForkCodexSession(srcSid!);
+        else if (agentId == "devezvibe")
+            // dvz 는 방마다 백엔드가 다르다 — codex thread 는 rollout 복사기를, Claude 로 이어간
+            // 세션은 claude transcript 복사기를 쓰고 접두사를 붙여 되돌려준다(그대로 -r 대상).
+            forkedId = srcSid!.StartsWith("claude:", StringComparison.Ordinal)
+                ? TerminalSessionManager.TryForkClaudeSession(
+                      DevezVibeStateService.StripBackendPrefix(srcSid!), proj.Path) is { } claudeFork
+                      ? "claude:" + claudeFork
+                      : null
+                : TerminalSessionManager.TryForkCodexSession(srcSid!);
         else if (agentId == "kimi")
             forkedId = TerminalSessionManager.TryForkKimiSession(srcSid!);
         if (agentId != "opencode" && agentId != "grok" && forkedId == null)
