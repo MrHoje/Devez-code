@@ -614,6 +614,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
             draft = _session.ComposerDraft,
             events,
             busy = _session.IsBusy,
+            workingStartedAt = ClaudeSdkSessionManager.Instance.GetWorkingStartedAtUnixMs(_session.Id),
             waiting = _session.IsWaitingChoice,
             alive = _session.IsAlive,
             model = restore.Model ?? "",

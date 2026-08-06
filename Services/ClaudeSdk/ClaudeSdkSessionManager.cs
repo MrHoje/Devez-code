@@ -46,6 +46,7 @@ public sealed class ClaudeSdkSessionManager
         public int BufferedDeltaIndex { get; set; } = -1;
         public StringBuilder? BufferedDeltaText { get; set; }
         public bool StoppedPublished { get; set; }
+        public long WorkingStartedAtUnixMs { get; set; }
     }
 
     public static ClaudeSdkSessionManager Instance { get; } = new();
@@ -59,6 +60,12 @@ public sealed class ClaudeSdkSessionManager
     public bool IsStarted(string roomId)
     {
         lock (_sessions) return _sessions.TryGetValue(roomId, out var session) && session.Bridge.IsRunning;
+    }
+
+    public long GetWorkingStartedAtUnixMs(string roomId)
+    {
+        lock (_sessions)
+            return _sessions.TryGetValue(roomId, out var session) ? session.WorkingStartedAtUnixMs : 0;
     }
 
     /// <summary>앱 종료 시 graceful 배수가 필요한 GUI(SDK) 세션이 하나라도 있는가.</summary>
@@ -205,6 +212,7 @@ public sealed class ClaudeSdkSessionManager
                     size = value.Size,
                 }).ToArray(),
             });
+            session.WorkingStartedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             item.IsAlive = true;
             item.IsBusy = true;
             item.IsWaitingChoice = false;
@@ -321,6 +329,7 @@ public sealed class ClaudeSdkSessionManager
             if (!_sessions.Remove(roomId, out session)) return;
         }
         await session.Bridge.DisposeAsync();
+        session.WorkingStartedAtUnixMs = 0;
         session.Item.IsAlive = false;
         session.Item.IsBusy = false;
         session.Item.IsWaitingChoice = false;
@@ -383,6 +392,7 @@ public sealed class ClaudeSdkSessionManager
                 item.IsBusy = false;
                 item.IsWaitingChoice = false;
                 item.LastMessage = "";
+                session.WorkingStartedAtUnixMs = 0;
                 break;
             case "config_changed" when evt.Input is { } input
                                                && input.ValueKind == JsonValueKind.Object
@@ -418,6 +428,8 @@ public sealed class ClaudeSdkSessionManager
             case "assistant_stream_start":
             case "thinking_stream_start":
                 item.IsBusy = true;
+                if (session.WorkingStartedAtUnixMs == 0)
+                    session.WorkingStartedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 break;
             case "permission":
                 item.IsWaitingChoice = true;
@@ -425,15 +437,18 @@ public sealed class ClaudeSdkSessionManager
             case "result":
                 item.IsBusy = false;
                 item.IsWaitingChoice = false;
+                session.WorkingStartedAtUnixMs = 0;
                 break;
             case "error":
                 item.IsBusy = false;
                 item.IsWaitingChoice = false;
+                session.WorkingStartedAtUnixMs = 0;
                 break;
             case "stopped":
                 item.IsAlive = false;
                 item.IsBusy = false;
                 item.IsWaitingChoice = false;
+                session.WorkingStartedAtUnixMs = 0;
                 session.StoppedPublished = true;
                 break;
         }
@@ -451,6 +466,7 @@ public sealed class ClaudeSdkSessionManager
         session.Item.IsAlive = false;
         session.Item.IsBusy = false;
         session.Item.IsWaitingChoice = false;
+        session.WorkingStartedAtUnixMs = 0;
         PublishStopped(session);
     }
 

@@ -652,7 +652,7 @@
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="Claude GUI 모드 (Beta)" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="켜면 Claude Code 세션을 구독 로그인을 사용하는 SDK 대화 화면으로 실행합니다. 새로 여는 세션부터 적용됩니다."
+                                            <TextBlock Text="켜면 Claude Code 세션을 구독 로그인을 사용하는 SDK 대화 화면으로 실행합니다."
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                             <TextBlock Text="(개인 Claude 계정의 구독 로그인과 공식 Claude Agent SDK를 사용하는 방식으로, Anthropic의 SDK 사용 정책 및 계정 약관 범위 내에서 정상적으로 이용됩니다.)"

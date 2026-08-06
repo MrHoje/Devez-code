@@ -185,9 +185,12 @@
     workingTime.textContent = `(${formatElapsed(Date.now() - workingStartedAt)})`;
   }
 
-  function startWorkingTimer() {
+  function startWorkingTimer(startedAt = 0) {
     if (workingStartedAt) return;
-    workingStartedAt = Date.now();
+    const restoredStartedAt = Number(startedAt);
+    workingStartedAt = Number.isFinite(restoredStartedAt) && restoredStartedAt > 0
+      ? Math.min(restoredStartedAt, Date.now())
+      : Date.now();
     updateWorkingTime();
     clearInterval(workingTimer);
     workingTimer = setInterval(updateWorkingTime, 1000);
@@ -2434,7 +2437,7 @@
     historyStartIndex = historyBatchStart(sessionEvents);
     renderSessionHistory();
     setBusy(message.busy === true);
-    if (message.busy) startWorkingTimer();
+    if (message.busy) startWorkingTimer(message.workingStartedAt);
     if (message.waiting) setStatus("사용자 확인 대기", "waiting");
     else if (message.busy) setStatus("Claude가 작업 중…", "busy");
     else {
