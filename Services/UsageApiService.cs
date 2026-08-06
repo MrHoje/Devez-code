@@ -45,6 +45,19 @@ public sealed class UsageApiService : IDisposable
     // 그래서 가드 리셋은 두지 않고, 시드만 폴백 파일 지문이 현재 토큰과 일치할 때 수행한다.
     private bool _guardSeeded;
 
+    // ── 이벤트 기반 즉시 갱신 · 실패 백오프 ──
+    // UA 헤더가 있어도 이 엔드포인트는 짧은 간격에 민감하다(429 전용 버킷). 정규 3분 주기와
+    // 이벤트 트리거가 겹쳐도 어떤 경로로든 요청 간격이 이 값 아래로 내려가지 않게 게이트한다.
+    private static readonly TimeSpan MinRequestGap = TimeSpan.FromSeconds(90);
+    private long _lastAttemptTicks; // 마지막 요청 시각(UTC ticks) — 0 이면 아직 요청 없음
+    private readonly object _scheduleLock = new();
+    private System.Threading.Timer? _deferred; // 스로틀로 미룬 갱신(최대 1건)
+    private System.Threading.Timer? _retry;    // 실패 백오프 재시도(최대 1건)
+    private int _retryAttempt;
+    // 일시 실패(네트워크·타임아웃·5xx)와 429 의 재시도 간격. 429 는 별도 버킷을 더 보호한다.
+    private static readonly int[] RetryDelaysSec = { 45, 90, 180 };
+    private static readonly int[] RateLimitedDelaysSec = { 180, 360 };
+
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
     public void Start()
@@ -56,6 +69,34 @@ public sealed class UsageApiService : IDisposable
 
     /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
     public void RefreshNow() => _ = PollAsync(waitForTurn: true);
+
+    /// <summary>턴 완료처럼 사용량이 방금 변한 시점에 갱신을 요청한다. dvz(Devez Vibe)처럼
+    /// statusLine 훅이 없는 에이전트는 이 호출이 없으면 다음 3분 주기까지 카드가 그대로다.
+    /// 최소 요청 간격(<see cref="MinRequestGap"/>)을 지키기 위해 이르면 남은 시간 뒤로 1건만 예약한다
+    /// (턴이 몰려도 요청은 늘지 않는다).</summary>
+    public void RequestRefreshSoon()
+    {
+        var elapsed = TimeSpan.FromTicks(
+            DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastAttemptTicks));
+        var wait = MinRequestGap - elapsed;
+        if (wait <= TimeSpan.Zero)
+        {
+            RefreshNow();
+            return;
+        }
+        lock (_scheduleLock)
+        {
+            if (_deferred != null) return; // 이미 예약됨
+            _deferred = new System.Threading.Timer(
+                _ =>
+                {
+                    lock (_scheduleLock) { _deferred?.Dispose(); _deferred = null; }
+                    RefreshNow();
+                },
+                null, (long)wait.TotalMilliseconds + 250, System.Threading.Timeout.Infinite);
+        }
+        DiagLog.Write($"ClaudeUsage refresh deferred {wait.TotalSeconds:F0}s (min request gap)");
+    }
 
     /// <summary>유효한 Claude OAuth 토큰이 하나라도 있는지.</summary>
     public static bool IsConnected() => ReadCredentials().Count > 0;
@@ -111,6 +152,8 @@ public sealed class UsageApiService : IDisposable
                 DiagLog.Write("ClaudeUsage skipped: no valid OAuth credential");
                 return;
             }
+            // 실제로 요청을 보내는 주기만 최소 간격 계산의 기준으로 삼는다.
+            Interlocked.Exchange(ref _lastAttemptTicks, DateTime.UtcNow.Ticks);
             var credentialGeneration = string.Join(",", credentials.Select(item => item.Fingerprint));
             InvalidateFallbackUnlessAnyAccountMatches(
                 credentials.Select(item => item.Fingerprint));
@@ -139,6 +182,8 @@ public sealed class UsageApiService : IDisposable
                 if (!res.IsSuccessStatusCode)
                 {
                     DiagLog.Write($"ClaudeUsage HTTP {(int)res.StatusCode} ({credential.Source})");
+                    // 다음 정규 주기(3분)까지 방치하지 않고 백오프로 재시도한다.
+                    ScheduleRetry(rateLimited: res.StatusCode == HttpStatusCode.TooManyRequests);
                     return;
                 }
 
@@ -208,6 +253,7 @@ public sealed class UsageApiService : IDisposable
                         $"ClaudeUsage accepted confirmed drop: {dropReason} "
                         + $"({credential.Source}, credential={credential.Fingerprint})");
 
+                CancelRetry();
                 WriteFallback(snap, credential.Fingerprint);
                 Volatile.Write(ref _lastSuccessfulSubscriptionType, credential.SubscriptionType);
                 DiagLog.Write(
@@ -223,10 +269,47 @@ public sealed class UsageApiService : IDisposable
         catch (Exception ex)
         {
             DiagLog.Write($"ClaudeUsage poll failed: {ex.GetType().Name}: {ex.Message}");
+            ScheduleRetry(rateLimited: false);
         }
         finally
         {
             _pollGate.Release();
+        }
+    }
+
+    /// <summary>일시 실패 후 백오프 재시도를 1건 예약한다. 횟수를 다 쓰면 다음 정규 주기를 기다린다.
+    /// 성공하면 <see cref="CancelRetry"/> 로 카운터가 초기화된다.</summary>
+    private void ScheduleRetry(bool rateLimited)
+    {
+        var delays = rateLimited ? RateLimitedDelaysSec : RetryDelaysSec;
+        lock (_scheduleLock)
+        {
+            if (_retry != null) return; // 이미 예약됨
+            if (_retryAttempt >= delays.Length)
+            {
+                DiagLog.Write("ClaudeUsage retry budget exhausted; waiting for regular poll");
+                return;
+            }
+            var delay = delays[_retryAttempt++];
+            _retry = new System.Threading.Timer(
+                _ =>
+                {
+                    lock (_scheduleLock) { _retry?.Dispose(); _retry = null; }
+                    _ = PollAsync(waitForTurn: true);
+                },
+                null, delay * 1000L, System.Threading.Timeout.Infinite);
+            DiagLog.Write(
+                $"ClaudeUsage retry scheduled in {delay}s (attempt {_retryAttempt}, rateLimited={rateLimited})");
+        }
+    }
+
+    private void CancelRetry()
+    {
+        lock (_scheduleLock)
+        {
+            _retry?.Dispose();
+            _retry = null;
+            _retryAttempt = 0;
         }
     }
 
@@ -461,6 +544,13 @@ public sealed class UsageApiService : IDisposable
     {
         _poll?.Dispose();
         _poll = null;
+        lock (_scheduleLock)
+        {
+            _deferred?.Dispose();
+            _deferred = null;
+            _retry?.Dispose();
+            _retry = null;
+        }
         _http.Dispose();
     }
 }

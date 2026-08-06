@@ -648,6 +648,9 @@ public partial class MainWindow : Window
                 // loading→running 은 실제 턴 시작이므로 이후 running→idle 완료는 정상 기록한다.
                 if (loading || !wasLoading)
                     NotifyIfSessionFinished(s, was, busy, () => _devezVibeState.IsRoomBusy(roomId));
+                // dvz 는 Claude Agent SDK(=~/.claude OAuth 동일 계정)를 쓰지만 statusLine 훅이 없어
+                // 사용량 실시간 소스가 없다. 실제 턴이 끝났을 때만 갱신을 요청한다(복원 loading→idle 제외).
+                if (was && !busy && !loading && !wasLoading) _usageApi.RequestRefreshSoon();
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
