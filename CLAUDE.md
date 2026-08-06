@@ -85,6 +85,7 @@ Start-Process "bin\DevezCode.exe"
 | Grok 장시간 작업 중 스피너 중간에 꺼짐(멀티루프 턴·조기 idle) | `.knowledge/grok-장시간턴-스피너조기소등.md` |
 | 같은 에이전트인데 세션별로 버그 있/없이 갈림(자동업데이트 후 옛 프로세스 잔재) | `.knowledge/에이전트-자동업데이트-세션별-증상불일치.md` |
 | 자식·내부 에이전트가 부모 방의 스피너/완료기록/lastmsg/resume ID를 오염함 | `.knowledge/세션-추적-이벤트-소유권.md` |
+| Claude GUI(SDK 브리지) 종료·재시작 시 대화 유실, `bridge.mjs` 수정, 앱 종료 graceful 경로, transcript flush/resume 가드 | `.knowledge/claude-gui-sdk브리지-종료-세션보존.md` |
 | **"커서 관련 수정"·커서 좌표 안 맞음·입력이 깔끔하게 안 보임**, 한글 조합이 **모니터 좌상단(화면 원점)** 에 뜸, 터미널 밖 클릭→복귀로만 해결 | `.knowledge/ime-모니터좌상단-조합창-고착.md` |
 
 > 위에 없는 일회성 버그 교훈(특정 컨트롤 트리거 등)은 `.knowledge/wpf-*.md` 로 남아 있으니, 비슷한 증상을 만나면 폴더를 이름으로 grep 해서 찾는다.
