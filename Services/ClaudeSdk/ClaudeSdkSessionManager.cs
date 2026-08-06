@@ -133,6 +133,13 @@ public sealed class ClaudeSdkSessionManager
                 sessionId = null;
             }
             var claudePath = AgentRegistry.ResolvePath(AgentRegistry.Find("claude")!);
+            if (OperatingSystem.IsWindows() && IsWindowsShellWrapper(claudePath))
+            {
+                // Node child_process.spawn은 shell:false에서 .cmd/.bat/.ps1을 직접 실행하면 EINVAL을 낸다.
+                // 경로를 생략하면 Agent SDK가 함께 설치된 네이티브 claude.exe를 자동 선택한다.
+                DiagLog.Write($"ClaudeSdk bundled executable fallback room={item.Id}: {Path.GetExtension(claudePath)} wrapper");
+                claudePath = null;
+            }
             await bridge.StartAsync(
                 cwd, sessionId, restore.Model, restore.Effort, restore.PermissionMode, claudePath);
             DiagLog.Write($"ClaudeSdk process started room={item.Id}");
@@ -148,6 +155,15 @@ public sealed class ClaudeSdkSessionManager
         {
             _gate.Release();
         }
+    }
+
+    private static bool IsWindowsShellWrapper(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<bool> SendPromptAsync(
