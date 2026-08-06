@@ -101,7 +101,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.23.1", "2026-08-06", true, new[]
+          ("v1.23.2", "2026-08-07", true, new[]
+          {
+              "Devez Vibe의 상호작용과 UX를 개선했습니다.",
+          }),
+          ("v1.23.1", "2026-08-06", false, new[]
           {
               "Windows 환경의 Claude 실행 경로 호환 문제를 해결했습니다.",
           }),
