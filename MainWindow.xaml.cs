@@ -100,7 +100,10 @@ public partial class MainWindow : Window
     private readonly GrokHookService _grokHook = new();
     private readonly KimiHookService _kimiHook = new();
     private readonly DevezVibeStateService _devezVibeState = new();
-    private readonly HashSet<string> _devezVibeLoadingRooms = new(StringComparer.Ordinal);
+    // 스피너만 켜는 비(非)응답 구간(복원 로딩·컨텍스트 압축)에 있는 방 — 이 구간의 idle 은 완료기록 대상이 아니다.
+    private readonly HashSet<string> _devezVibeQuietRooms = new(StringComparer.Ordinal);
+    // 그중 압축 구간만 따로 — 압축은 토큰을 쓰므로 끝나면 사용량 갱신은 필요하다.
+    private readonly HashSet<string> _devezVibeCompactingRooms = new(StringComparer.Ordinal);
     // antigravity(agy) — hooks.json 훅(busy/waiting/conversation_id) + transcript_full.jsonl 폴링
     // (빠른 idle 확정 + lastmsg). ask_question/ask_permission 은 waiting(❗)으로 분리한다.
     private readonly AntigravityHookService _antigravityHook = new();
@@ -629,28 +632,33 @@ public partial class MainWindow : Window
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
-        _devezVibeState.BusyChanged += (roomId, busy, loading) =>
+        _devezVibeState.BusyChanged += (roomId, busy, loading, compacting) =>
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindOwnedSession(roomId, "devezvibe", "busy");
                 if (s == null) return;
                 MarkSessionActivity(roomId);
                 bool was = s?.IsBusy ?? false;
-                bool wasLoading = _devezVibeLoadingRooms.Contains(roomId);
-                if (loading) _devezVibeLoadingRooms.Add(roomId);
-                else _devezVibeLoadingRooms.Remove(roomId);
+                // 스피너는 돌지만 프롬프트 응답이 아닌 구간(transcript 복원 로딩 · 컨텍스트 압축).
+                bool quiet = loading || compacting;
+                bool wasQuiet = _devezVibeQuietRooms.Contains(roomId);
+                bool wasCompacting = _devezVibeCompactingRooms.Contains(roomId);
+                if (quiet) _devezVibeQuietRooms.Add(roomId);
+                else _devezVibeQuietRooms.Remove(roomId);
+                if (compacting) _devezVibeCompactingRooms.Add(roomId);
+                else _devezVibeCompactingRooms.Remove(roomId);
                 if (s != null)
                 {
-                    s.IsBusy = busy || loading;
+                    s.IsBusy = busy || quiet;
                     if (!busy) s.IsWaitingChoice = false;
                 }
-                // transcript 복원 완료의 loading→idle 은 응답 완료가 아니다.
-                // loading→running 은 실제 턴 시작이므로 이후 running→idle 완료는 정상 기록한다.
-                if (loading || !wasLoading)
+                // 복원 완료의 loading→idle, /compact 종료의 compacting→idle 은 응답 완료가 아니다.
+                // quiet→running 은 실제 턴 시작이므로 이후 running→idle 완료는 정상 기록한다.
+                if (quiet || !wasQuiet)
                     NotifyIfSessionFinished(s, was, busy, () => _devezVibeState.IsRoomBusy(roomId));
                 // dvz 는 Claude Agent SDK(=~/.claude OAuth 동일 계정)를 쓰지만 statusLine 훅이 없어
-                // 사용량 실시간 소스가 없다. 실제 턴이 끝났을 때만 갱신을 요청한다(복원 loading→idle 제외).
-                if (was && !busy && !loading && !wasLoading) _usageApi.RequestRefreshSoon();
+                // 사용량 실시간 소스가 없다. 턴 종료와 압축 종료에서만 갱신을 요청한다(복원 loading→idle 제외).
+                if (!busy && !quiet && (wasCompacting || (was && !wasQuiet))) _usageApi.RequestRefreshSoon();
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });

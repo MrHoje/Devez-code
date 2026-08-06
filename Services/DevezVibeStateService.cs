@@ -29,8 +29,10 @@ public sealed class DevezVibeStateService : IDisposable
 
     /// <summary>(roomId, message) — 마지막 user prompt (1줄 요약, 200자).</summary>
     public event Action<string, string>? MessageChanged;
-    /// <summary>(roomId, busy, loading) — busy=true 면 스피너 표시, loading=true 면 resume 복원 중.</summary>
-    public event Action<string, bool, bool>? BusyChanged;
+    /// <summary>(roomId, busy, loading, compacting) — busy=true 면 턴 진행 중, loading=true 면 resume 복원 중,
+    /// compacting=true 면 컨텍스트 압축 중. 셋 다 스피너를 켜지만 완료기록은 busy(=턴)만 대상이다 —
+    /// 압축·복원은 프롬프트 응답이 아니라서 카드가 찍히면 안 된다.</summary>
+    public event Action<string, bool, bool, bool>? BusyChanged;
     /// <summary>(roomId, waiting) — 승인/질문/MCP 응답 대기 중(❗).</summary>
     public event Action<string, bool>? WaitingChoiceChanged;
     /// <summary>(roomId, threadId) — dvz thread ID 갱신. TerminalSessionManager 가 다음 -r 에 사용.</summary>
@@ -64,13 +66,15 @@ public sealed class DevezVibeStateService : IDisposable
             ? sid.Substring("claude:".Length)
             : sid;
 
-    /// <summary>방이 턴 진행 중인지(종료 계획의 Esc 선행 판단용). 인스턴스 없이 파일만 본다.</summary>
+    /// <summary>방이 턴 진행 중인지(종료 계획의 Esc 선행 판단용). 인스턴스 없이 파일만 본다.
+    /// 압축 중(compacting)도 Esc 로 먼저 끊어야 종료 키가 먹으므로 진행 중으로 본다.</summary>
     public static bool IsBusyRunning(string roomId)
     {
         if (string.IsNullOrWhiteSpace(roomId)) return false;
         var status = TryRead(Path.Combine(BusyDir, Sanitize(roomId) + ".txt"));
         return !string.IsNullOrWhiteSpace(status)
-            && status.Equals("running", StringComparison.OrdinalIgnoreCase);
+            && (status.Equals("running", StringComparison.OrdinalIgnoreCase)
+                || status.Equals("compacting", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>복원 대화가 아직 화면에 재구성되는 중인지 확인한다.
@@ -171,7 +175,8 @@ public sealed class DevezVibeStateService : IDisposable
         if (string.IsNullOrWhiteSpace(status)) { _ = ReEmitBusyAfterSettleAsync(path, room); return; }
         bool loading = status.Equals("loading", StringComparison.OrdinalIgnoreCase);
         bool busy = status.Equals("running", StringComparison.OrdinalIgnoreCase);
-        BusyChanged?.Invoke(room, busy, loading);
+        bool compacting = status.Equals("compacting", StringComparison.OrdinalIgnoreCase);
+        BusyChanged?.Invoke(room, busy, loading, compacting);
     }
 
     private async System.Threading.Tasks.Task ReEmitBusyAfterSettleAsync(string path, string room)
@@ -184,7 +189,9 @@ public sealed class DevezVibeStateService : IDisposable
                 && status!.Equals("loading", StringComparison.OrdinalIgnoreCase);
             bool busy = !string.IsNullOrWhiteSpace(status)
                 && status!.Equals("running", StringComparison.OrdinalIgnoreCase);
-            BusyChanged?.Invoke(room, busy, loading);
+            bool compacting = !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("compacting", StringComparison.OrdinalIgnoreCase);
+            BusyChanged?.Invoke(room, busy, loading, compacting);
         }
         catch { /* best effort */ }
     }
