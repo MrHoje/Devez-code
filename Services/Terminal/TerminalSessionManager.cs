@@ -851,8 +851,11 @@ public sealed class TerminalSessionManager
         foreach (var candidate in new[] { tracked, saved })
         {
             if (string.IsNullOrWhiteSpace(candidate)) continue;
-            if (!DevezVibeSessionExists(candidate, workingDir)) continue;
-            sessionId = candidate;
+            // 추적 ID 가 시작 시 백엔드 이름을 그대로 달고 있는데 대화는 전환된 백엔드에 있는 경우
+            // (dvz 가 방 ID 를 안 갈아 준 옛 방) dvz 라우트로 실제 세션을 되찾는다.
+            var resolved = ResolveDevezVibeResumeId(candidate, workingDir);
+            if (resolved == null) continue;
+            sessionId = resolved;
             break;
         }
         if (sessionId != null)
@@ -1122,6 +1125,63 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
+    /// <summary>dvz 자신의 라우트 저장소. 방의 대화가 시작 시 이름 붙은 백엔드를 떠나면
+    /// (예: Claude 로 열렸다가 Codex 로 전환) 화면·추적 ID 는 <c>claude:UUID</c> 로 남고 실제 대화는
+    /// codex rollout 에 쌓인다. 그 대응은 이 파일에만 있다.</summary>
+    private static string DevezVibeRouteStorePath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezVibe", "session-routes.json");
+
+    /// <summary>dvz 추적 ID 를 실제 대화가 있는 세션 ID 로 바로잡는다. 그대로 유효하면 그대로,
+    /// 아니면 dvz 라우트에 적힌 다른 백엔드 세션 중 디스크에 실체가 있는 것을 고른다.
+    /// 못 찾으면 null — 그때만 새 대화로 연다.</summary>
+    public static string? ResolveDevezVibeResumeId(string? sessionId, string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return null;
+        if (DevezVibeSessionExists(sessionId, workingDir)) return sessionId;
+        foreach (var candidate in DevezVibeRoutedSessionIds(sessionId!))
+        {
+            if (!string.Equals(candidate, sessionId, StringComparison.OrdinalIgnoreCase)
+                && DevezVibeSessionExists(candidate, workingDir))
+                return candidate;
+        }
+        return null;
+    }
+
+    /// <summary>dvz 라우트 저장소에서 이 방(=visible thread ID)이 거친 백엔드 세션 ID 들을
+    /// 활성 백엔드 우선으로 나열한다. 파일이 없거나 항목이 없으면 빈 목록.</summary>
+    private static IEnumerable<string> DevezVibeRoutedSessionIds(string visibleId)
+    {
+        var ids = new List<string>();
+        try
+        {
+            var path = DevezVibeRouteStorePath();
+            if (!File.Exists(path)) return ids;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            if (!doc.RootElement.TryGetProperty(visibleId, out var route)) return ids;
+
+            string? Backing(string name)
+                => route.TryGetProperty(name, out var value)
+                    && value.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? value.GetString() : null;
+
+            var claude = Backing("claude_id") is { Length: > 0 } c ? "claude:" + c : null;
+            var codex = Backing("codex_id");
+            var openCode = Backing("open_code_id");
+            var active = route.TryGetProperty("active", out var kind) ? kind.GetString() : null;
+            // 활성 백엔드부터 — 마지막으로 대화한 쪽이 이어갈 세션이다.
+            foreach (var id in active switch
+            {
+                "Codex" => new[] { codex, claude, openCode },
+                "OpenCode" => new[] { openCode, claude, codex },
+                _ => new[] { claude, codex, openCode },
+            })
+                if (!string.IsNullOrWhiteSpace(id)) ids.Add(id!);
+        }
+        catch { }
+        return ids;
+    }
+
     /// <summary>dvz 세션의 실체가 디스크에 있는지 확인한다. dvz 는 한 방 안에서 Codex thread(UUID)·
     /// Claude 세션(<c>claude:UUID</c>)·OpenCode 세션(<c>ses_…</c>)을 오가므로 ID 접두사로 어느
     /// 저장소를 볼지 고른다. codex rollout 만 보면 Claude 로 대화한 방은 항상 폐기된다.</summary>
@@ -1341,9 +1401,9 @@ public sealed class TerminalSessionManager
                     SettingsService.LoadGrokRoomSession(roomId),
                     SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
                 "kimi" => ResolveKimiSessionId(roomId, SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
-                "devezvibe" => DevezVibeSessionExists(
+                "devezvibe" => ResolveDevezVibeResumeId(
                     SettingsService.LoadDevezVibeRoomSession(roomId),
-                    SettingsService.LoadClaudeCodeRoomDir(roomId)),
+                    SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
                 _ => false,
             };
         }
@@ -3029,10 +3089,10 @@ public sealed class TerminalSessionManager
                     // dvz 가 sessions\<room>.txt 에 쓴 최신 thread ID 를 종료 시점에 확정 저장. 평시엔
                     // SessionChanged(워처)가 라이브 저장하지만, 종료 직전 write 를 놓치면 stale ID 로
                     // resume 돼 "예전 대화가 뜨는" 버그가 된다(codex 와 같은 유형).
-                    var dz = DevezVibeStateService.LoadTrackedSessionId(roomId);
-                    if (dz != null
-                        && DevezVibeSessionExists(dz, SettingsService.LoadClaudeCodeRoomDir(roomId))
-                        && dz != SettingsService.LoadDevezVibeRoomSession(roomId))
+                    var dz = ResolveDevezVibeResumeId(
+                        DevezVibeStateService.LoadTrackedSessionId(roomId),
+                        SettingsService.LoadClaudeCodeRoomDir(roomId));
+                    if (dz != null && dz != SettingsService.LoadDevezVibeRoomSession(roomId))
                         SettingsService.SaveDevezVibeRoomSession(roomId, dz);
                     break;
                 case "grok":
