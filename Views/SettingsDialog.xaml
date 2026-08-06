@@ -658,6 +658,9 @@
                                             <TextBlock Text="(개인 Claude 계정의 구독 로그인과 공식 Claude Agent SDK를 사용하는 방식으로, Anthropic의 SDK 사용 정책 및 계정 약관 범위 내에서 정상적으로 이용됩니다.)"
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,12,0"/>
+                                            <TextBlock Text="현재 베타 버전으로, 사용 중 발생하는 오류나 문의사항은 캡처·복사해서 전달해주시면 수정 적용하겠습니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,12,0"/>
                                         </StackPanel>
                                         <CheckBox x:Name="ClaudeGuiModeToggle" Grid.Column="1"
                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
