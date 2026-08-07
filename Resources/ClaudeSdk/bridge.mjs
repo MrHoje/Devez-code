@@ -38,6 +38,7 @@ let started = false;
 let sessionLoop = null;
 let shuttingDown = false;
 let turnActive = false;
+let queuedPromptCount = 0;
 let sessionId = "";
 let currentModel = "";
 let currentEffort = "high";
@@ -552,7 +553,11 @@ async function start(command) {
       else if (message?.type === "assistant") emitAssistant(message);
       else if (message?.type === "user") emitToolResults(message);
       else if (message?.type === "result") {
-        turnActive = false;
+        // 턴 종료 시점에 큐에 남은 프롬프트가 있으면 SDK 가 곧바로 다음 턴을 시작한다 —
+        // 그 사실을 result 에 실어 보내야 UI 가 idle 로 잠깐 떨어졌다 돌아오는 깜빡임을 피한다.
+        const startsQueuedPrompt = queuedPromptCount > 0;
+        if (startsQueuedPrompt) queuedPromptCount--;
+        else turnActive = false;
         currentContextWindow = resolveContextWindow(message.modelUsage);
         write({ type: "context_usage", input: { usedTokens: latestContextTokens, contextWindow: currentContextWindow } });
         resultErrorAt = message.is_error === true ? Date.now() : 0;
@@ -561,6 +566,7 @@ async function start(command) {
           text: typeof message.result === "string" ? message.result : "",
           isError: message.is_error === true,
           subtype: message.subtype ?? "",
+          input: { startsQueuedPrompt, queuedPrompts: queuedPromptCount },
         });
       }
     }
@@ -572,6 +578,7 @@ async function start(command) {
   } finally {
     conversation = null;
     turnActive = false;
+    queuedPromptCount = 0;
   }
 }
 
@@ -616,6 +623,12 @@ async function handle(command) {
       if (isReloadPluginsCommand(command.text)) {
         await reloadPlugins();
         break;
+      }
+      // 턴 진행 중(compact 포함)에 들어온 프롬프트는 SDK 큐에서 대기만 한다 — 곧바로 작업이
+      // 시작되는 것처럼 보이지 않도록 대기 상태를 UI 에 알린다.
+      if (turnActive) {
+        queuedPromptCount++;
+        write({ type: "prompt_queued", input: { queuedPrompts: queuedPromptCount } });
       }
       turnActive = true;
       prompts.push(userMessage(command.text ?? "", command.images, command.files));

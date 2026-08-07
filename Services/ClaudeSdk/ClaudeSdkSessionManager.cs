@@ -435,9 +435,18 @@ public sealed class ClaudeSdkSessionManager
                 item.IsWaitingChoice = true;
                 break;
             case "result":
-                item.IsBusy = false;
                 item.IsWaitingChoice = false;
-                session.WorkingStartedAtUnixMs = 0;
+                // 큐에 대기하던 프롬프트가 바로 이어서 실행되면 busy 를 끊지 않는다(스피너 깜빡임 방지).
+                if (StartsQueuedPrompt(evt))
+                {
+                    item.IsBusy = true;
+                    session.WorkingStartedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                }
+                else
+                {
+                    item.IsBusy = false;
+                    session.WorkingStartedAtUnixMs = 0;
+                }
                 break;
             case "error":
                 item.IsBusy = false;
@@ -454,6 +463,11 @@ public sealed class ClaudeSdkSessionManager
         }
         Publish(item.Id, evt, session);
     }
+
+    private static bool StartsQueuedPrompt(ClaudeSdkEvent evt) =>
+        evt.Input is { ValueKind: JsonValueKind.Object } input
+        && input.TryGetProperty("startsQueuedPrompt", out var starts)
+        && starts.ValueKind == JsonValueKind.True;
 
     private void OnBridgeExited(ManagedSession session)
     {

@@ -101,7 +101,15 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.23.4", "2026-08-07", true, new[]
+          ("v1.23.5", "2026-08-07", true, new[]
+          {
+              "Claude GUI 입력창에서 슬래시 명령어를 색상으로 강조하고, 이름을 정확히 입력하면 Enter로 바로 전송되도록 했습니다.",
+              "Claude GUI에 보낸 메시지 복사 버튼을 추가하고, Ctrl+Enter 줄바꿈과 Tab 포커스 동작을 정리했습니다. Ctrl+Tab 세션 전환 단축키는 제거했습니다.",
+              "작업 중 보낸 프롬프트를 전송 대기 중으로 표시하고, 대기 프롬프트가 이어서 실행될 때 작업 표시가 깜빡이던 문제를 수정했습니다.",
+              "중단한 요청의 프롬프트를 취소선으로 표시하고, 응답이 끝난 권한·질문 카드는 선택한 답변만 남기고 접도록 개선했습니다.",
+              "Claude 백엔드로 실행한 dvz 세션의 토큰 사용량이 표시되지 않던 문제를 해결했습니다.",
+          }),
+          ("v1.23.4", "2026-08-07", false, new[]
           {
               "Claude GUI 입력창에서 @로 파일을 검색해 넣을 수 있도록 추가했습니다.",
               "다른 세션에 다녀와도 보고 있던 스크롤 위치가 유지되도록 개선했습니다.",

@@ -105,7 +105,7 @@ public static class SessionUsageService
             {
                 "claude" => ReadClaude(roomId, cwd),
                 "codex" => ReadCodexLike(roomId, SettingsService.LoadCodexRoomSession(roomId), "Codex"),
-                "devezvibe" => ReadCodexLike(roomId, SettingsService.LoadDevezVibeRoomSession(roomId), "Devez Vibe"),
+                "devezvibe" => ReadDevezVibe(roomId, cwd),
                 _ => null,
             };
         }
@@ -117,18 +117,32 @@ public static class SessionUsageService
     //  2~3배 뻥튀기되므로 반드시 message.id 로 dedup. 파일 크기 불변이면 재파싱 스킵해 부하 억제.)
     private static UsageTotals? ReadClaude(string roomId, string? cwd)
     {
-        var sid = SettingsService.LoadClaudeCodeRoomSession(roomId);
+        return ReadClaude(roomId, cwd, SettingsService.LoadClaudeCodeRoomSession(roomId), "Claude");
+    }
+
+    /// <summary>Claude 백엔드를 선택한 dvz 방은 Claude transcript를 읽는다.
+    /// Codex rollout만 읽으면 <c>claude:UUID</c> 경로를 해석하지 못해 사용량이 숨겨진다.</summary>
+    private static UsageTotals? ReadDevezVibe(string roomId, string? cwd)
+    {
+        var sid = SettingsService.LoadDevezVibeRoomSession(roomId);
+        return sid?.StartsWith("claude:", StringComparison.Ordinal) == true
+            ? ReadClaude(roomId, cwd, DevezVibeStateService.StripBackendPrefix(sid), "Devez Vibe · Claude")
+            : ReadCodexLike(roomId, sid, "Devez Vibe");
+    }
+
+    private static UsageTotals? ReadClaude(string roomId, string? cwd, string? sid, string agentLabel)
+    {
         var path = TerminalSessionManager.FindClaudeTranscriptPath(cwd, sid);
         if (path == null) return LastKnown(roomId); // 재시작 직후 등 경로 미해석 → 마지막 저장값이라도 표시
 
-        var entry = _cache.GetOrAdd(roomId, _ => new Entry { Totals = new UsageTotals(0, 0, 0, 0, 0, null, "Claude") });
+        var entry = _cache.GetOrAdd(roomId, _ => new Entry { Totals = new UsageTotals(0, 0, 0, 0, 0, null, agentLabel) });
         lock (entry)
         {
             long len = new FileInfo(path).Length;
             if (entry.Sid == sid && len == entry.LastLen && entry.LastLen > 0) // 변화 없음 → 캐시 그대로
                 return entry.Totals.HasData ? entry.Totals : null;
 
-            var acc = ParseClaudeFull(path);
+            var acc = ParseClaudeFull(path, agentLabel);
             entry.Sid = sid;
             entry.LastLen = len;
             entry.Totals = acc;
@@ -137,7 +151,7 @@ public static class SessionUsageService
         }
     }
 
-    private static UsageTotals ParseClaudeFull(string path)
+    private static UsageTotals ParseClaudeFull(string path, string agentLabel)
     {
         long inNew = 0, cw5 = 0, cw1 = 0, cr = 0, outp = 0;      // 표시용 전체 합계(모델 무관)
         var byModel = new Dictionary<string, long[]>();          // 비용 정확도용 모델별 버킷 [in,cw5,cw1,cr,out]
@@ -185,7 +199,7 @@ public static class SessionUsageService
             1 => used[0],
             _ => "여러 모델(" + string.Join(", ", used.Select(ShortModel)) + ")",
         };
-        return new UsageTotals(inNew, cw5, cw1, cr, outp, label, "Claude") { Cost = anyPriced ? cost : null };
+        return new UsageTotals(inNew, cw5, cw1, cr, outp, label, agentLabel) { Cost = anyPriced ? cost : null };
     }
 
     private static string ShortModel(string m)

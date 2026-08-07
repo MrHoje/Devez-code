@@ -14,6 +14,8 @@
   const attachmentStrip = document.getElementById("attachment-strip");
   const attachmentError = document.getElementById("attachment-error");
   const dropOverlay = document.getElementById("drop-overlay");
+  const promptHighlight = document.getElementById("prompt-highlight");
+  let promptComposing = false;
   const shortcutHint = document.getElementById("shortcut-hint");
   const statusToast = document.getElementById("status-toast");
   const statusToastLabel = document.getElementById("status-toast-label");
@@ -65,9 +67,13 @@
   let scrollFrame = 0;
   let currentToolGroup = null;
   let compactMarker = null;
+  let compactRunning = false;
   let pendingLocalCommand = "";
   let quietCommandInFlight = false;
   let pendingResult = null;
+  let lastUserTurn = null;
+  let queuedTurns = [];
+  let pendingQueuedMark = 0;
   let interruptRequested = false;
   let interruptWatchdog = 0;
   let sessionEvents = [];
@@ -265,6 +271,7 @@
       const remove = document.createElement("button");
       remove.className = "attachment-remove";
       remove.type = "button";
+      remove.tabIndex = -1;
       remove.textContent = "×";
       remove.title = `${item.name} 제거`;
       remove.setAttribute("aria-label", `${item.name} 제거`);
@@ -878,10 +885,15 @@
     statusAnnouncer.textContent = message;
   }
 
+  // Compact 는 자체 마커로 진행 상황을 보여주므로 Working 인디케이터는 띄우지 않는다.
+  function updateWorkingIndicator() {
+    workingIndicator.hidden = !busy || compactRunning;
+  }
+
   function setBusy(value) {
     if (busy === value) return;
     busy = value;
-    workingIndicator.hidden = !busy;
+    updateWorkingIndicator();
     action.classList.toggle("busy", busy);
     action.setAttribute("aria-label", busy ? "응답 중지" : "보내기");
     updateAction();
@@ -930,6 +942,19 @@
       }
     }
     turn.appendChild(bubble);
+    if (role === "user" && text) {
+      const actions = document.createElement("div");
+      actions.className = "turn-actions";
+      const copyButton = document.createElement("button");
+      copyButton.type = "button";
+      copyButton.className = "copy-turn";
+      copyButton.title = "복사";
+      copyButton.setAttribute("aria-label", "메시지 복사");
+      copyButton.dataset.text = text;
+      copyButton.innerHTML = `<svg class="icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-9A1.5 1.5 0 0 1 5.5 3h9A1.5 1.5 0 0 1 16 4.5v1"/></svg><svg class="icon-check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>`;
+      actions.appendChild(copyButton);
+      turn.appendChild(actions);
+    }
     return turn;
   }
 
@@ -1346,19 +1371,29 @@
     return element;
   }
 
+  function setCompactRunning(value) {
+    if (compactRunning === value) return;
+    compactRunning = value;
+    if (value) resetWorkingTimer();
+    updateWorkingIndicator();
+  }
+
   function renderCompactStatus(event) {
     const element = ensureCompactMarker();
     const state = event.input?.state || (event.isError ? "error" : "success");
     element.classList.remove("running", "success", "error");
     element.classList.add(state);
+    setCompactRunning(state === "running");
     element.querySelector(".compact-title").textContent = state === "running"
       ? "Compact 진행 중"
       : state === "error" ? "Compact 실패" : "Compact 완료";
-    element.querySelector(".compact-meta").textContent = event.text || "";
+    // 실패 사유(API Error 등)는 마커에 노출하지 않는다 — 제목만 남긴다.
+    element.querySelector(".compact-meta").textContent = state === "error" ? "" : event.text || "";
   }
 
   function renderCompactBoundary(event) {
     const element = ensureCompactMarker();
+    setCompactRunning(false);
     const input = event.input || {};
     const preTokens = Number(input.preTokens) || 0;
     const postTokens = Number(input.postTokens) || 0;
@@ -1383,9 +1418,13 @@
     toolGroups.clear();
     currentToolGroup = null;
     compactMarker = null;
+    compactRunning = false;
     pendingLocalCommand = "";
     quietCommandInFlight = false;
     pendingResult = null;
+    lastUserTurn = null;
+    queuedTurns = [];
+    pendingQueuedMark = 0;
     assistantStreams.clear();
     thinkingStreams.clear();
   }
@@ -1796,12 +1835,34 @@
     return card;
   }
 
+  // 응답이 끝난 권한/질문 카드는 선택된 답변만 남기고 접는다.
+  function collapsePermission(card) {
+    for (const control of card.querySelectorAll("button, textarea")) control.disabled = true;
+    for (const custom of card.querySelectorAll(".question-custom")) {
+      const value = custom.value.trim();
+      if (!value) {
+        custom.remove();
+        continue;
+      }
+      const answer = document.createElement("div");
+      answer.className = "question-custom-answer";
+      answer.textContent = value;
+      custom.replaceWith(answer);
+    }
+    for (const item of card.querySelectorAll(".question-item")) {
+      if (item.querySelector(".question-custom-answer")) item.dataset.answer = "custom";
+      else if (item.querySelector(".question-option.selected")) item.dataset.answer = "option";
+      else item.dataset.answer = "none";
+    }
+    card.classList.add("collapsed");
+  }
+
   function resolvePermission(requestId, allowed) {
     const card = [...document.querySelectorAll(".permission")].find(node => node.dataset.requestId === requestId);
     if (!card) return;
     card.dataset.resolved = "true";
     card.querySelector(".card-title").textContent = allowed ? "응답을 전달했습니다" : "요청을 거부했습니다";
-    for (const control of card.querySelectorAll("button, textarea")) control.disabled = true;
+    collapsePermission(card);
   }
 
   function finalizePermissions(canceled = false) {
@@ -1809,7 +1870,7 @@
       card.dataset.resolved = "true";
       const title = card.querySelector(".card-title");
       if (title) title.textContent = canceled ? "요청이 중단되었습니다" : "요청이 종료되었습니다";
-      for (const control of card.querySelectorAll("button, textarea")) control.disabled = true;
+      collapsePermission(card);
     }
   }
 
@@ -1988,6 +2049,7 @@
     updateControlLabels();
     if (openControl) openControlMenu(openControl, true);
     updateCommandMenu();
+    updatePromptHighlight();
   }
 
   function applyConfiguration(input) {
@@ -2019,6 +2081,13 @@
       return { start: slash, end: cursor, query: query.toLowerCase() };
     }
     return null;
+  }
+
+  // 커서 위치의 슬래시 토큰이 실제 명령어 이름과 완전히 일치하는지.
+  function isExactSlashCommandTyped() {
+    const query = slashRange()?.query;
+    if (!query) return false;
+    return commands.some(command => String(command?.name || "").trim().toLowerCase() === query);
   }
 
   function commandMatches(command, query) {
@@ -2384,7 +2453,43 @@
     });
   }
 
+  // 중단된 턴의 사용자 프롬프트는 취소선으로 남겨 어떤 요청이 취소됐는지 보이게 한다.
+  function markLastUserTurnCanceled() {
+    clearQueuedTurns();
+    if (!lastUserTurn) return;
+    lastUserTurn.classList.add("canceled");
+    lastUserTurn = null;
+  }
+
+  // 진행 중인 턴이 끝나기를 기다리는 프롬프트는 "작업 중"이 아니라 대기로 보여야 한다.
+  function markTurnQueued(turn) {
+    if (!turn || turn.classList.contains("queued")) return;
+    turn.classList.add("queued");
+    const badge = document.createElement("div");
+    badge.className = "turn-queued-badge";
+    badge.textContent = "전송 대기 중";
+    turn.appendChild(badge);
+    queuedTurns.push(turn);
+  }
+
+  function clearQueuedTurns() {
+    for (const turn of queuedTurns) {
+      turn.classList.remove("queued");
+      turn.querySelector(".turn-queued-badge")?.remove();
+    }
+    queuedTurns = [];
+    pendingQueuedMark = 0;
+  }
+
+  function markPromptQueued(live) {
+    // user 이벤트보다 prompt_queued 가 먼저 도착하면 다음 유저 턴에 표식을 넘긴다.
+    if (lastUserTurn && !lastUserTurn.classList.contains("queued")) markTurnQueued(lastUserTurn);
+    else pendingQueuedMark++;
+    if (live) setStatus("이전 작업 완료 후 전송 대기", "waiting");
+  }
+
   function completeResult(event, live) {
+    setCompactRunning(false);
     const interrupted = interruptRequested && event.isError === true;
     interruptRequested = false;
     clearInterruptWatchdog();
@@ -2393,6 +2498,7 @@
     const localCommand = String(pendingLocalCommand || "").toLowerCase();
     const toastCommand = toastSlashCommands.has(localCommand);
     if (interrupted) {
+      markLastUserTurnCanceled();
       pendingLocalCommand = "";
       quietCommandInFlight = false;
       setBusy(false);
@@ -2403,10 +2509,17 @@
     if (live && toastCommand)
       showStatusToast(statusToastDetails(localCommand, event.text || "", "", event.isError === true));
     pendingLocalCommand = "";
-    setBusy(false);
-    if (live) finishWorkingTimer(!event.isError && !quietCommandInFlight);
+    // 큐에서 대기하던 프롬프트가 이어서 실행되면 idle 로 떨어뜨리지 않고 타이머만 새 턴 기준으로 돌린다.
+    const startsQueued = event.input?.startsQueuedPrompt === true;
+    if (startsQueued) clearQueuedTurns();
+    setBusy(startsQueued);
+    if (live) {
+      finishWorkingTimer(!startsQueued && !event.isError && !quietCommandInFlight);
+      if (startsQueued) startWorkingTimer();
+    }
     quietCommandInFlight = false;
-    setStatus(event.isError ? "요청 실패" : "대화 준비됨", event.isError ? "error" : "ready");
+    if (startsQueued) setStatus("Claude가 작업 중…", "busy");
+    else setStatus(event.isError ? "요청 실패" : "대화 준비됨", event.isError ? "error" : "ready");
     if (event.isError && !toastCommand) append(makeError("요청 실패", event.text || "알 수 없는 오류"), true);
   }
 
@@ -2452,6 +2565,7 @@
         interruptRequested = false;
         clearInterruptWatchdog();
         pendingResult = null;
+        lastUserTurn = null;
         if (compactMarker && !compactMarker.classList.contains("running")) compactMarker = null;
         sealToolGroup();
         {
@@ -2477,12 +2591,23 @@
             break;
           }
         }
-        setBusy(true); setStatus("Claude가 작업 중…", "busy");
-        if (live) startWorkingTimer();
-        quietCommandInFlight = isQuietSlashCommand(event.text);
-        if (quietCommandInFlight) pendingLocalCommand = commandNameFromText(event.text);
-        if (!isQuietSlashCommand(event.text)) append(makeTurn("user", event.text || "", event.attachments), true);
+        {
+          // 이미 다른 턴이 도는 중이면(예: compact) 이 프롬프트는 큐에서 대기 중이다.
+          const queued = pendingQueuedMark > 0;
+          if (queued) pendingQueuedMark--;
+          setBusy(true);
+          setStatus(queued ? "이전 작업 완료 후 전송 대기" : "Claude가 작업 중…", queued ? "waiting" : "busy");
+          if (live && !queued) startWorkingTimer();
+          quietCommandInFlight = isQuietSlashCommand(event.text);
+          if (quietCommandInFlight) pendingLocalCommand = commandNameFromText(event.text);
+          if (!isQuietSlashCommand(event.text)) {
+            lastUserTurn = makeTurn("user", event.text || "", event.attachments);
+            append(lastUserTurn, true);
+            if (queued) markTurnQueued(lastUserTurn);
+          }
+        }
         break;
+      case "prompt_queued": markPromptQueued(live); break;
       case "assistant":
         event.text = stripRequestInterruptedMarker(event.text);
         if (!event.text) break;
@@ -2547,9 +2672,11 @@
           finalizePermissions(interrupted);
           pendingLocalCommand = "";
           quietCommandInFlight = false;
+          clearQueuedTurns();
+          setCompactRunning(false);
           setBusy(false);
           if (live) finishWorkingTimer(false);
-          if (interrupted) { setStatus("대화 준비됨", "ready"); break; }
+          if (interrupted) { markLastUserTurnCanceled(); setStatus("대화 준비됨", "ready"); break; }
         }
         setStatus("Claude SDK 오류", "error");
         append(makeError("Claude SDK 오류", event.text || "알 수 없는 오류"), true);
@@ -2562,6 +2689,8 @@
         finalizePermissions(true);
         pendingLocalCommand = "";
         quietCommandInFlight = false;
+        clearQueuedTurns();
+        setCompactRunning(false);
         setBusy(false);
         setStatus("Claude SDK 연결 종료");
         break;
@@ -2656,6 +2785,7 @@
     statusPalette = statusPalettes[message.theme] || statusPalettes.dark;
     updateControlLabels();
     updateVibeMode();
+    updatePromptHighlight();
     root.dataset.theme = message.theme || "dark";
     root.dataset.dark = String(message.dark === true);
     root.style.colorScheme = message.dark ? "dark" : "light";
@@ -2749,11 +2879,46 @@
       .catch(error => recoverInterruptedRequest(error?.message || "중단 요청 실패", true));
   }
 
+  // execCommand 로 넣어야 네이티브 undo 스택과 input 이벤트가 유지된다.
+  function insertComposerNewline() {
+    let inserted = false;
+    try { inserted = document.execCommand("insertText", false, "\n"); } catch { inserted = false; }
+    if (inserted) return;
+    const start = prompt.selectionStart ?? prompt.value.length;
+    const end = prompt.selectionEnd ?? start;
+    prompt.setRangeText("\n", start, end, "end");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
   function resizePrompt() {
     prompt.style.height = "auto";
     prompt.style.height = `${Math.min(prompt.scrollHeight, 147)}px`;
     prompt.style.overflowY = prompt.scrollHeight > 147 ? "auto" : "hidden";
+    updatePromptHighlight();
     updateAction();
+  }
+
+  // 컴포저 첫 토큰이 실제 슬래시 명령어일 때만 드롭다운과 동일한 색으로 오버레이 표시.
+  function updatePromptHighlight() {
+    if (!promptHighlight) return;
+    const value = prompt.value;
+    const match = /^\/([^\s/]+)/.exec(value);
+    const name = match ? match[1].toLowerCase() : "";
+    const command = name ? commands.find(item => String(item?.name || "").trim().toLowerCase() === name) : null;
+    // IME 조합 중에는 textarea value 에 미확정 글자가 없어 오버레이가 조합 문자를 삼킨다.
+    if (!command || promptComposing) {
+      promptHighlight.parentElement?.classList.remove("is-highlighted");
+      if (promptHighlight.firstChild) promptHighlight.replaceChildren();
+      return;
+    }
+    const token = document.createElement("span");
+    token.className = "slash-token";
+    token.textContent = match[0];
+    token.style.color = slashCommandColor(command);
+    promptHighlight.replaceChildren(token, document.createTextNode(value.slice(match[0].length)));
+    promptHighlight.parentElement?.classList.add("is-highlighted");
+    promptHighlight.style.paddingRight = `${14 + Math.max(0, prompt.offsetWidth - prompt.clientWidth)}px`;
+    promptHighlight.scrollTop = prompt.scrollTop;
   }
 
   function showShortcutHint() {
@@ -2780,7 +2945,6 @@
       if (key === "w" || key === "W") return { name: "closeSession" };
       if (key === "Delete" || event.code === "Delete") return { name: "deleteSession" };
     }
-    if (event.ctrlKey && key === "Tab") return { name: event.shiftKey ? "prevSession" : "nextSession" };
     if (event.ctrlKey && !event.shiftKey && /^Digit[1-9]$/.test(event.code)) {
       const index = Number(event.code.slice(5));
       return { name: "gotoSession", index: index === 9 ? -1 : index - 1 };
@@ -2834,6 +2998,9 @@
   });
   prompt.addEventListener("input", () => { storeComposerDraft(); resizePrompt(); commandSelection = 0; updateCommandMenu(); updateMentionMenu(); });
   prompt.addEventListener("click", () => { updateCommandMenu(); updateMentionMenu(); });
+  prompt.addEventListener("scroll", () => { if (promptHighlight) promptHighlight.scrollTop = prompt.scrollTop; });
+  prompt.addEventListener("compositionstart", () => { promptComposing = true; updatePromptHighlight(); });
+  prompt.addEventListener("compositionend", () => { promptComposing = false; updatePromptHighlight(); });
   prompt.addEventListener("paste", event => {
     const images = [...(event.clipboardData?.items || [])]
       .filter(item => item.kind === "file" && item.type.startsWith("image/"))
@@ -2848,6 +3015,12 @@
     updateMentionMenu();
   });
   prompt.addEventListener("keydown", event => {
+    // Ctrl+Enter 도 Shift+Enter 와 같이 줄바꿈. 브라우저 기본 동작이 없어 직접 삽입하고, 드롭다운 Enter 처리보다 먼저 가로챈다.
+    if (event.key === "Enter" && event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing) {
+      event.preventDefault();
+      insertComposerNewline();
+      return;
+    }
     if (!mentionMenu.hidden) {
       if (event.key === "Escape") { event.preventDefault(); dismissMentionMenu(); return; }
       if (mentionItems.length) {
@@ -2870,6 +3043,13 @@
         updateCommandMenu();
         return;
       }
+      // 이름을 정확히 다 친 상태면 드롭다운 선택 대신 바로 전송.
+      if (event.key === "Enter" && !event.isComposing && isExactSlashCommandTyped()) {
+        event.preventDefault();
+        commandMenu.hidden = true;
+        send();
+        return;
+      }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
         selectCommand(commandSelection);
@@ -2883,6 +3063,8 @@
     }
     if (event.key === "Escape" && !controlMenu.hidden) { event.preventDefault(); closeMenus(); prompt.focus(); return; }
     if (event.key === "Escape" && busy) { event.preventDefault(); requestStop(); return; }
+    // 컴포저에서 Tab 은 포커스를 툴바 버튼으로 넘기지 않는다(드롭다운 열림 시 선택 처리는 위에서 끝났다).
+    if (event.key === "Tab") { event.preventDefault(); return; }
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
   });
   prompt.addEventListener("focus", () => {
@@ -2907,6 +3089,13 @@
       void postRequest("openLink", { url: link.href }).catch(error => {
         showStatusToast({ label: "링크", value: error?.message || "링크 열기 실패", kind: "error", accent: "var(--danger)" });
       });
+      return;
+    }
+    const turnCopy = event.target.closest(".copy-turn");
+    if (turnCopy) {
+      post({ type: "copy", text: turnCopy.dataset.text || "" });
+      turnCopy.classList.add("copied");
+      setTimeout(() => turnCopy.classList.remove("copied"), 1200);
       return;
     }
     const button = event.target.closest(".copy-code");

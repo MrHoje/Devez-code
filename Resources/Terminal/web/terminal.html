@@ -2237,9 +2237,6 @@
       if (key === 'n' || key === 'N') { e.preventDefault(); post({ type:'action', name:'renameSession' }); return false; }
       if (key === 'Delete' || e.code === 'Delete') { e.preventDefault(); post({ type:'action', name:'deleteSession' }); return false; }
     }
-    if (ctrl && !alt && key === 'Tab') {
-      e.preventDefault(); post({ type:'action', name: shift ? 'prevSession' : 'nextSession' }); return false;
-    }
     // Ctrl+1..9 (Alt 유무 무관, 상시): N번째 세션 직접 이동 (9 = 마지막) — WT switchToTab 정합.
     // 레이아웃 비의존을 위해 물리 키(e.code=Digit1..9) 기준. (AltGr 입력은 위에서 이미 통과)
     if (ctrl && !shift && /^Digit[1-9]$/.test(e.code)) {

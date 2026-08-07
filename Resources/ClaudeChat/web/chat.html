@@ -59,32 +59,35 @@
       <div class="composer">
         <div id="attachment-strip" class="attachment-strip" aria-label="첨부 파일" hidden></div>
         <div id="attachment-error" class="attachment-error" role="status" aria-live="polite" hidden></div>
-        <textarea id="prompt" rows="1" aria-label="Claude에게 요청하기" spellcheck="false"></textarea>
+        <div class="prompt-field">
+          <div id="prompt-highlight" class="prompt-highlight" aria-hidden="true"></div>
+          <textarea id="prompt" rows="1" aria-label="Claude에게 요청하기" spellcheck="false"></textarea>
+        </div>
         <div class="composer-toolbar">
-          <button id="attach-control" class="composer-control attachment-control" type="button" aria-label="사진 또는 파일 첨부">
+          <button id="attach-control" tabindex="-1" class="composer-control attachment-control" type="button" aria-label="사진 또는 파일 첨부">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           </button>
-          <button id="permission-control" class="composer-control" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="권한 모드 변경">
+          <button id="permission-control" tabindex="-1" class="composer-control" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="권한 모드 변경">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.9 8 7 10 4.1-2 7-5.4 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
             <span id="permission-label">Accept edits</span>
           </button>
-          <button id="vibe-control" class="composer-control vibe-control" type="button" aria-pressed="true" aria-label="Vibe On">
+          <button id="vibe-control" tabindex="-1" class="composer-control vibe-control" type="button" aria-pressed="true" aria-label="Vibe On">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3-1.91 5.81a2 2 0 0 1-1.28 1.28L3 12l5.81 1.91a2 2 0 0 1 1.28 1.28L12 21l1.91-5.81a2 2 0 0 1 1.28-1.28L21 12l-5.81-1.91a2 2 0 0 1-1.28-1.28z"/><path d="M5 3v4M3 5h4M19 17v4M17 19h4"/></svg>
             <span id="vibe-label">Vibe On</span>
           </button>
           <span class="toolbar-spacer"></span>
-          <button id="model-control" class="composer-control" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="모델 변경">
+          <button id="model-control" tabindex="-1" class="composer-control" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="모델 변경">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 7.2 12 11.4l7.5-4.2L12 3Z"/><path d="m4.5 12 7.5 4.2 7.5-4.2M4.5 16.8 12 21l7.5-4.2"/></svg>
             <span id="model-label">Model</span>
           </button>
-          <button id="effort-control" class="composer-control effort-control" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Effort 변경">
+          <button id="effort-control" tabindex="-1" class="composer-control effort-control" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Effort 변경">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16a7 7 0 1 1 14 0"/><path d="m12 16 3-4"/><path d="M8 19h8"/></svg>
             <span id="effort-label">High</span>
           </button>
           <div id="context-control" class="composer-control context-control" role="status" aria-label="Context 사용량 0k/1000k">
             <span id="context-label">0k/1000k</span>
           </div>
-          <button id="action" class="action" type="button" aria-label="보내기">
+          <button id="action" tabindex="-1" class="action" type="button" aria-label="보내기">
             <svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
             <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.75"/></svg>
           </button>
