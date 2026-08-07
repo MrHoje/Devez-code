@@ -135,7 +135,9 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
             if (_disposed) return;
             await _webView.EnsureCoreWebView2Async(environment);
 
-            _webView.AllowExternalDrop = false;
+            // 이미지 드래그·드롭 첨부용 — 페이지가 Files 드래그를 preventDefault 로 가로채므로
+            // 파일 드롭으로 인한 원치 않는 내비게이션은 발생하지 않는다.
+            _webView.AllowExternalDrop = true;
             _webView.ZoomFactor = SettingsService.LoadClaudeGuiZoomFactor();
             var core = _webView.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = false;
@@ -239,6 +241,23 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                     break;
                 case "pickAttachments":
                     await PickAttachmentsAsync();
+                    break;
+                case "searchFiles":
+                    var fileQuery = root.TryGetProperty("query", out var fileQueryValue)
+                        ? fileQueryValue.GetString() ?? ""
+                        : "";
+                    var limit = root.TryGetProperty("limit", out var limitValue) && limitValue.TryGetInt32(out var parsedLimit)
+                        ? Math.Clamp(parsedLimit, 1, 60)
+                        : 24;
+                    var matches = await ProjectFileIndex.SearchAsync(_cwd, fileQuery, limit);
+                    PostJson(new
+                    {
+                        type = "commandResult",
+                        clientRequestId,
+                        success = true,
+                        message = "",
+                        items = matches,
+                    });
                     break;
                 case "stop":
                     if (_session == null) ReplyRequest(clientRequestId, false, "활성 Claude 세션이 없습니다.");

@@ -20,6 +20,7 @@
   const statusToastValue = document.getElementById("status-toast-value");
   const statusAnnouncer = document.getElementById("status-announcer");
   const commandMenu = document.getElementById("command-menu");
+  const mentionMenu = document.getElementById("mention-menu");
   const controlMenu = document.getElementById("control-menu");
   const composerShell = document.querySelector(".composer-shell");
   const modelControl = document.getElementById("model-control");
@@ -49,6 +50,11 @@
   let currentContextWindow = 1_000_000;
   let commandSelection = 0;
   let visibleCommands = [];
+  let mentionItems = [];
+  let mentionSelection = 0;
+  let mentionSequence = 0;
+  let mentionTimer = 0;
+  let mentionDismissedAt = -1;
   let openControl = "";
   let attachments = [];
   let attachmentErrorTimer = 0;
@@ -246,9 +252,13 @@
         image.alt = item.name;
         card.appendChild(image);
       } else card.appendChild(fileIcon());
-      const name = document.createElement("span");
-      name.className = "attachment-name";
-      name.textContent = item.name;
+      // 이미지는 썸네일만 보여준다 — 파일명은 카드 툴팁으로만 확인(아이콘뿐인 일반 파일은 이름 필요).
+      let name = null;
+      if (item.kind !== "image") {
+        name = document.createElement("span");
+        name.className = "attachment-name";
+        name.textContent = item.name;
+      }
       const remove = document.createElement("button");
       remove.className = "attachment-remove";
       remove.type = "button";
@@ -260,7 +270,8 @@
         renderAttachments();
         prompt.focus();
       });
-      card.append(name, remove);
+      if (name) card.append(name);
+      card.append(remove);
       attachmentStrip.appendChild(card);
     }
     attachmentStrip.hidden = attachments.length === 0;
@@ -1975,6 +1986,7 @@
 
   function closeMenus() {
     commandMenu.hidden = true;
+    hideMentionMenu();
     controlMenu.hidden = true;
     openControl = "";
     delete controlMenu.dataset.control;
@@ -2127,6 +2139,150 @@
     commandSelection = 0;
     resizePrompt();
     prompt.focus();
+  }
+
+  function mentionRange() {
+    const cursor = prompt.selectionStart ?? prompt.value.length;
+    if (cursor !== (prompt.selectionEnd ?? cursor)) return null;
+    const before = prompt.value.slice(0, cursor);
+    for (let at = before.lastIndexOf("@"); at >= 0; at = at === 0 ? -1 : before.lastIndexOf("@", at - 1)) {
+      if (at > 0 && !/[\s([{<,]/.test(before[at - 1])) continue;
+      const query = before.slice(at + 1);
+      if (/[\s\n\r\t"'@]/.test(query)) continue;
+      return { start: at, end: cursor, query };
+    }
+    return null;
+  }
+
+  function hideMentionMenu() {
+    clearTimeout(mentionTimer);
+    mentionTimer = 0;
+    mentionSequence += 1;
+    mentionItems = [];
+    mentionSelection = 0;
+    mentionMenu.hidden = true;
+  }
+
+  function dismissMentionMenu() {
+    const range = mentionRange();
+    mentionDismissedAt = range ? range.start : -1;
+    hideMentionMenu();
+  }
+
+  function mentionHeading() {
+    const heading = document.createElement("div");
+    heading.className = "menu-heading";
+    const label = document.createElement("span");
+    label.textContent = "프로젝트 파일";
+    heading.appendChild(label);
+    return heading;
+  }
+
+  function renderMentionPlaceholder(text) {
+    mentionMenu.replaceChildren();
+    mentionMenu.appendChild(mentionHeading());
+    const empty = document.createElement("div");
+    empty.className = "menu-empty";
+    empty.textContent = text;
+    mentionMenu.appendChild(empty);
+    mentionMenu.hidden = false;
+  }
+
+  function mentionNameNode(name, query) {
+    const node = document.createElement("span");
+    node.className = "mention-name";
+    const needle = String(query || "").split("/").pop().toLowerCase();
+    const index = needle ? name.toLowerCase().indexOf(needle) : -1;
+    if (index < 0) { node.textContent = name; return node; }
+    const mark = document.createElement("mark");
+    mark.textContent = name.slice(index, index + needle.length);
+    node.append(name.slice(0, index), mark, name.slice(index + needle.length));
+    return node;
+  }
+
+  function renderMentionMenu(query) {
+    if (!mentionItems.length) { renderMentionPlaceholder("일치하는 파일이 없습니다"); return; }
+    mentionSelection = Math.min(Math.max(mentionSelection, 0), mentionItems.length - 1);
+    mentionMenu.replaceChildren();
+    mentionMenu.appendChild(mentionHeading());
+    mentionItems.forEach((item, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "menu-item mention-item";
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(index === mentionSelection));
+      button.dataset.index = String(index);
+      button.dataset.directory = String(!!item.isDirectory);
+      const icon = document.createElement("span");
+      icon.className = "mention-icon";
+      icon.innerHTML = item.isDirectory
+        ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`
+        : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`;
+      const copy = document.createElement("span");
+      copy.className = "menu-copy";
+      copy.appendChild(mentionNameNode(String(item.name || ""), query));
+      const dir = String(item.dir || "");
+      if (dir) {
+        const path = document.createElement("span");
+        path.className = "mention-path";
+        path.textContent = dir;
+        copy.appendChild(path);
+      }
+      button.append(icon, copy);
+      mentionMenu.appendChild(button);
+    });
+    mentionMenu.hidden = false;
+    mentionMenu.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  }
+
+  function updateMentionMenu() {
+    if (openControl) { hideMentionMenu(); return; }
+    const range = mentionRange();
+    if (!range) {
+      mentionDismissedAt = -1;
+      hideMentionMenu();
+      return;
+    }
+    if (mentionDismissedAt === range.start) return;
+    commandMenu.hidden = true;
+    const query = range.query;
+    clearTimeout(mentionTimer);
+    const token = ++mentionSequence;
+    if (mentionMenu.hidden || !mentionItems.length) renderMentionPlaceholder("파일을 찾는 중…");
+    mentionTimer = setTimeout(() => {
+      postRequest("searchFiles", { query, limit: 24 }, 10000).then(reply => {
+        if (token !== mentionSequence) return;
+        const current = mentionRange();
+        if (!current || current.query !== query) return;
+        mentionItems = Array.isArray(reply.items) ? reply.items : [];
+        mentionSelection = 0;
+        renderMentionMenu(query);
+      }).catch(() => {
+        if (token !== mentionSequence) return;
+        mentionItems = [];
+        renderMentionPlaceholder("파일 목록을 불러오지 못했습니다");
+      });
+    }, 70);
+  }
+
+  function selectMention(index) {
+    const item = mentionItems[index];
+    const range = mentionRange();
+    if (!item || !range) return;
+    const path = String(item.path || "");
+    if (!path) return;
+    const replacement = item.isDirectory ? `@${path}/` : `@${path} `;
+    prompt.setRangeText(replacement, range.start, range.end, "end");
+    storeComposerDraft();
+    resizePrompt();
+    prompt.focus();
+    if (item.isDirectory) {
+      mentionItems = [];
+      mentionSelection = 0;
+      updateMentionMenu();
+      return;
+    }
+    hideMentionMenu();
   }
 
   function openControlMenu(type, refreshOpen = false) {
@@ -2640,7 +2796,13 @@
     const button = event.target.closest(".menu-item[data-index]");
     if (button) selectCommand(Number(button.dataset.index));
   });
-  prompt.addEventListener("input", () => { storeComposerDraft(); resizePrompt(); commandSelection = 0; updateCommandMenu(); });
+  mentionMenu.addEventListener("pointerdown", event => event.preventDefault());
+  mentionMenu.addEventListener("click", event => {
+    const button = event.target.closest(".menu-item[data-index]");
+    if (button) selectMention(Number(button.dataset.index));
+  });
+  prompt.addEventListener("input", () => { storeComposerDraft(); resizePrompt(); commandSelection = 0; updateCommandMenu(); updateMentionMenu(); });
+  prompt.addEventListener("click", () => { updateCommandMenu(); updateMentionMenu(); });
   prompt.addEventListener("paste", event => {
     const images = [...(event.clipboardData?.items || [])]
       .filter(item => item.kind === "file" && item.type.startsWith("image/"))
@@ -2650,9 +2812,25 @@
     void addImageFiles(images);
   });
   prompt.addEventListener("keyup", event => {
-    if (!["ArrowUp", "ArrowDown", "Enter", "Tab", "Escape"].includes(event.key)) updateCommandMenu();
+    if (["ArrowUp", "ArrowDown", "Enter", "Tab", "Escape"].includes(event.key)) return;
+    updateCommandMenu();
+    updateMentionMenu();
   });
   prompt.addEventListener("keydown", event => {
+    if (!mentionMenu.hidden) {
+      if (event.key === "Escape") { event.preventDefault(); dismissMentionMenu(); return; }
+      if (mentionItems.length) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          mentionSelection = (mentionSelection + step + mentionItems.length) % mentionItems.length;
+          renderMentionMenu(mentionRange()?.query || "");
+          return;
+        }
+        if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); selectMention(mentionSelection); return; }
+        if (event.key === "Tab") { event.preventDefault(); selectMention(mentionSelection); return; }
+      }
+    }
     if (!commandMenu.hidden && visibleCommands.length) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -2681,6 +2859,7 @@
     post({ type: "composerFocus", focused: true });
     post({ type: "interact" });
     updateCommandMenu();
+    updateMentionMenu();
   });
   prompt.addEventListener("blur", () => post({ type: "composerFocus", focused: false }));
   document.addEventListener("keydown", blockComposerHanja, true);
@@ -2708,6 +2887,7 @@
   });
   document.addEventListener("pointerdown", event => {
     if (!commandMenu.hidden && !commandMenu.contains(event.target)) commandMenu.hidden = true;
+    if (!mentionMenu.hidden && !mentionMenu.contains(event.target) && event.target !== prompt) hideMentionMenu();
     if (!controlMenu.hidden && !controlMenu.contains(event.target)
         && !modelControl.contains(event.target) && !effortControl.contains(event.target)
         && !permissionControl.contains(event.target)) closeMenus();
