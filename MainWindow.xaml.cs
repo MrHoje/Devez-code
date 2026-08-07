@@ -4616,8 +4616,19 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>dvz 방의 프롬프트가 비어 있으면 lastmsg 파일에서 직접 채운다.
+    /// 감시 이벤트가 누락된 방(앱 시작 레이스 등)에서 카드가 내용 없이 발행되던 것을 막는다.</summary>
+    private static void BackfillDevezVibeLastMessage(SessionItem s)
+    {
+        if (!string.IsNullOrWhiteSpace(s.LastMessage)) return;
+        if (!string.Equals(s.AgentId, "devezvibe", StringComparison.OrdinalIgnoreCase)) return;
+        var msg = DevezVibeStateService.LoadLastMessage(s.Id);
+        if (!string.IsNullOrWhiteSpace(msg)) s.LastMessage = msg!.Trim();
+    }
+
     private void AddSessionCompletionRecord(SessionItem s)
     {
+        BackfillDevezVibeLastMessage(s);
         var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
         var projName = proj?.Name ?? "";
         var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
@@ -4729,7 +4740,10 @@ public partial class MainWindow : Window
         foreach (var p in _projects)
             foreach (var t in p.Tabs.OfType<SessionItem>())
                 if (t.IsWaitingChoice && !_waitingSessions.Contains(t))
+                {
+                    BackfillDevezVibeLastMessage(t);
                     _waitingSessions.Insert(0, t);
+                }
 
         bool any = _waitingSessions.Count > 0;
         WaitingCardsHost.Visibility = any ? Visibility.Visible : Visibility.Collapsed;

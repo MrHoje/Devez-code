@@ -408,7 +408,8 @@
                                                             </TextBlock.RenderTransform>
                                                         </TextBlock>
                                                         <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
-                                                                   Text="{Binding LastMessage}" Margin="0,5,0,0"
+                                                                   Text="{Binding LastMessage}"
+                                                                   Visibility="{Binding LastMessageVisibility}" Margin="0,5,0,0"
                                                                    FontSize="{DynamicResource Fs12}"
                                                                    Foreground="{DynamicResource TextMutedBrush}">
                                                             <TextBlock.Style>

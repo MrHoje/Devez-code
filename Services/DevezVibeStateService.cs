@@ -66,6 +66,10 @@ public sealed class DevezVibeStateService : IDisposable
             ? sid.Substring("claude:".Length)
             : sid;
 
+    /// <summary>방의 마지막 프롬프트(dvz 가 쓴 lastmsg). 감시 이벤트를 놓친 방을 카드 발행 직전에 메꾼다.</summary>
+    public static string? LoadLastMessage(string room)
+        => TryRead(Path.Combine(LastmsgDir, Sanitize(room) + ".txt"));
+
     /// <summary>방이 턴 진행 중인지(종료 계획의 Esc 선행 판단용). 인스턴스 없이 파일만 본다.
     /// 압축 중(compacting)도 Esc 로 먼저 끊어야 종료 키가 먹으므로 진행 중으로 본다.</summary>
     public static bool IsBusyRunning(string roomId)

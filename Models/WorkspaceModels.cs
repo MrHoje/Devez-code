@@ -176,7 +176,19 @@ public sealed class SessionItem : TabItemBase
 
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";
-    public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
+    public string LastMessage
+    {
+        get => _lastMessage;
+        set { if (Set(ref _lastMessage, value)) OnPropertyChanged(nameof(LastMessageVisibility)); }
+    }
+
+    /// <summary>프롬프트가 아직 없으면(세션 시작 직후 승인/질문 대기 등) 카드의 내용 줄을 접는다.
+    /// 완료기록 카드(SessionCompletionRecord)와 같은 규칙 — 빈 줄이 남지 않게.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public System.Windows.Visibility LastMessageVisibility
+        => string.IsNullOrWhiteSpace(LastMessage)
+            ? System.Windows.Visibility.Collapsed
+            : System.Windows.Visibility.Visible;
 
     /// <summary>Claude GUI composer의 전송 전 초안. 탭 전환 동안만 유지하며 workspace.json에는 저장하지 않는다.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
