@@ -307,12 +307,19 @@
       const height = bitmap.height;
       if (!width || !height || width > maxImageDimension || height > maxImageDimension)
         throw new Error(`이미지는 ${maxImageDimension}×${maxImageDimension}px 이하여야 합니다.`);
-      const scale = Math.min(1, 180 / Math.max(width, height));
+      // 말풍선 이미지는 최대 220px 높이 + 고DPI·확대까지 감안해 넉넉한 원본 크기로 미리보기를 만든다.
+      const target = Math.round(320 * Math.min(3, Math.max(2, window.devicePixelRatio || 1)));
+      const scale = Math.min(1, target / Math.max(width, height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.round(width * scale));
       canvas.height = Math.max(1, Math.round(height * scale));
-      canvas.getContext("2d", { alpha: true })?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      return { width, height, preview: canvas.toDataURL("image/webp", .82) || dataUrl };
+      const context = canvas.getContext("2d", { alpha: true });
+      if (context) {
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      }
+      return { width, height, preview: canvas.toDataURL("image/webp", .92) || dataUrl };
     } finally { bitmap.close?.(); }
   }
 
