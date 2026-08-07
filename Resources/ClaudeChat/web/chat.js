@@ -74,6 +74,7 @@
   let historyStartIndex = 0;
   const historyBatchTurns = 60;
   const composerDrafts = new Map();
+  const scrollPositions = new Map();
   const composerAttachments = new Map();
   const pendingHostRequests = new Map();
   let shortcutHintShown = false;
@@ -2564,7 +2565,7 @@
 
   function loadSession(message) {
     const nextRoomId = message.roomId || "";
-    if (roomId) storeComposerDraft();
+    if (roomId) { storeComposerDraft(); storeScrollPosition(); }
     const nextDraft = composerDrafts.has(nextRoomId)
       ? composerDrafts.get(nextRoomId)
       : String(message.draft || "");
@@ -2600,7 +2601,10 @@
     clearInterruptWatchdog();
     setStatus("Claude SDK를 준비하는 중…");
     sessionEvents = Array.isArray(message.events) ? message.events : [];
-    historyStartIndex = historyBatchStart(sessionEvents);
+    const saved = scrollPositions.get(roomId);
+    // 이전 인덱스는 뒤에 이벤트가 붙기만 했을 때만 유효(리셋/압축되면 재계산)
+    const reuseSaved = saved && sessionEvents.length >= saved.eventCount && saved.startIndex < sessionEvents.length;
+    historyStartIndex = reuseSaved ? saved.startIndex : historyBatchStart(sessionEvents);
     renderSessionHistory();
     setBusy(message.busy === true);
     if (message.busy) startWorkingTimer(message.workingStartedAt);
@@ -2616,7 +2620,11 @@
     resizePrompt();
     updateEmpty();
     requestAnimationFrame(() => {
-      conversation.scrollTop = conversation.scrollHeight;
+      const keepTop = reuseSaved && !saved.atBottom
+        ? Math.min(saved.scrollTop, Math.max(0, conversation.scrollHeight - conversation.clientHeight))
+        : -1;
+      conversation.scrollTop = keepTop >= 0 ? keepTop : conversation.scrollHeight;
+      nearBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 120;
       updateScrollBoundary();
     });
     post({ type: "refreshCapabilities" });
@@ -2659,6 +2667,16 @@
     if (!roomId) return;
     composerDrafts.set(roomId, prompt.value);
     post({ type: "draftChanged", roomId, text: prompt.value });
+  }
+
+  function storeScrollPosition() {
+    if (!roomId) return;
+    scrollPositions.set(roomId, {
+      scrollTop: conversation.scrollTop,
+      atBottom: conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 120,
+      startIndex: historyStartIndex,
+      eventCount: sessionEvents.length
+    });
   }
 
   function restoreFailedSend(targetRoomId, text, attached, message) {

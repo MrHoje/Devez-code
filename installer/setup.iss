@@ -1,5 +1,5 @@
 #define AppName     "DevezCode"
-#define AppVersion  "1.23.3"
+#define AppVersion  "1.23.4"
 #define AppExeName  "DevezCode.exe"
 #define AppPublisher "Devez"
 
