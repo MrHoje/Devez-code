@@ -75,6 +75,9 @@ public static class ClaudeTranscriptSnapshotParser
     public static ClaudeTranscriptSnapshot ParseLines(IEnumerable<string> lines)
     {
         var turns = new List<ClaudeTranscriptTurn>();
+        // 한 턴(사용자 프롬프트 사이)에서 마지막 assistant 텍스트만 남긴다. 툴 호출 직전 narration 은
+        // 툴 카드가 복원되지 않는 이 화면에서 최종 답변 위에 붙어 답변 일부처럼 읽히기 때문.
+        var lastAssistantIndex = -1;
         string? model = null;
         string? effort = null;
         string? permissionMode = null;
@@ -124,7 +127,14 @@ public static class ClaudeTranscriptSnapshotParser
                 var text = ExtractContentText(message);
                 if (type == "user" && IsInternalCommandEnvelope(text)) continue;
                 text = StripRequestInterruptedMarker(text);
-                if (!string.IsNullOrWhiteSpace(text)) turns.Add(new ClaudeTranscriptTurn(type, text));
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                if (type == "assistant" && lastAssistantIndex >= 0)
+                {
+                    turns[lastAssistantIndex] = new ClaudeTranscriptTurn(type, text);
+                    continue;
+                }
+                turns.Add(new ClaudeTranscriptTurn(type, text));
+                lastAssistantIndex = type == "assistant" ? turns.Count - 1 : -1;
             }
             catch (Exception ex) when (ex is JsonException or InvalidOperationException or OverflowException) { }
         }

@@ -44,6 +44,20 @@ var interruptedClaude = ClaudeTranscriptSnapshotParser.ParseLines(new[]
 Check(interruptedClaude.Turns.Count == 1
       && interruptedClaude.Turns[0].Text == "partial answer",
     "Claude interruption marker hidden while partial answer remains");
+var narrationClaude = ClaudeTranscriptSnapshotParser.ParseLines(new[]
+{
+    """{"type":"user","message":{"content":[{"type":"text","text":"first ask"}]}}""",
+    """{"type":"assistant","message":{"content":[{"type":"text","text":"코드 확인 시작."}]}}""",
+    """{"type":"user","message":{"content":[{"type":"tool_result","content":"file body"}]}}""",
+    """{"type":"assistant","message":{"content":[{"type":"text","text":"이제 편집."}]}}""",
+    """{"type":"assistant","message":{"content":[{"type":"text","text":"최종 답변"}]}}""",
+    """{"type":"user","message":{"content":[{"type":"text","text":"second ask"}]}}""",
+    """{"type":"assistant","message":{"content":[{"type":"text","text":"두 번째 답변"}]}}""",
+});
+Check(narrationClaude.Turns.Count == 4
+      && narrationClaude.Turns[1] == new ClaudeTranscriptTurn("assistant", "최종 답변")
+      && narrationClaude.Turns[3] == new ClaudeTranscriptTurn("assistant", "두 번째 답변"),
+    "Claude restore keeps only the last assistant text per turn");
 var legacyRuntime = ModelEffortService.ParsePersistedContent("claude-sonnet-5\nhigh");
 Check(legacyRuntime.Model == "claude-sonnet-5" && legacyRuntime.ContextTokens == null,
     "Claude legacy runtime state compatibility");
