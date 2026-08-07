@@ -30,8 +30,8 @@ public sealed class DevezVibeStateService : IDisposable
     /// <summary>(roomId, message) — 마지막 user prompt (1줄 요약, 200자).</summary>
     public event Action<string, string>? MessageChanged;
     /// <summary>(roomId, busy, loading, compacting) — busy=true 면 턴 진행 중, loading=true 면 resume 복원 중,
-    /// compacting=true 면 컨텍스트 압축 중. 셋 다 스피너를 켜지만 완료기록은 busy(=턴)만 대상이다 —
-    /// 압축·복원은 프롬프트 응답이 아니라서 카드가 찍히면 안 된다.</summary>
+    /// compacting=true 면 컨텍스트 압축 중. 스피너는 busy·compacting 만 켠다 — 복원은 로딩 커버가
+    /// 표시한다. 완료기록은 busy(=턴)만 대상이다 — 압축·복원은 프롬프트 응답이 아니라서 카드가 찍히면 안 된다.</summary>
     public event Action<string, bool, bool, bool>? BusyChanged;
     /// <summary>(roomId, waiting) — 승인/질문/MCP 응답 대기 중(❗).</summary>
     public event Action<string, bool>? WaitingChoiceChanged;
