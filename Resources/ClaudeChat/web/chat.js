@@ -112,6 +112,8 @@
     "model", "reload-plugins", "reload-skills", "rename", "usage", "usage-credits",
   ]);
   const toastSlashCommands = new Set(["color", "effort", "fast", "model", "permission", "reload-plugins", "reload-skills", "rename"]);
+  // 대화를 비우는 명령은 출력 카드를 남기지 않고 첫 진입 화면(empty-state)을 그대로 보여준다.
+  const silentSlashCommands = new Set(["clear", "reset", "new"]);
   const builtInSlashDescriptions = {
     clear: "새 대화를 시작합니다",
     compact: "대화를 요약해 컨텍스트를 확보합니다",
@@ -1643,6 +1645,10 @@
     let kind = event.input?.kind || "information";
     if (pendingLocalCommand && kind === "information") kind = "command";
     const command = String(pendingLocalCommand || inferStateCommand(text)).toLowerCase();
+    if (kind === "command" && (silentSlashCommands.has(command) || /^\(no content\)$/i.test(text))) {
+      pendingLocalCommand = "";
+      return null;
+    }
     if (kind === "command" && toastSlashCommands.has(command)) {
       if (live) showStatusToast(statusToastDetails(command, text, event.input?.args || "", event.input?.level === "error"));
       pendingLocalCommand = "";
