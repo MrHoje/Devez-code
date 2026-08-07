@@ -102,9 +102,9 @@
   ]);
   const quietSlashCommands = new Set([
     "clear", "color", "compact", "config", "context", "effort", "fast", "mcp",
-    "model", "reload-skills", "rename", "usage", "usage-credits",
+    "model", "reload-plugins", "reload-skills", "rename", "usage", "usage-credits",
   ]);
-  const toastSlashCommands = new Set(["color", "effort", "fast", "model", "permission", "reload-skills", "rename"]);
+  const toastSlashCommands = new Set(["color", "effort", "fast", "model", "permission", "reload-plugins", "reload-skills", "rename"]);
   const builtInSlashDescriptions = {
     clear: "새 대화를 시작합니다",
     compact: "대화를 요약해 컨텍스트를 확보합니다",
@@ -113,6 +113,7 @@
     fast: "빠른 응답 모드를 켜거나 끕니다",
     init: "프로젝트용 CLAUDE.md를 만듭니다",
     mcp: "MCP 서버를 관리합니다",
+    "reload-plugins": "변경된 Plugin을 다시 불러옵니다",
     "reload-skills": "변경된 Skill을 다시 불러옵니다",
     review: "GitHub PR을 검토합니다",
     "security-review": "현재 변경사항의 보안을 검토합니다",
@@ -1550,6 +1551,8 @@
     }
     if (command === "reload-skills")
       return { label: "Skill", value: "다시 불러옴", kind: "success", accent: statusPalette.medium || statusPalette.plan };
+    if (command === "reload-plugins")
+      return { label: "Plugin", value: "다시 불러옴", kind: "success", accent: statusPalette.medium || statusPalette.plan };
     if (command === "rename")
       return { label: "Session", value: "이름 변경됨", kind: "success", accent: statusPalette.plan };
     if (command === "color")

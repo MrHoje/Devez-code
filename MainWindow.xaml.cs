@@ -6291,14 +6291,26 @@ public partial class MainWindow : Window
         // 터미널·웹 콘텐츠(WebView2 HWND)를 숨긴다 — 같은 창 안의 오버레이는 airspace 때문에
         // 라이브 HWND 를 가릴 수 없으므로 반드시 선행돼야 한다.
         await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
-
-        var view = new Views.SettingsDialog();
-        view.CloseRequested += (_, _) => CloseSettingsOverlay();
-        SettingsHost.Children.Add(view);
-        SettingsHost.Visibility = Visibility.Visible;
-        _settingsView = view;
-        ApplyTitleBarForSettings(true);
-        SettingsHost.Focus();   // ESC 로 닫기
+        try
+        {
+            var view = new Views.SettingsDialog();
+            view.CloseRequested += (_, _) => CloseSettingsOverlay();
+            SettingsHost.Children.Add(view);
+            SettingsHost.Visibility = Visibility.Visible;
+            _settingsView = view;
+            ApplyTitleBarForSettings(true);
+            SettingsHost.Focus();   // ESC 로 닫기
+        }
+        catch (Exception ex)
+        {
+            // PC별 리소스·설정 초기화 실패가 터미널을 숨긴 채 남지 않도록 즉시 복구한다.
+            DiagLog.Write($"Settings overlay open failed: {ex}");
+            SettingsHost.Children.Clear();
+            SettingsHost.Visibility = Visibility.Collapsed;
+            ResumeTerminal();
+            ScheduleTerminalFocusRestore();
+            ConfirmDialog.Alert("설정 열기 실패", "설정 화면을 열지 못했습니다. diag.log를 확인하세요.");
+        }
     }
 
     /// <summary>설정 화면 중 상단바 정리 — 앱 이름과 창 컨트롤만 남기고 닫기 버튼은 비활성화하며

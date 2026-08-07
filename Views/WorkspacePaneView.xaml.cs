@@ -4818,7 +4818,12 @@ public partial class WorkspacePaneView : UserControl
                 tcs.TrySetResult(true);
             };
             System.Windows.Media.CompositionTarget.Rendering += h;
-            await tcs.Task;
+            if (await Task.WhenAny(tcs.Task, Task.Delay(500)) != tcs.Task)
+            {
+                // 렌더링 이벤트가 멈춘 환경에서도 설정/종료 오버레이가 계속 열리게 한다.
+                System.Windows.Media.CompositionTarget.Rendering -= h;
+                DiagLog.Write("Composition render frame wait timed out.");
+            }
         }
     }
 

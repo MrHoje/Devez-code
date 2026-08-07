@@ -383,7 +383,7 @@ body[data-vibe="on"] .task-sheet { display: none; }
 .attachment-error[hidden] { display: none; }
 #prompt { display: block; width: 100%; min-height: 52px; max-height: 147px; padding: 13px 14px 7px; resize: none; overflow-y: hidden; color: var(--text); caret-color: var(--text); background: transparent; border: 0; outline: 0; font-size: 15px; line-height: 1.55; cursor: text; }
 #prompt::placeholder { color: color-mix(in srgb, var(--muted) 82%, transparent); opacity: 1; }
-.composer-toolbar { display: flex; align-items: center; min-height: 43px; gap: 4px; padding: 4px 6px 6px; }
+.composer-toolbar { display: flex; align-items: center; min-height: 43px; gap: 4px; padding: 4px 9px 6px 6px; }
 .composer-control { display: inline-flex; align-items: center; min-width: 0; max-width: 210px; height: 34px; gap: 5px; padding: 0 7px; color: var(--muted); background: transparent; border: 0; border-radius: 7px; font-size: 13px; font-weight: 500; transition: color 120ms ease, background-color 120ms ease, transform 120ms cubic-bezier(.23,1,.32,1); }
 .effort-control { max-width: 128px; }
 .vibe-control { max-width: 122px; }

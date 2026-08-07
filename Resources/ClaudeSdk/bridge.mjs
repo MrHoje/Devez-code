@@ -58,6 +58,9 @@ const SHUTDOWN_GUARD_MS = 6000;
 const INTERRUPT_WAIT_MS = 1500;
 const MAX_IMAGE_BASE64_LENGTH = 10 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BASE64_LENGTH = 28 * 1024 * 1024;
+const REQUIRED_SLASH_COMMANDS = [
+  { name: "reload-plugins", description: "변경된 Plugin을 다시 불러옵니다" },
+];
 const DEVEZCODE_GUI_INSTRUCTIONS = [
   "DevezCode GUI 응답 규칙:",
   "- 서론이나 인사 없이 결론부터 답한다.",
@@ -72,6 +75,39 @@ const DEVEZCODE_GUI_INSTRUCTIONS = [
   "- 동시에 진행 중인 단계는 하나만 두고, 착수할 때 in_progress로 바꾸며 끝나는 즉시 completed로 갱신한다.",
   "- 계획 도구가 제공되지 않은 환경에서는 존재하지 않는 도구를 호출하거나 계획용 표식을 일반 답변에 출력하지 않는다.",
 ].join("\n");
+
+function withRequiredSlashCommands(values) {
+  const commands = Array.isArray(values) ? [...values] : [];
+  const names = new Set(commands
+    .map((command) => String(command?.name || "").trim().toLowerCase())
+    .filter(Boolean));
+  for (const command of REQUIRED_SLASH_COMMANDS) {
+    if (!names.has(command.name)) {
+      commands.push(command);
+      names.add(command.name);
+    }
+  }
+  return commands;
+}
+
+function isReloadPluginsCommand(text) {
+  return String(text || "").trim().toLowerCase() === "/reload-plugins";
+}
+
+async function reloadPlugins() {
+  if (!conversation) {
+    write({ type: "result", text: "Claude SDK 연결이 준비되지 않았습니다.", isError: true });
+    return;
+  }
+  try {
+    await conversation.reloadPlugins();
+    await publishCapabilities();
+    write({ type: "system_output", text: "Plugin을 다시 불러왔습니다.", input: { kind: "command" } });
+    write({ type: "result" });
+  } catch (error) {
+    write({ type: "result", text: error?.message ?? String(error), isError: true });
+  }
+}
 
 async function publishCapabilities() {
   if (!conversation) return;
@@ -89,7 +125,7 @@ async function publishCapabilities() {
       modelsPromise,
       conversation.supportedCommands(),
     ]);
-    const commands = Array.isArray(supportedCommands) ? [...supportedCommands] : [];
+    const commands = withRequiredSlashCommands(supportedCommands);
     const commandNames = new Set(commands
       .map((command) => String(command?.name || "").trim().toLowerCase())
       .filter(Boolean));
@@ -381,7 +417,7 @@ function emitSystemEvent(message) {
     return;
   }
   if (subtype === "commands_changed") {
-    const commands = Array.isArray(message.commands) ? message.commands : [];
+    const commands = withRequiredSlashCommands(message.commands);
     const changedNames = new Set(commands
       .map((command) => String(command?.name || "").trim().toLowerCase())
       .filter(Boolean));
@@ -577,6 +613,10 @@ async function handle(command) {
       break;
     case "prompt":
       resultErrorAt = 0;
+      if (isReloadPluginsCommand(command.text)) {
+        await reloadPlugins();
+        break;
+      }
       turnActive = true;
       prompts.push(userMessage(command.text ?? "", command.images, command.files));
       break;

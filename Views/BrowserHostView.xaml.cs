@@ -374,16 +374,28 @@ public partial class BrowserHostView : UserControl
             try
             {
                 using var ms = new MemoryStream();
-                await _view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
-                ms.Position = 0;
-                var bmp = new System.Windows.Media.Imaging.BitmapImage();
-                bmp.BeginInit();
-                bmp.StreamSource = ms;
-                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                bmp.EndInit();
-                bmp.Freeze();
-                BrowserSnapshot.Source = bmp;
-                BrowserSnapshot.Visibility = Visibility.Visible;
+                var capture = _view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+                if (await Task.WhenAny(capture, Task.Delay(1500)) != capture)
+                {
+                    // 일부 WebView2 런타임은 CapturePreviewAsync 를 끝내지 않는다. 오버레이를 막지 않도록
+                    // 스냅샷 없이 즉시 숨기고, 나중에 fault 되더라도 예외는 관찰한다.
+                    _ = capture.ContinueWith(t => _ = t.Exception,
+                        TaskContinuationOptions.OnlyOnFaulted);
+                    DiagLog.Write("Browser snapshot timed out; hiding browser without snapshot.");
+                }
+                else
+                {
+                    await capture;
+                    ms.Position = 0;
+                    var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                    bmp.BeginInit();
+                    bmp.StreamSource = ms;
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    BrowserSnapshot.Source = bmp;
+                    BrowserSnapshot.Visibility = Visibility.Visible;
+                }
             }
             catch { }
         }
