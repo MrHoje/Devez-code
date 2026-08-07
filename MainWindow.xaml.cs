@@ -639,7 +639,7 @@ public partial class MainWindow : Window
                 if (s == null) return;
                 MarkSessionActivity(roomId);
                 bool was = s?.IsBusy ?? false;
-                // 스피너는 돌지만 프롬프트 응답이 아닌 구간(transcript 복원 로딩 · 컨텍스트 압축).
+                // 프롬프트 응답이 아닌 구간(transcript 복원 로딩 · 컨텍스트 압축) — 완료기록 대상이 아니다.
                 bool quiet = loading || compacting;
                 bool wasQuiet = _devezVibeQuietRooms.Contains(roomId);
                 bool wasCompacting = _devezVibeCompactingRooms.Contains(roomId);
@@ -649,7 +649,9 @@ public partial class MainWindow : Window
                 else _devezVibeCompactingRooms.Remove(roomId);
                 if (s != null)
                 {
-                    s.IsBusy = busy || quiet;
+                    // 복원 로딩은 스피너를 켜지 않는다 — 다른 에이전트도 resume 때 조용하고,
+                    // dvz 는 그 구간을 로딩 커버로 이미 표시한다.
+                    s.IsBusy = busy || compacting;
                     if (!busy) s.IsWaitingChoice = false;
                 }
                 // 복원 완료의 loading→idle, /compact 종료의 compacting→idle 은 응답 완료가 아니다.
