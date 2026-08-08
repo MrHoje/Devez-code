@@ -1991,6 +1991,27 @@
       // 우리 좌표를 다시 얹기 위한 태스크 양보. (no-pin 시작분의 교정 경로이기도 함)
       setTimeout(apply, 0);
     });
+
+    // Devez Vibe의 우측 사이드패널은 터미널 전체 폭은 유지한 채 컴포저만 왼쪽 본문 폭으로
+    // 좁힌다. 현재 입력 행의 닫는 테두리를 읽어 실제 컴포저 폭을 구한다. 테두리 왼쪽에는
+    // IME 여백이 항상 비어 있으므로, 사용자가 입력한 같은 문자를 경계로 오인하지 않는다.
+    function devezVibeComposerCols(row, col) {
+      if (agent !== 'devezvibe') return term.cols;
+      try {
+        const buf = term.buffer.active;
+        const line = buf.getLine(buf.viewportY + row);
+        if (!line) return term.cols;
+        for (let x = Math.max(2, col); x < term.cols; x++) {
+          if (line.getCell(x)?.getChars() === '│' &&
+              line.getCell(x - 1)?.getChars() === ' ' &&
+              line.getCell(x - 2)?.getChars() === ' ') {
+            return Math.min(term.cols, x + 2);
+          }
+        }
+      } catch (e) {}
+      return term.cols;
+    }
+
     ta.addEventListener('compositionend', function (e) {
       // [chain 예약 + ghost 갱신] 확정 문자열 폭만큼 전진한 좌표를 예약해, 같은 keydown 에서
       // 곧바로 이어질 다음 음절 조합이 "방금 확정된 글자를 덮지 않게" 한다.
@@ -2002,9 +2023,10 @@
         let committedCaret = frozenImeCaret;
         // Devez Vibe는 화면 하단에 컴포저를 고정한다. 줄이 넘치면 새 행을 화면 아래에
         // 추가하는 대신 기존 줄을 위로 밀고, 현재 입력 행은 같은 화면 행의 col 4부터 다시
-        // 쓴다. 이전의 term.cols 끝/다음 행 좌표는 이 렌더링과 달라 한글 조합이 잠깐 보였다
-        // 사라졌다. dvz 소스의 COMPOSER_IME_RIGHT_GUTTER(4)와 입력 접두사 폭(4)을 반영한다.
-        const devezVibeWrap = agent === 'devezvibe' && nextCol > term.cols - 6;
+        // 쓴다. 사이드패널이 열린 경우에는 전체 터미널 폭이 아니라 실제 컴포저 폭을 기준으로
+        // 줄바꿈을 판단해야 한다. 입력 접두사 폭(4)과 오른쪽 여백(4)을 함께 반영한다.
+        const composerCols = devezVibeComposerCols(frozenImeCaret.row, frozenImeCaret.col);
+        const devezVibeWrap = agent === 'devezvibe' && nextCol > composerCols - 6;
         if (devezVibeWrap) {
           committedCaret = { row: frozenImeCaret.row, col: 4 };
           chainCaret = { row: frozenImeCaret.row, col: 4 + committedWidth, at: Date.now() };
@@ -2015,6 +2037,7 @@
         }
         imeDiag('commit "' + e.data + '" frozen=' + frozenImeCaret.row + ',' + frozenImeCaret.col +
                 ' committed=' + committedCaret.row + ',' + committedCaret.col +
+                ' cols=' + composerCols +
                 ' chain=' + (chainCaret ? chainCaret.row + ',' + chainCaret.col : 'none'));
         if (chainCaret) {
           // 고스트: 직전 고스트가 아직 echo 전이고 이번 확정이 바로 이어지는 위치면 문자열을
@@ -2462,7 +2485,10 @@
     const termOptions = {
       theme: themeFor(agent),
       // 한글 폴백: 기본 모노스페이스 폰트에는 한글 글리프가 없어 IME 조합 표시가 깨진다
-      fontFamily: cfg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",
+      // WebView2/xterm does not inherit Windows Terminal's DirectWrite glyph
+      // fallback. Keep the configured monospace face first, then supply the
+      // Windows symbol and color-emoji faces for terminal UI glyphs.
+      fontFamily: cfg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', 'Segoe UI Symbol', 'Segoe UI Emoji', monospace",
       fontSize: fontSizeOverride || cfg.fontSize,
       cursorBlink: true,
       altClickMovesCursor: false,
@@ -3172,7 +3198,7 @@
         cfg = { theme: msg.theme, fontFamily: msg.fontFamily, fontSize: msg.fontSize, windowsBuild: msg.windowsBuild, enableWebgl: !!msg.enableWebgl };
         document.body.style.background = msg.theme.background || '#0C0C0C';
         // IME 조합 글자(composition-view)가 body 폰트를 상속 — 명시적으로 일치시킴
-        document.body.style.fontFamily = msg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace";
+        document.body.style.fontFamily = msg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', 'Segoe UI Symbol', 'Segoe UI Emoji', monospace";
         document.body.style.fontSize = msg.fontSize + 'px';
         // 조합 글자 위치가 입력 박스를 따라가지 않도록 CSS 변수 설정
         document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
