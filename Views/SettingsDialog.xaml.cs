@@ -101,7 +101,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.23.5", "2026-08-07", true, new[]
+          ("v1.23.6", "2026-08-08", true, new[]
+          {
+              "Devez Vibe 세션의 컴포저와 프롬프트 세로 구분선이 끊겨 보이던 문제를 수정했습니다.",
+          }),
+          ("v1.23.5", "2026-08-07", false, new[]
           {
               "Claude GUI 입력창에서 슬래시 명령어를 색상으로 강조하고, 이름을 정확히 입력하면 Enter로 바로 전송되도록 했습니다.",
               "Claude GUI에 보낸 메시지 복사 버튼을 추가하고, Ctrl+Enter 줄바꿈과 Tab 포커스 동작을 정리했습니다. Ctrl+Tab 세션 전환 단축키는 제거했습니다.",

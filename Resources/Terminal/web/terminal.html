@@ -2543,8 +2543,9 @@
     // WebGL 렌더러(GPU) — 글자 그리기를 CPU(DOM) 대신 GPU 로 올려 활성 탭 렌더 비용을 낮춘다(WT 정합).
     // 원격/소프트웨어 렌더링(enableWebgl=false)에선 SwiftShader 로 오히려 느려져 비활성화한다.
     // GPU 컨텍스트 로스(드라이버 리셋/탭 과다) 시 dispose → xterm 기본 DOM 렌더러로 자동 폴백.
-    // 소수 배율(125/150% 등)에선 WebGL 커서 렌더 버그가 있어 DOM 렌더러를 쓴다(위 disposeWebglIfFractional 참고).
-    if (cfg.enableWebgl && !fractionalDpr(agent) && typeof WebglNS !== 'undefined') {
+    // 소수 배율(125/150% 등)에선 WebGL 커서 렌더 버그가 있어 DOM 렌더러를 쓴다(아래 webglWanted 참고).
+    // 단, 세로 바 이음새가 생명인 에이전트(WEBGL_SEAM_ALLOW)는 원격/소수 배율에서도 WebGL 을 유지한다.
+    if (webglWanted(agent) && typeof WebglNS !== 'undefined') {
       try {
         const webgl = new WebglNS.WebglAddon();
         webgl.onContextLoss(function () {
@@ -3093,11 +3094,22 @@
   // → 아래 등록된 에이전트는 소수 배율에서도 WebGL 을 유지한다(실측으로 세로선 복구 확인).
   // ⚠ 이 에이전트들은 B형(hw커서형, 입력 캐럿 = xterm 커서)이라 WebGL 커서 아티팩트
   //   (커서 소실 + 텍스트 위 가로선 깜빡임)에 노출될 수 있다. 그 증상이 보이면 해당 id 를 뺀다.
-  const WEBGL_FRACTIONAL_ALLOW = { devezvibe: true };
+  // ⚠ 같은 이유로 원격 제어(RDP/CRD, enableWebgl=false)에서도 이 에이전트만은 WebGL 을 유지한다.
+  //   원격에선 SwiftShader(소프트 GL)라 DOM 보다 약간 느리지만, DOM 렌더러로 떨어뜨리면 dvz 의
+  //   컴포저/프롬프트 세로 바가 행마다 끊겨 보이는 회귀가 그대로 재현된다(2026-08-08 CRD 실측 보고).
+  const WEBGL_SEAM_ALLOW = { devezvibe: true };
+
+  function seamAgent(agent) { return !!(agent && WEBGL_SEAM_ALLOW[agent]); }
 
   function fractionalDpr(agent) {
-    if (agent && WEBGL_FRACTIONAL_ALLOW[agent]) return false; // 세로선 이음새 우선 — WebGL 유지
+    if (seamAgent(agent)) return false; // 세로선 이음새 우선 — WebGL 유지
     return !Number.isInteger(window.devicePixelRatio);
+  }
+
+  // 이 방에 WebGL 렌더러를 붙일지. 이음새 에이전트는 원격/소수 배율 폴백을 모두 건너뛴다.
+  function webglWanted(agent) {
+    if (seamAgent(agent)) return true;
+    return !!cfg.enableWebgl && !fractionalDpr(agent);
   }
 
   function disposeWebglIfFractional(entry) {
