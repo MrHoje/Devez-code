@@ -1997,25 +1997,34 @@
       // 조건: B형 + 이번 조합이 실제로 pin 됐고(frozenImeCaret) + 실제 확정 문자가 있음
       // (e.data 빈 문자열 = 조합 취소/합성 리셋(resetImeNow) — 예약할 게 없다).
       if (pinsLogicalCaret && frozenImeCaret && e && e.data) {
-        const nextCol = frozenImeCaret.col + imeCellWidth(e.data);
-        // cols-4 경계 가드: 입력란은 테두리·여백 때문에 term.cols 보다 몇 칸 일찍 줄바꿈된다
-        // (codex composer 기준 좌우 ~2칸씩). 전진 좌표가 실제로는 다음 줄일 수 있는 구간이면
-        // 예약을 포기하고 기본 경로(조합 시작 시점 라이브 커서)로 둔다 — 한 음절 겹침 가능성
-        // (원래 증상이 경계에서만 잔존)이 틀린 행에 고정되는 것보다 낫다.
-        chainCaret = (nextCol < term.cols - 4)
-          ? { row: frozenImeCaret.row, col: nextCol, at: Date.now() }
-          : null;
+        const committedWidth = imeCellWidth(e.data);
+        const nextCol = frozenImeCaret.col + committedWidth;
+        let committedCaret = frozenImeCaret;
+        // Devez Vibe는 화면 하단에 컴포저를 고정한다. 줄이 넘치면 새 행을 화면 아래에
+        // 추가하는 대신 기존 줄을 위로 밀고, 현재 입력 행은 같은 화면 행의 col 4부터 다시
+        // 쓴다. 이전의 term.cols 끝/다음 행 좌표는 이 렌더링과 달라 한글 조합이 잠깐 보였다
+        // 사라졌다. dvz 소스의 COMPOSER_IME_RIGHT_GUTTER(4)와 입력 접두사 폭(4)을 반영한다.
+        const devezVibeWrap = agent === 'devezvibe' && nextCol > term.cols - 6;
+        if (devezVibeWrap) {
+          committedCaret = { row: frozenImeCaret.row, col: 4 };
+          chainCaret = { row: frozenImeCaret.row, col: 4 + committedWidth, at: Date.now() };
+        } else {
+          chainCaret = (nextCol < term.cols - 4)
+            ? { row: frozenImeCaret.row, col: nextCol, at: Date.now() }
+            : null;
+        }
         imeDiag('commit "' + e.data + '" frozen=' + frozenImeCaret.row + ',' + frozenImeCaret.col +
+                ' committed=' + committedCaret.row + ',' + committedCaret.col +
                 ' chain=' + (chainCaret ? chainCaret.row + ',' + chainCaret.col : 'none'));
         if (chainCaret) {
           // 고스트: 직전 고스트가 아직 echo 전이고 이번 확정이 바로 이어지는 위치면 문자열을
           // 이어붙인다(연타에서 echo 가 밀려도 "안녕하" 전체가 끊김 없이 보임). 위치가 안
           // 이어지면(다른 줄/중간 클릭 등) 이번 확정 위치에서 새로 시작.
-          if (ghost && ghost.row === frozenImeCaret.row &&
-              ghost.col + imeCellWidth(ghost.text) === frozenImeCaret.col) {
+          if (ghost && ghost.row === committedCaret.row &&
+              ghost.col + imeCellWidth(ghost.text) === committedCaret.col) {
             ghost.text += e.data;
           } else {
-            ghost = { row: frozenImeCaret.row, col: frozenImeCaret.col, text: e.data };
+            ghost = { row: committedCaret.row, col: committedCaret.col, text: e.data };
           }
           showGhost();
         } else {
