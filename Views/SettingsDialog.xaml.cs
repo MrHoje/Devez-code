@@ -101,7 +101,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.23.9", "2026-08-09", true, new[]
+          ("v1.23.10", "2026-08-10", true, new[]
+          {
+              "Devez Vibe 세션을 다시 열 때 이전 대화가 표시되기 전에 로딩 화면이 사라지는 문제를 수정했습니다.",
+          }),
+          ("v1.23.9", "2026-08-09", false, new[]
           {
               "터미널영역 컴포저 렌더링 보정",
           }),

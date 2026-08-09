@@ -920,6 +920,20 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 생성 요청 경로). 종료 완료 후 OnHideStopFinished 가 남은 방을 정리하고 새로 생성(resume)한다.
         if (TerminalSessionManager.Instance.IsGracefulStopping(roomId)) return;
 
+        // dvz 복원 여부는 프로세스를 띄우기 전에 이미 저장된 세션 ID로 알 수 있다. 상태 파일의 loading이
+        // 도착할 때까지 기다렸다가 게이트를 세우면 빠른 초기 프레임이 먼저 ready를 확정해 빈 세션이 노출된다.
+        // 살아 있는 세션 재배선은 복원이 아니므로 새 프로세스를 만드는 경우에만 선제적으로 준비를 보류한다.
+        bool startsDevezVibeResume = AgentFor(roomId) == "devezvibe"
+            && TerminalSessionManager.Instance.Get(roomId) is not { IsAlive: true }
+            && (DevezCode.Services.SettingsService.LoadDevezVibeRoomSession(roomId) != null
+                || DevezCode.Services.DevezVibeStateService.LoadTrackedSessionId(roomId) != null);
+        if (startsDevezVibeResume)
+        {
+            _devezVibeReadyDeferred.Add(roomId);
+            _devezVibeLoadingGeneration[roomId] = _outputGenerations.GetValueOrDefault(roomId);
+            ArmDevezVibeLoadingWait(roomId);
+        }
+
         TerminalSession session;
         try
         {
@@ -2116,6 +2130,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         };
         timer.Tick += (_, _) =>
         {
+            // TryBuildDevezVibeDirectLaunch가 이전 실행의 idle 파일을 지운다. 새 프로세스가 loading 또는
+            // idle을 직접 기록하기 전에는 cmd 초기화 출력만 보고 복원 완료로 확정하지 않는다.
+            if (!DevezCode.Services.DevezVibeStateService.HasSessionActivityState(roomId))
+            {
+                idlePolls = 0;
+                return;
+            }
             if (DevezCode.Services.DevezVibeStateService.IsSessionLoading(roomId))
             {
                 _devezVibeLoadingGeneration[roomId] = _outputGenerations.GetValueOrDefault(roomId);

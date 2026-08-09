@@ -837,6 +837,9 @@ public sealed class TerminalSessionManager
                 "DevezCode", "devezvibe", "owners", SafeRoomFileName(roomId) + ".txt"));
         }
         catch { }
+        // 이전 프로세스의 idle 파일이 남아 있으면 터미널 준비 게이트가 새 프로세스의 복원 상태로
+        // 오인해 로딩 커버를 먼저 걷을 수 있다. 새 dvz가 loading/idle을 다시 기록할 때까지 미확정으로 둔다.
+        DevezVibeStateService.ClearSessionActivityState(roomId);
 
         var agent = AgentRegistry.Find("devezvibe");
         var exePath = agent == null ? null : AgentRegistry.ResolvePath(agent);

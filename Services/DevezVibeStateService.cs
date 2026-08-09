@@ -91,6 +91,24 @@ public sealed class DevezVibeStateService : IDisposable
             && status.Equals("loading", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>현재 dvz 프로세스가 활동 상태를 한 번이라도 기록했는지 확인한다.
+    /// 복원 프로세스 시작 전에 이전 실행의 idle 파일을 지운 뒤, 새 loading/idle 기록이 도착하기 전에는
+    /// 터미널 준비를 확정하지 않는 게이트에서 사용한다.</summary>
+    public static bool HasSessionActivityState(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return false;
+        return !string.IsNullOrWhiteSpace(
+            TryRead(Path.Combine(BusyDir, Sanitize(roomId) + ".txt")));
+    }
+
+    /// <summary>새 dvz 프로세스가 시작될 때 이전 실행의 활동 상태만 제거한다.
+    /// 세션 ID와 마지막 메시지는 복원에 필요하므로 유지한다.</summary>
+    public static void ClearSessionActivityState(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return;
+        try { File.Delete(Path.Combine(BusyDir, Sanitize(roomId) + ".txt")); } catch { }
+    }
+
     /// <summary>방 종료·삭제 시 남은 상태 파일 정리.</summary>
     public static void DeleteRoomFiles(string room)
     {
