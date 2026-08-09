@@ -74,6 +74,7 @@ public partial class App : Application
     /// <summary>'지금 재시작하고 업데이트'(RestartForAgentUpdate)로 재실행됐는지 — 시작 시 에이전트 업데이트를
     /// 데일리 게이트/자동업데이트 토글과 무관하게 강제 실행한다. --update-agents-now 인자로 전달.</summary>
     private static bool _forceAgentUpdateNow;
+    private static string? _forceAgentUpdateAgentId;
 
     /// <summary>스타트업/런타임 크래시 진단 로그 경로(%AppData%\DevezCode\crash.log).
     /// 전역 예외가 아무 메시지 없이 앱을 죽일 때 원인을 남긴다.</summary>
@@ -171,6 +172,8 @@ public partial class App : Application
         // '지금 재시작하고 업데이트'로 재실행된 경우 — 시작 시 에이전트 업데이트를 강제 실행
         // (자동업데이트 토글 OFF·오늘 이미 업데이트했음과 무관하게). RestartForAgentUpdate 가 붙인 인자.
         _forceAgentUpdateNow = e.Args.Contains("--update-agents-now");
+        _forceAgentUpdateAgentId = e.Args.FirstOrDefault(a => a.StartsWith("--update-agent=", StringComparison.OrdinalIgnoreCase))?
+            ["--update-agent=".Length..];
 
 
         // 단일 인스턴스: 이미 떠 있으면 기존 창을 앞으로 가져오고 종료한다.
@@ -283,7 +286,7 @@ public partial class App : Application
 
         // 창이 업데이트 실행·진행표시·완료/건너뛰기 타이밍을 모두 담당한다. 여기선 닫힐 때까지 대기만 한다.
         // (건너뛰기 시 업데이트는 백그라운드로 계속 진행 — npm/bun 설치 중 강제 종료는 손상 위험이 있어 하지 않음.)
-        var win = new Views.AgentUpdateWindow { AutoCloseOnComplete = true };
+        var win = new Views.AgentUpdateWindow { AutoCloseOnComplete = true, AgentId = _forceAgentUpdateAgentId };
         var done = new System.Threading.Tasks.TaskCompletionSource();
         win.Closed += (_, _) => done.TrySetResult();
         win.ProceedRequested += () => { try { win.Close(); } catch { } };
@@ -324,7 +327,7 @@ public partial class App : Application
     ///
     /// 반환: 재실행 헬퍼를 기동해 종료 절차를 시작했으면 true. 헬퍼 기동 실패 시 false(호출부가 안내) — 이때는
     /// 앱을 닫지 않는다(닫으면 재실행 없이 그냥 꺼져 버리므로).</summary>
-    public static bool RestartForAgentUpdate()
+    public static bool RestartForAgentUpdate(string? agentId = null)
     {
         try
         {
@@ -335,7 +338,7 @@ public partial class App : Application
             // 현재 프로세스가 완전히 종료(=뮤텍스 해제)된 뒤에 새 인스턴스를 띄운다 → 단일 인스턴스 충돌 방지.
             File.WriteAllText(script,
                 $"try {{ Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue }} catch {{ }}\n" +
-                $"Start-Process '{exeLit}' -ArgumentList '--update-agents-now' -WorkingDirectory (Split-Path '{exeLit}')\n",
+                $"Start-Process '{exeLit}' -ArgumentList '--update-agents-now{(string.IsNullOrWhiteSpace(agentId) ? "" : " --update-agent=" + agentId)}' -WorkingDirectory (Split-Path '{exeLit}')\n",
                 // ScriptFile.Ps1(BOM) 필수 — 없으면 powershell 5.1 이 CP949 로 읽어 한글 사용자명
                 // 경로(C:\Users\김이영\...)가 깨지고 재실행이 조용히 실패한다.
                 Services.ScriptFile.Ps1);

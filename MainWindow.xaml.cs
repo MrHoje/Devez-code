@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private bool _themeReloadRunning;
     private bool _claudeSurfaceReloadRunning;
     private bool _claudeSurfaceReloadRequested;
+    private bool _devezVibeUpdateRunning;
     private readonly SemaphoreSlim _sessionReloadGate = new(1, 1);
 
     // 좌/우 위치 교환은 콘텐츠 이동 없이 패널의 물리 컬럼만 맞바꿔 표현한다(터미널 재부착=세션 재로딩 방지).
@@ -315,6 +316,7 @@ public partial class MainWindow : Window
         Sidebar.SessionsLockRequested += SetSessionsLocked;
         Sidebar.SessionManagerRequested += OpenSessionManager;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
+        Sidebar.DevezVibeUpdateClicked += StartDevezVibeUpdate;
 
         // 세션 요청 처리중 스피너: claude 훅(busy-hook.ps1)이 떨군 상태 파일을 감시 (clude-blinker 방식).
         _sessionBusy.BusyChanged += (id, busy) =>
@@ -2665,8 +2667,8 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        // [테스트] Ctrl+Shift+U 를 짧게 두 번 → 가짜 업데이트(사이드바 버튼 + 팝업 진행률) 확인.
-        if (e.Key == System.Windows.Input.Key.U
+        // Ctrl+Shift+D 를 짧게 두 번 → Devez Vibe 업데이트 버튼 표시.
+        if (e.Key == System.Windows.Input.Key.D
             && (System.Windows.Input.Keyboard.Modifiers
                 & (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
                == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
@@ -2675,7 +2677,7 @@ public partial class MainWindow : Window
             if ((now - _lastTestUpdateKeyUtc).TotalMilliseconds <= 700)
             {
                 _lastTestUpdateKeyUtc = DateTime.MinValue;
-                TriggerTestUpdate();
+                Sidebar.ToggleDevezVibeUpdateButton();
             }
             else _lastTestUpdateKeyUtc = now;
             e.Handled = true;
@@ -2965,16 +2967,123 @@ public partial class MainWindow : Window
         _testUpdateMode = true;
         var testReleases = new[]
         {
-            new UpdateReleaseNote("9.9.9", string.Join("\n", Enumerable.Range(1, 18).Select(i =>
-                $"업데이트 노트 테스트 {i:00} · 최대 너비와 긴 릴리스 노트의 스크롤 표시 상태를 확인합니다."))),
+            new UpdateReleaseNote("9.9.9", "업데이트 노트 테스트"),
         };
         _pendingUpdate = new UpdateInfo(
             Version: "9.9.9",
             Url: "https://example.com/test",
-            Notes: string.Join("\n", Enumerable.Range(1, 3).Select(i => $"업데이트 노트 테스트 {i:00}")),
+            Notes: "업데이트 노트 테스트",
             Releases: testReleases);
         Sidebar.ShowUpdateButton(_pendingUpdate.Version);
         // 사이드바 하단 업데이트 버튼을 클릭하면 OpenUpdatePopup → 팝업 진행률까지 확인된다.
+    }
+
+    /// <summary>Devez Vibe 세션만 안전하게 종료·복원하는 인플레이스 업데이트. 앱 자체와 다른 에이전트 세션은 유지한다.</summary>
+    private async void StartDevezVibeUpdate()
+    {
+        if (_devezVibeUpdateRunning) return;
+
+        var managedSessions = _projects.SelectMany(project => project.Tabs).OfType<SessionItem>()
+            .Where(session => !session.IsExternal
+                && string.Equals(session.AgentId, "devezvibe", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var runningSessions = managedSessions
+            .Where(session => TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true })
+            .ToList();
+
+        if (runningSessions.Count > 0)
+        {
+            if (!Views.ConfirmDialog.Show(
+                    "Devez Vibe 업데이트",
+                    $"실행 중인 Devez Vibe 세션 {runningSessions.Count}개를 안전하게 종료한 뒤 업데이트하고 다시 시작합니다.\n다른 에이전트 세션과 DevezCode는 계속 실행됩니다.\n\n지금 업데이트할까요?",
+                    okLabel: "업데이트"))
+                return;
+        }
+
+        Sidebar.HideUpdateButton();
+        _devezVibeUpdateRunning = true;
+        bool reloadGateHeld = false;
+        try
+        {
+            await _sessionReloadGate.WaitAsync();
+            reloadGateHeld = true;
+
+            // 업데이트 중 사용자가 다른 Devez Vibe 탭을 열어 이전 바이너리를 다시 실행하지 않도록
+            // 모든 내부 Devez Vibe 탭의 재연결을 잠근다. 실제 종료·복원 대상은 이미 실행 중이던 방만이다.
+            foreach (var pane in _panes)
+                pane.BeginSessionReload(managedSessions, "Devez Vibe 업데이트 중\n세션을 안전하게 종료하는 중입니다.");
+
+            if (runningSessions.Count > 0)
+                await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(runningSessions.Select(session => session.Id));
+
+            foreach (var session in runningSessions)
+            {
+                session.IsAlive = false;
+                session.IsBusy = false;
+                session.IsWaitingChoice = false;
+            }
+
+            var win = new Views.AgentUpdateWindow
+            {
+                Owner = this,
+                ShowInTaskbar = false,
+                AutoCloseOnComplete = false,
+                AgentId = "devezvibe",
+                WaitForCompletion = true,
+            };
+            win.ProceedRequested += () => { try { win.Close(); } catch { } };
+            win.ShowDialog();
+
+            if (win.UpdateTask != null)
+            {
+                var results = await win.UpdateTask;
+                if (results.Any(result => result.Status == AgentUpdateStatus.Updated))
+                    App.ReapplyAgentFileThemes();
+            }
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"Devez Vibe update failed: {ex.Message}");
+            Views.ConfirmDialog.Alert("Devez Vibe 업데이트", "업데이트 중 문제가 발생했습니다. 세션을 다시 시작합니다.");
+        }
+        finally
+        {
+            if (reloadGateHeld)
+            {
+                var remainingRoomIds = _projects.SelectMany(project => project.Tabs).OfType<SessionItem>()
+                    .Select(session => session.Id)
+                    .ToHashSet(StringComparer.Ordinal);
+                var remainingManagedSessions = managedSessions
+                    .Where(session => remainingRoomIds.Contains(session.Id))
+                    .ToList();
+                var remainingRunningSessions = runningSessions
+                    .Where(session => remainingRoomIds.Contains(session.Id))
+                    .ToList();
+
+                foreach (var session in remainingRunningSessions)
+                {
+                    try { TerminalSessionManager.Instance.ClearDisposedRoom(session.Id); } catch { /* best effort */ }
+                    session.IsAlive = false;
+                    session.IsBusy = false;
+                    session.IsWaitingChoice = false;
+                }
+
+                try { await Task.Delay(150); } catch { /* best effort */ }
+                foreach (var pane in _panes)
+                {
+                    try { pane.CompleteSessionReload(remainingManagedSessions, restartActive: remainingRunningSessions.Any(session => ReferenceEquals(session, pane.ActiveSession))); }
+                    catch (Exception ex) { DiagLog.Write($"Devez Vibe session unlock failed: {ex.Message}"); }
+                }
+                foreach (var session in remainingRunningSessions)
+                {
+                    try { PaneFor(session).PreloadSession(session); }
+                    catch (Exception ex) { DiagLog.Write($"Devez Vibe session restart failed room={session.Id}: {ex.Message}"); }
+                }
+
+                _sessionReloadGate.Release();
+            }
+            _devezVibeUpdateRunning = false;
+        }
     }
 
     /// <summary>[테스트] 0→100% 진행률을 천천히 보고하는 가짜 다운로드(실제 파일 없음).</summary>
@@ -3207,6 +3316,7 @@ public partial class MainWindow : Window
         };
         pane.SessionActivity += MarkSessionActivity;
         pane.SessionPromptSubmitted += OnPaneSessionPromptSubmitted;
+        pane.DevezVibeUpdateRequested += () => Sidebar.ToggleDevezVibeUpdateButton();
         TerminalSessionManager.Instance.AgentModelCatalogRefreshRequested += pane.NotifyAgentModelCatalogRefreshRequested;
         _panes.Add(pane);
     }

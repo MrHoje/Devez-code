@@ -106,6 +106,8 @@ public partial class WorkspacePaneView : UserControl
     public event Action<BrowserTabItem>? BrowserTabCloseRequested;
     /// <summary>Claude GUI에서 프롬프트 전송 성공 — 셸이 기존 헤더 메시지 규칙으로 반영한다.</summary>
     public event Action<string, string>? SessionPromptSubmitted;
+    /// <summary>터미널에서 Devez Vibe 업데이트 버튼 표시를 요청함.</summary>
+    public event Action? DevezVibeUpdateRequested;
 
     public TerminalHostView Terminal => _terminal;
 
@@ -150,6 +152,7 @@ public partial class WorkspacePaneView : UserControl
         // 툴을 안 띄우는 메뉴(PostToolUse 미발화)에서도 ❗ 가 확실히 빠지게 하는 보조 신호.
         _terminal.MenuInputSubmitted += id => { var s = FindSession(id); if (s is { IsWaitingChoice: true }) s.IsWaitingChoice = false; };
         _terminal.SessionActionRequested += OnTerminalSessionAction;
+        _terminal.DevezVibeUpdateRequested += () => DevezVibeUpdateRequested?.Invoke();
         _terminal.UserInteracted += () => FocusRequested?.Invoke(this);
         _terminal.SessionActivity += id => SessionActivity?.Invoke(id);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
@@ -3137,7 +3140,7 @@ public partial class WorkspacePaneView : UserControl
         => CompleteSessionReload(allSessions);
 
     /// <summary>세션 재시작 2단계. 잠금을 풀고 현재 보이는 세션을 새 표면으로 다시 연다.</summary>
-    public void CompleteSessionReload(IReadOnlyList<SessionItem> allSessions)
+    public void CompleteSessionReload(IReadOnlyList<SessionItem> allSessions, bool restartActive = true)
     {
         foreach (var s in allSessions)
         {
@@ -3148,7 +3151,8 @@ public partial class WorkspacePaneView : UserControl
 
         var active = _activeSession;
         var parent = active == null ? null : ParentOf(active);
-        bool shouldRestart = Visibility == Visibility.Visible
+        bool shouldRestart = restartActive
+            && Visibility == Visibility.Visible
             && active != null
             && allSessions.Any(s => string.Equals(s.Id, active.Id, StringComparison.OrdinalIgnoreCase))
             && parent != null

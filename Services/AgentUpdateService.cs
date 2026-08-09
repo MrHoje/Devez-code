@@ -61,13 +61,16 @@ public static class AgentUpdateService
 
     /// <summary>켜진+설치된 에이전트를 병렬로 최신화하고 에이전트별 결과를 반환. 전체 실패는 무시(best-effort).</summary>
     /// <param name="report">진행 상황 콜백(모달 로그용). null 이어도 결과는 반환된다.</param>
-    public static async Task<IReadOnlyList<AgentUpdateResult>> UpdateEnabledAgentsAsync(Action<string>? report = null)
+    /// <param name="waitForCompletion">true면 장기 설치도 백그라운드로 넘기지 않고 끝날 때까지 기다린다.</param>
+    public static async Task<IReadOnlyList<AgentUpdateResult>> UpdateEnabledAgentsAsync(
+        Action<string>? report = null, string? onlyAgentId = null, bool waitForCompletion = false)
     {
         var results = new List<AgentUpdateResult>();
         try
         {
             var agents = AgentRegistry.GetEnabledAndInstalled()
-                .Where(a => !string.IsNullOrWhiteSpace(a.UpdateCommand))
+                .Where(a => !string.IsNullOrWhiteSpace(a.UpdateCommand)
+                         && (onlyAgentId == null || string.Equals(a.Id, onlyAgentId, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
             if (agents.Count == 0)
             {
@@ -77,7 +80,7 @@ public static class AgentUpdateService
 
             Log($"=== 자동 업데이트 시작 ({agents.Count}개): {string.Join(", ", agents.Select(a => a.Id))} ===");
             report?.Invoke($"대상 {agents.Count}개: {string.Join(", ", agents.Select(a => a.DisplayName))}");
-            results.AddRange(await Task.WhenAll(agents.Select(a => UpdateOneAsync(a, report))));
+            results.AddRange(await Task.WhenAll(agents.Select(a => UpdateOneAsync(a, report, waitForCompletion))));
             report?.Invoke("완료되었습니다.");
 
             // C(일원화): 우리 업데이트가 '동작하던' 에이전트를 깨뜨린 퇴행(before 정상 → after 실행불가)이고 B 의
@@ -102,7 +105,8 @@ public static class AgentUpdateService
         => results.Any(r => r.Status == AgentUpdateStatus.Failed
                             && !string.IsNullOrEmpty(r.Before) && string.IsNullOrEmpty(r.After));
 
-    private static async Task<AgentUpdateResult> UpdateOneAsync(AgentDef agent, Action<string>? report)
+    private static async Task<AgentUpdateResult> UpdateOneAsync(
+        AgentDef agent, Action<string>? report, bool waitForCompletion)
     {
         var before = "";
         try
@@ -111,7 +115,8 @@ public static class AgentUpdateService
             before = await GetVersionAsync(agent);
 
             // 설치는 파이프에 의존하지 않는 분리 실행 — 앱을 닫아도 끊기지 않고 독립적으로 완료된다.
-            var (exited, exitCode, running) = await RunDetachedUpdateAsync(agent, TimeSpan.FromMinutes(5));
+            var (exited, exitCode, running) = await RunDetachedUpdateAsync(
+                agent, waitForCompletion ? System.Threading.Timeout.InfiniteTimeSpan : TimeSpan.FromMinutes(5));
             if (!exited)
             {
                 // 아직 진행 중(타임아웃) — 죽이지 않고 완주를 감시, 끝나면 최종 결과를 토스트로 알린다.
@@ -128,7 +133,7 @@ public static class AgentUpdateService
             // 에이전트를 망가뜨린 것(예: npm shim temp-rename 실패 + optional 네이티브 누락). 같은 명령을
             // 1회 재실행해 회복을 시도한다(수동 재설치로 즉시 복구되는 것과 동일 원리). 깨졌을 때만 비용 발생.
             if (!string.IsNullOrEmpty(before) && string.IsNullOrEmpty(after))
-                return await TryRepairAsync(agent, before, report);
+                return await TryRepairAsync(agent, before, report, waitForCompletion);
 
             // 버전 변화가 최우선 근거 — 경고(예: temp 정리 EPERM)로 종료코드가 더러워져도 교체됐으면 성공.
             // 비교는 SameVersion 으로 표기 흔들림(grok ' [stable]' 등)을 무시 — 안 그러면 거짓 '업데이트됨'이 뜬다.
@@ -162,12 +167,14 @@ public static class AgentUpdateService
     ///  - 회복 성공: 버전 나오면 Updated(교체됨)/UpToDate(같은 버전으로 복구).
     ///  - 회복 실패(여전히 깨짐): Failed 로 반환 → 호출부(App)가 데일리 게이트를 비워 <b>다음 실행에서 재시도</b>.
     ///  - 복구가 타임아웃(느림): 죽이지 않고 완주 감시만 걸고 InProgress 반환.</summary>
-    private static async Task<AgentUpdateResult> TryRepairAsync(AgentDef agent, string before, Action<string>? report)
+    private static async Task<AgentUpdateResult> TryRepairAsync(
+        AgentDef agent, string before, Action<string>? report, bool waitForCompletion)
     {
         report?.Invoke($"{agent.DisplayName}: 설치 후 실행 불가 — 자동 복구 시도 중…");
         Log($"{agent.Id}: 퇴행 감지(before='{before}', after=''), '{agent.UpdateCommand}' 1회 재실행");
 
-        var (exited, exitCode, running) = await RunDetachedUpdateAsync(agent, TimeSpan.FromMinutes(5));
+        var (exited, exitCode, running) = await RunDetachedUpdateAsync(
+            agent, waitForCompletion ? System.Threading.Timeout.InfiniteTimeSpan : TimeSpan.FromMinutes(5));
         if (!exited)
         {
             Log($"{agent.Id}: 복구 진행 중(분리 실행) — 백그라운드로 계속됨");

@@ -213,8 +213,6 @@
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
 <script src="addon-webgl.min.js"></script>
-<script src="addon-unicode-graphemes.min.js"></script>
-<script src="addon-devez-unicode17.min.js"></script>
 <!-- codex 전용 xterm 6.0 — 렌더러 레벨 ?2026(동기화 출력) 네이티브 지원으로 codex 리페인트
      티어링을 근본 차단한다. 다른 에이전트는 기존 5.5 유지(6.0 뷰포트/스크롤바 개편의 회귀 회피).
      로드 순서상 6.0 스크립트가 window.Terminal 등 전역을 덮으므로, 6.0 을 *6 전역으로 스냅샷한 뒤
@@ -378,119 +376,6 @@
   }, true);
   window.addEventListener('blur', _hintCancel);
   function dlog(msg) { try { post({ type: 'diag', msg: '[dbg] ' + msg }); } catch (e) {} }
-
-  // 원격 환경에서도 dvz는 컴포저의 세로선을 잇기 위해 WebGL을 유지한다. 일부 소프트웨어
-  // WebGL 경로가 컴포저의 색상 이모지만 누락하므로, dvz가 직접 알려 준 컴포저 행에서만
-  // 원래 셀을 가리고 Segoe UI Emoji로 한 번 다시 그린다. 출력과 WebGL 정책은 건드리지 않는다.
-  const DVZ_EMOJI_GLYPH = /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0F\u20E3]/u;
-
-  function dvzComposerRows(entry) {
-    const rows = new Set();
-    const region = entry.devezComposerRows;
-    if (!region) return rows;
-    const top = Math.max(0, Math.min(entry.term.rows - 1, region.top));
-    const bottom = Math.max(top, Math.min(entry.term.rows - 1, region.bottom));
-    for (let row = top; row <= bottom; row++) rows.add(row);
-    return rows;
-  }
-
-  function dvzRgb(value) {
-    return '#' + ((Number(value) >>> 0) & 0xFFFFFF).toString(16).padStart(6, '0');
-  }
-
-  function dvzCellColor(cell, foreground, fallback) {
-    try {
-      if (foreground && cell?.isFgRGB?.()) return dvzRgb(cell.getFgColor());
-      if (!foreground && cell?.isBgRGB?.()) return dvzRgb(cell.getBgColor());
-    } catch (e) {}
-    return fallback;
-  }
-
-  function ensureDvzEmojiOverlay(entry) {
-    if (entry.devezEmojiOverlay?.isConnected) return entry.devezEmojiOverlay;
-    const screen = entry.el.querySelector('.xterm-screen');
-    if (!screen) return null;
-    const overlay = document.createElement('div');
-    overlay.className = 'devez-emoji-overlay';
-    overlay.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6';
-    screen.appendChild(overlay);
-    entry.devezEmojiOverlay = overlay;
-    return overlay;
-  }
-
-  function syncDvzEmojiOverlay(entry) {
-    if (!entry || entry.dead || entry.agent !== 'devezvibe') return;
-    const enabled = !cfg.enableWebgl && !!entry.webgl;
-    const overlay = enabled ? ensureDvzEmojiOverlay(entry) : entry.devezEmojiOverlay;
-    if (!overlay) return;
-    if (!enabled) {
-      overlay.replaceChildren();
-      overlay.style.display = 'none';
-      entry.devezEmojiSignature = '';
-      return;
-    }
-    const cell = entry.term?._core?._renderService?.dimensions?.css?.cell;
-    if (!cell || !(cell.width > 0) || !(cell.height > 0)) return;
-    const rows = dvzComposerRows(entry);
-    const buffer = entry.term.buffer.active;
-    const background = entry.term.options.theme?.background || cfg.theme?.background || '#0C0C0C';
-    const foreground = entry.term.options.theme?.foreground || cfg.theme?.foreground || '#CCCCCC';
-    const cursorRow = buffer.baseY + buffer.cursorY - buffer.viewportY;
-    const cursorColumn = buffer.cursorX;
-    const glyphs = [];
-    for (const row of rows) {
-      const line = buffer.getLine(buffer.viewportY + row);
-      if (!line) continue;
-      for (let column = 0; column < entry.term.cols; column++) {
-        const bufferCell = line.getCell(column);
-        const chars = bufferCell?.getChars() || '';
-        const width = Math.max(1, bufferCell?.getWidth() || 1);
-        if (chars && DVZ_EMOJI_GLYPH.test(chars)) glyphs.push({
-          row, column, width, chars,
-          background: dvzCellColor(bufferCell, false, background),
-          foreground: dvzCellColor(bufferCell, true, foreground),
-          cursor: row === cursorRow && cursorColumn >= column && cursorColumn < column + width
-        });
-        column += width - 1;
-      }
-    }
-    const signature = [buffer.viewportY, cell.width, cell.height, entry.term.options.fontSize]
-      .concat(glyphs.map(glyph => glyph.row + ':' + glyph.column + ':' + glyph.width + ':'
-        + glyph.chars + ':' + glyph.background + ':' + glyph.foreground + ':' + glyph.cursor))
-      .join('|');
-    if (signature === entry.devezEmojiSignature) return;
-    entry.devezEmojiSignature = signature;
-    overlay.style.display = '';
-    overlay.replaceChildren();
-    for (const glyph of glyphs) {
-      const span = document.createElement('span');
-      span.textContent = glyph.chars;
-      span.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;'
-        + 'overflow:hidden;white-space:nowrap;font-style:normal;font-weight:400;font-variant-emoji:emoji';
-      span.style.left = (glyph.column * cell.width) + 'px';
-      span.style.top = (glyph.row * cell.height) + 'px';
-      span.style.width = (glyph.width * cell.width) + 'px';
-      span.style.height = cell.height + 'px';
-      span.style.background = glyph.cursor ? 'transparent' : glyph.background;
-      span.style.color = glyph.foreground;
-      span.style.fontFamily = "'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif";
-      span.style.fontSize = entry.term.options.fontSize + 'px';
-      span.style.lineHeight = cell.height + 'px';
-      overlay.appendChild(span);
-    }
-    if (glyphs.length && !entry.devezEmojiLogged) {
-      entry.devezEmojiLogged = true;
-      dlog('devez composer emoji fallback active room=' + entry.roomId + ' glyphs=' + glyphs.length);
-    }
-  }
-
-  function scheduleDvzEmojiOverlay(entry) {
-    if (!entry || entry.devezEmojiRaf) return;
-    entry.devezEmojiRaf = requestAnimationFrame(function () {
-      entry.devezEmojiRaf = 0;
-      syncDvzEmojiOverlay(entry);
-    });
-  }
   function dumpBuf(roomId, tag) {
     try {
       const t = terms[roomId]; if (!t) return;
@@ -2712,7 +2597,7 @@
 
     term.open(el);
 
-    const entry = { term, fit, el, webgl: null, devezUnicode: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map(), devezComposerRows: null, devezEmojiOverlay: null, devezEmojiSignature: '', devezEmojiRaf: 0, devezEmojiLogged: false };
+    const entry = { term, fit, el, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
     terms[roomId] = entry;
     // Claude 2.1.22x 는 시작 시 XTVERSION(CSI > 0 q) 응답 여부로 입력 증분 렌더와
     // 동기화 출력(?2026)을 결정한다. xterm 5/6 은 이 응답이 없어 Backspace 연타와 응답 출력이
@@ -2734,42 +2619,6 @@
     // 다른 CLI의 OSC는 건드리지 않으며, clear 신호에서 오래된 행 정보를 함께 비운다.
     try {
       entry.copyOsc = term.parser.registerOscHandler(777, function (data) {
-        if (data === 'devez-unicode-v2;17.0.0') {
-          if (agent !== 'devezvibe') return false;
-          if (!entry.devezUnicode && window.UnicodeGraphemesAddon &&
-              window.DevezUnicodeAddon && term.unicode) {
-            try {
-              const graphemeAddon = new window.UnicodeGraphemesAddon.UnicodeGraphemesAddon();
-              term.loadAddon(graphemeAddon);
-              const addon = new window.DevezUnicodeAddon.DevezUnicodeAddon(graphemeAddon);
-              term.loadAddon(addon);
-              term.unicode.activeVersion = 'devez-17.0.0-graphemes';
-              entry.devezUnicode = { graphemeAddon: graphemeAddon, widthAddon: addon };
-              dlog('devez unicode 17 graphemes enabled room=' + roomId);
-              scheduleDvzEmojiOverlay(entry);
-            } catch (e) { dlog('devez unicode graphemes failed room=' + roomId + ' ' + e); }
-          }
-          return true;
-        }
-        if (data === 'devez-composer-v1;none') {
-          if (agent !== 'devezvibe') return false;
-          entry.devezComposerRows = null;
-          entry.devezEmojiSignature = '';
-          scheduleDvzEmojiOverlay(entry);
-          return true;
-        }
-        const composer = /^devez-composer-v1;(\d+);(\d+)$/.exec(data || '');
-        if (composer) {
-          if (agent !== 'devezvibe') return false;
-          const top = Number(composer[1]);
-          const bottom = Number(composer[2]);
-          entry.devezComposerRows = Number.isFinite(top) && Number.isFinite(bottom) && bottom >= top
-            ? { top: top, bottom: bottom }
-            : null;
-          entry.devezEmojiSignature = '';
-          scheduleDvzEmojiOverlay(entry);
-          return true;
-        }
         const layout = /^devez-layout-v1;(\d+)$/.exec(data || '');
         if (layout) {
           const cols = Number(layout[1]);
@@ -2828,8 +2677,6 @@
         webgl.onContextLoss(function () {
           try { webgl.dispose(); } catch (e) {}
           entry.webgl = null;
-          entry.devezEmojiSignature = '';
-          scheduleDvzEmojiOverlay(entry);
           dlog('webgl contextLoss room=' + roomId + ' agent=' + agent + ' -> DOM');
         });
         term.loadAddon(webgl);
@@ -2840,19 +2687,6 @@
     dlog('renderer room=' + roomId + ' agent=' + agent + ' engine=' + (use6 ? 'xterm6' : 'xterm5')
        + ' renderer=' + (entry.webgl ? 'WebGL' : 'DOM') + ' dpr=' + window.devicePixelRatio
        + ' enableWebgl=' + !!cfg.enableWebgl);
-    if (agent === 'devezvibe') {
-      entry.devezEmojiRender = term.onRender(function () { scheduleDvzEmojiOverlay(entry); });
-      entry.devezEmojiResize = term.onResize(function () {
-        entry.devezEmojiSignature = '';
-        scheduleDvzEmojiOverlay(entry);
-      });
-      entry.devezEmojiScroll = term.onScroll(function () {
-        entry.devezEmojiSignature = '';
-        scheduleDvzEmojiOverlay(entry);
-      });
-      scheduleDvzEmojiOverlay(entry);
-    }
-
     // ── URL/경로 링크: URL은 기본 브라우저, 파일은 Ctrl+클릭 시 에디터 탭, 폴더는 Explorer ──
     try {
       term.registerLinkProvider({

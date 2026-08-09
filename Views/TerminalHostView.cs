@@ -39,6 +39,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>터미널에서 세션(탭) 단축키 발생 — name: newSession/closeSession/nextSession/prevSession/gotoSession.
     /// gotoSession 일 때 index = 0-기준 세션 번호(-1 = 마지막), 그 외엔 의미 없음.</summary>
     public event Action<string, int>? SessionActionRequested;
+    /// <summary>터미널에서 Devez Vibe 업데이트 버튼 표시를 요청함.</summary>
+    public event Action? DevezVibeUpdateRequested;
     /// <summary>터미널 폰트 크기(px)가 바뀜(Ctrl+휠/리셋/초기화). 세션 헤더 타이틀 동기화용.</summary>
     public event Action<double>? FontSizePxChanged;
     /// <summary>사용자가 WebView2 터미널 표면을 클릭/조작함. WPF PreviewMouseDown 이 HWND 경계를 넘지 못해 별도 통지한다.</summary>
@@ -789,6 +791,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                         case "fontInc":   AdjustFontSize(+1); break;
                         case "fontDec":   AdjustFontSize(-1); break;
                         case "fontReset": ResetFontSize();    break;
+                        case "devezVibeUpdate": DevezVibeUpdateRequested?.Invoke(); break;
                         default:
                             int index = root.TryGetProperty("index", out var ie) ? ie.GetInt32() : 0;
                             SessionActionRequested?.Invoke(name, index);

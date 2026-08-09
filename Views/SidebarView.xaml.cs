@@ -495,17 +495,47 @@ public partial class SidebarView : UserControl
 
     /// <summary>하단 업데이트 버튼 클릭 — 설치 흐름은 MainWindow 에 위임.</summary>
     public event Action? UpdateClicked;
-    private void UpdateButton_Click(object sender, RoutedEventArgs e) => UpdateClicked?.Invoke();
+    /// <summary>하단 Devez Vibe 업데이트 버튼 클릭.</summary>
+    public event Action? DevezVibeUpdateClicked;
+    private bool _devezVibeUpdateButton;
+    private void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_devezVibeUpdateButton) DevezVibeUpdateClicked?.Invoke();
+        else UpdateClicked?.Invoke();
+    }
 
     /// <summary>좌측 패널 하단에 "업데이트 v{version}" 버튼 표시(devez 정합).</summary>
     public void ShowUpdateButton(string version)
     {
+        _devezVibeUpdateButton = false;
         UpdateButton.Tag = version;
+        UpdateButton.Content = $"업데이트 v{version}";
         UpdateButton.Visibility = Visibility.Visible;
     }
 
+    /// <summary>Devez Vibe 세션 종료·업데이트·복원 흐름을 시작하는 버튼 표시.</summary>
+    public void ShowDevezVibeUpdateButton()
+    {
+        _devezVibeUpdateButton = true;
+        UpdateButton.Content = "Devez Vibe 업데이트";
+        UpdateButton.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Devez Vibe 업데이트 버튼을 표시하거나 숨긴다.</summary>
+    public void ToggleDevezVibeUpdateButton()
+    {
+        if (_devezVibeUpdateButton && UpdateButton.Visibility == Visibility.Visible)
+            HideUpdateButton();
+        else
+            ShowDevezVibeUpdateButton();
+    }
+
     /// <summary>업데이트 버튼 숨김(설치 진행 중 등).</summary>
-    public void HideUpdateButton() => UpdateButton.Visibility = Visibility.Collapsed;
+    public void HideUpdateButton()
+    {
+        _devezVibeUpdateButton = false;
+        UpdateButton.Visibility = Visibility.Collapsed;
+    }
 
 
     private void AddProject_Click(object sender, RoutedEventArgs e)
