@@ -213,6 +213,8 @@
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
 <script src="addon-webgl.min.js"></script>
+<script src="addon-unicode-graphemes.min.js"></script>
+<script src="addon-devez-unicode17.min.js"></script>
 <!-- codex 전용 xterm 6.0 — 렌더러 레벨 ?2026(동기화 출력) 네이티브 지원으로 codex 리페인트
      티어링을 근본 차단한다. 다른 에이전트는 기존 5.5 유지(6.0 뷰포트/스크롤바 개편의 회귀 회피).
      로드 순서상 6.0 스크립트가 window.Terminal 등 전역을 덮으므로, 6.0 을 *6 전역으로 스냅샷한 뒤
@@ -376,6 +378,119 @@
   }, true);
   window.addEventListener('blur', _hintCancel);
   function dlog(msg) { try { post({ type: 'diag', msg: '[dbg] ' + msg }); } catch (e) {} }
+
+  // 원격 환경에서도 dvz는 컴포저의 세로선을 잇기 위해 WebGL을 유지한다. 일부 소프트웨어
+  // WebGL 경로가 컴포저의 색상 이모지만 누락하므로, dvz가 직접 알려 준 컴포저 행에서만
+  // 원래 셀을 가리고 Segoe UI Emoji로 한 번 다시 그린다. 출력과 WebGL 정책은 건드리지 않는다.
+  const DVZ_EMOJI_GLYPH = /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0F\u20E3]/u;
+
+  function dvzComposerRows(entry) {
+    const rows = new Set();
+    const region = entry.devezComposerRows;
+    if (!region) return rows;
+    const top = Math.max(0, Math.min(entry.term.rows - 1, region.top));
+    const bottom = Math.max(top, Math.min(entry.term.rows - 1, region.bottom));
+    for (let row = top; row <= bottom; row++) rows.add(row);
+    return rows;
+  }
+
+  function dvzRgb(value) {
+    return '#' + ((Number(value) >>> 0) & 0xFFFFFF).toString(16).padStart(6, '0');
+  }
+
+  function dvzCellColor(cell, foreground, fallback) {
+    try {
+      if (foreground && cell?.isFgRGB?.()) return dvzRgb(cell.getFgColor());
+      if (!foreground && cell?.isBgRGB?.()) return dvzRgb(cell.getBgColor());
+    } catch (e) {}
+    return fallback;
+  }
+
+  function ensureDvzEmojiOverlay(entry) {
+    if (entry.devezEmojiOverlay?.isConnected) return entry.devezEmojiOverlay;
+    const screen = entry.el.querySelector('.xterm-screen');
+    if (!screen) return null;
+    const overlay = document.createElement('div');
+    overlay.className = 'devez-emoji-overlay';
+    overlay.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6';
+    screen.appendChild(overlay);
+    entry.devezEmojiOverlay = overlay;
+    return overlay;
+  }
+
+  function syncDvzEmojiOverlay(entry) {
+    if (!entry || entry.dead || entry.agent !== 'devezvibe') return;
+    const enabled = !cfg.enableWebgl && !!entry.webgl;
+    const overlay = enabled ? ensureDvzEmojiOverlay(entry) : entry.devezEmojiOverlay;
+    if (!overlay) return;
+    if (!enabled) {
+      overlay.replaceChildren();
+      overlay.style.display = 'none';
+      entry.devezEmojiSignature = '';
+      return;
+    }
+    const cell = entry.term?._core?._renderService?.dimensions?.css?.cell;
+    if (!cell || !(cell.width > 0) || !(cell.height > 0)) return;
+    const rows = dvzComposerRows(entry);
+    const buffer = entry.term.buffer.active;
+    const background = entry.term.options.theme?.background || cfg.theme?.background || '#0C0C0C';
+    const foreground = entry.term.options.theme?.foreground || cfg.theme?.foreground || '#CCCCCC';
+    const cursorRow = buffer.baseY + buffer.cursorY - buffer.viewportY;
+    const cursorColumn = buffer.cursorX;
+    const glyphs = [];
+    for (const row of rows) {
+      const line = buffer.getLine(buffer.viewportY + row);
+      if (!line) continue;
+      for (let column = 0; column < entry.term.cols; column++) {
+        const bufferCell = line.getCell(column);
+        const chars = bufferCell?.getChars() || '';
+        const width = Math.max(1, bufferCell?.getWidth() || 1);
+        if (chars && DVZ_EMOJI_GLYPH.test(chars)) glyphs.push({
+          row, column, width, chars,
+          background: dvzCellColor(bufferCell, false, background),
+          foreground: dvzCellColor(bufferCell, true, foreground),
+          cursor: row === cursorRow && cursorColumn >= column && cursorColumn < column + width
+        });
+        column += width - 1;
+      }
+    }
+    const signature = [buffer.viewportY, cell.width, cell.height, entry.term.options.fontSize]
+      .concat(glyphs.map(glyph => glyph.row + ':' + glyph.column + ':' + glyph.width + ':'
+        + glyph.chars + ':' + glyph.background + ':' + glyph.foreground + ':' + glyph.cursor))
+      .join('|');
+    if (signature === entry.devezEmojiSignature) return;
+    entry.devezEmojiSignature = signature;
+    overlay.style.display = '';
+    overlay.replaceChildren();
+    for (const glyph of glyphs) {
+      const span = document.createElement('span');
+      span.textContent = glyph.chars;
+      span.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;'
+        + 'overflow:hidden;white-space:nowrap;font-style:normal;font-weight:400;font-variant-emoji:emoji';
+      span.style.left = (glyph.column * cell.width) + 'px';
+      span.style.top = (glyph.row * cell.height) + 'px';
+      span.style.width = (glyph.width * cell.width) + 'px';
+      span.style.height = cell.height + 'px';
+      span.style.background = glyph.cursor ? 'transparent' : glyph.background;
+      span.style.color = glyph.foreground;
+      span.style.fontFamily = "'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif";
+      span.style.fontSize = entry.term.options.fontSize + 'px';
+      span.style.lineHeight = cell.height + 'px';
+      overlay.appendChild(span);
+    }
+    if (glyphs.length && !entry.devezEmojiLogged) {
+      entry.devezEmojiLogged = true;
+      dlog('devez composer emoji fallback active room=' + entry.roomId + ' glyphs=' + glyphs.length);
+    }
+  }
+
+  function scheduleDvzEmojiOverlay(entry) {
+    if (!entry || entry.devezEmojiRaf) return;
+    entry.devezEmojiRaf = requestAnimationFrame(function () {
+      entry.devezEmojiRaf = 0;
+      syncDvzEmojiOverlay(entry);
+    });
+  }
   function dumpBuf(roomId, tag) {
     try {
       const t = terms[roomId]; if (!t) return;
@@ -1311,6 +1426,9 @@
     // "예상 좌표"를 예약해 두고, 직후의 compositionstart 가 1회 소비한다. echo 를 기다리지
     // 않는 결정적 계산이므로 타이핑 속도와 무관하게 항상 정확하다. { row, col, at(예약시각) }
     let chainCaret = null;
+    let devezVibeComposerColsCache = term.cols;
+    let devezVibeComposerRowCache = -1;
+    let devezVibeComposerColsSignaled = false;
 
     // [ghost] chain 이 조합뷰를 예측 위치(확정 글자 뒤)로 옮기면, 확정 글자 자리는 echo 가
     // 도착할 때까지 빈칸이 된다 → 연타 시 음절마다 빈칸이 깜빡. 그 지연 창 동안 확정
@@ -1494,6 +1612,10 @@
         if (!cell) break;
         const cc = cell.getChars();
         if (cc !== chars[0]) {
+          // Devez Vibe 컴포저가 줄바꿈되면 같은 화면 행을 새 입력 줄로 재사용한다. 그 사이에는
+          // 이전 첫 글자가 이 셀에 남아 있어도 아직 새 글자의 echo 가 도착하지 않은 상태다.
+          // 이를 앵커 오류로 오인해 고스트를 즉시 지우면 새 줄에서 글자가 깜빡였다 사라진다.
+          if (ghost.waitingForDvzReflow) break;
           // 그 셀에 "다른 실글자"가 그려졌다 = 앵커가 틀렸던 것(직전 키 echo 지연으로 몇 칸
           // 왼쪽에 예약된 경우 등) — 실제 텍스트는 다른 위치에 있고 이 고스트는 그 옆에
           // 이중상으로 보이는 쓰레기다. 600ms 기다리지 말고 즉시 폐기.
@@ -1506,7 +1628,11 @@
         trimmed = true;
       }
       if (!chars.length) { clearGhost(); return; } // 전부 도착 — 완료
-      if (trimmed) { ghost.text = chars.join(''); showGhost(); } // 남은 미도착분만 다시 그림
+      if (trimmed) {
+        ghost.waitingForDvzReflow = false; // 실제 echo 확인 뒤에는 일반 앵커 검증으로 복귀
+        ghost.text = chars.join('');
+        showGhost();
+      } // 남은 미도착분만 다시 그림
     }
     let frozenImeCaret = null;       // [pin] 이번 조합 동안 동결된 좌표 — 리페인트가 와도 안 바뀜
     let pendingResponseReset = false; // 응답 완료 신호가 조합 중에 도착 — 누락된 end 감시 안전망 플래그
@@ -1752,7 +1878,10 @@
           }
           rememberLogicalCaret();
         });
-        term.onRender(checkGhostEchoed); // 렌더 배치마다 고스트 echo 확인(고스트 없으면 즉시 return, 비용 무시 가능)
+        term.onRender(function () {
+          syncDevezVibeComposerLayout();
+          checkGhostEchoed();
+        }); // 렌더 배치마다 패널 전환 감지 + 고스트 echo 확인
         term.onResize(function () {
           clearGhost(); // 그리드가 바뀌면 셀→픽셀 환산이 전부 무효 — 고스트는 즉시 정리
           if (isImeComposing) apply(); // 조합 중이면 동결 좌표를 새 그리드 기준 픽셀로 재적용
@@ -1992,27 +2121,82 @@
       setTimeout(apply, 0);
     });
 
-    // Devez Vibe의 우측 사이드패널은 터미널 전체 폭은 유지한 채 컴포저만 왼쪽 본문 폭으로
-    // 좁힌다. 현재 입력 행의 닫는 테두리를 읽어 실제 컴포저 폭을 구한다. 테두리 왼쪽에는
-    // IME 여백이 항상 비어 있으므로, 사용자가 입력한 같은 문자를 경계로 오인하지 않는다.
-    function devezVibeComposerCols(row, col) {
-      if (agent !== 'devezvibe') return term.cols;
+    // Devez Vibe의 패널 전환은 터미널 cols를 바꾸지 않고 컴포저만 다시 배치한다. 화면 하단의
+    // 실제 컴포저 행을 찾아 폭을 캐시하고, 폭/행이 바뀌는 즉시 이전 패널 기준 IME 예약을 버린다.
+    function findDevezVibeComposerLayout() {
+      if (agent !== 'devezvibe') return null;
       try {
         const buf = term.buffer.active;
-        const line = buf.getLine(buf.viewportY + row);
-        if (!line) return term.cols;
-        for (let x = Math.max(2, col); x < term.cols; x++) {
-          if (line.getCell(x)?.getChars() === '│' &&
-              line.getCell(x - 1)?.getChars() === ' ' &&
-              line.getCell(x - 2)?.getChars() === ' ') {
-            return Math.min(term.cols, x + 2);
+        const firstRow = Math.max(0, term.rows - bottomReserved - 14);
+        for (let row = term.rows - bottomReserved - 1; row >= firstRow; row--) {
+          const line = buf.getLine(buf.viewportY + row);
+          if (!line) continue;
+          const inputRow = line.getCell(0)?.getChars() === '│' &&
+            line.getCell(1)?.getChars() === ' ' &&
+            (line.getCell(2)?.getChars() === '>' || line.getCell(2)?.getChars() === ' ');
+          if (!inputRow) continue;
+          // 오른쪽에서 찾으면 입력 내용의 │는 건너뛴다. 패널 오른쪽 테두리는 끝 여백이 하나뿐이라
+          // x+2 공백 조건을 만족하지 않고, 컴포저 닫는 테두리만 선택된다.
+          for (let x = term.cols - 3; x >= 4; x--) {
+            if (line.getCell(x)?.getChars() === '│' &&
+                line.getCell(x - 1)?.getChars() === ' ' &&
+                line.getCell(x - 2)?.getChars() === ' ' &&
+                line.getCell(x + 1)?.getChars() === ' ' &&
+                line.getCell(x + 2)?.getChars() === ' ') {
+              return { row: row, cols: Math.min(term.cols, x + 2) };
+            }
+          }
+          // 패널이 닫힌 전체 폭에서는 닫는 테두리가 끝에서 두 번째 셀이라 x+2가 없다.
+          // 내부 경계를 먼저 찾은 뒤에만 검사해 열린 패널의 바깥 테두리와 혼동하지 않는다.
+          const edge = term.cols - 2;
+          if (line.getCell(edge)?.getChars() === '│' &&
+              line.getCell(edge - 1)?.getChars() === ' ' &&
+              line.getCell(edge - 2)?.getChars() === ' ' &&
+              line.getCell(edge + 1)?.getChars() === ' ') {
+            return { row: row, cols: term.cols };
           }
         }
       } catch (e) {}
-      return term.cols;
+      return null;
+    }
+
+    function updateDevezVibeComposerLayout(cols, row, source) {
+      const changed = cols !== devezVibeComposerColsCache || row !== devezVibeComposerRowCache;
+      if (!changed) return;
+      const before = devezVibeComposerColsCache + '@' + devezVibeComposerRowCache;
+      devezVibeComposerColsCache = cols;
+      devezVibeComposerRowCache = row;
+      chainCaret = null;
+      clearGhost();
+      lastLogicalCaret = null;
+      frozenImeCaret = null;
+      imeDiag('composer-layout[' + source + '] ' + before + ' -> ' + cols + '@' + row);
+      if (isImeComposing) setTimeout(apply, 0);
+      else setTimeout(rememberLogicalCaret, 0);
+    }
+
+    // 최신 dvz는 패널을 그리는 실제 본문 폭을 OSC로 직접 보낸다. 신호를 한 번 받은 뒤에는
+    // 전환 중인 화면 셀을 추정해 새 값을 되돌리지 않고, 화면 스캔은 구버전 dvz 폴백으로만 쓴다.
+    el._setDevezVibeComposerCols = function (cols) {
+      if (agent !== 'devezvibe' || !Number.isInteger(cols) || cols < 20 || cols > term.cols) return;
+      devezVibeComposerColsSignaled = true;
+      updateDevezVibeComposerLayout(cols, -1, 'signal');
+    };
+    if (Number.isInteger(el._devezVibeComposerCols)) {
+      el._setDevezVibeComposerCols(el._devezVibeComposerCols);
+    }
+
+    function syncDevezVibeComposerLayout() {
+      if (agent !== 'devezvibe') return term.cols;
+      if (devezVibeComposerColsSignaled) return devezVibeComposerColsCache;
+      const layout = findDevezVibeComposerLayout();
+      if (!layout) return devezVibeComposerColsCache;
+      updateDevezVibeComposerLayout(layout.cols, layout.row, 'scan');
+      return devezVibeComposerColsCache;
     }
 
     ta.addEventListener('compositionend', function (e) {
+      const composerCols = syncDevezVibeComposerLayout();
       // [chain 예약 + ghost 갱신] 확정 문자열 폭만큼 전진한 좌표를 예약해, 같은 keydown 에서
       // 곧바로 이어질 다음 음절 조합이 "방금 확정된 글자를 덮지 않게" 한다.
       // 조건: B형 + 이번 조합이 실제로 pin 됐고(frozenImeCaret) + 실제 확정 문자가 있음
@@ -2025,7 +2209,6 @@
         // 추가하는 대신 기존 줄을 위로 밀고, 현재 입력 행은 같은 화면 행의 col 4부터 다시
         // 쓴다. 사이드패널이 열린 경우에는 전체 터미널 폭이 아니라 실제 컴포저 폭을 기준으로
         // 줄바꿈을 판단해야 한다. 입력 접두사 폭(4)과 오른쪽 여백(4)을 함께 반영한다.
-        const composerCols = devezVibeComposerCols(frozenImeCaret.row, frozenImeCaret.col);
         const devezVibeWrap = agent === 'devezvibe' && nextCol > composerCols - 6;
         if (devezVibeWrap) {
           committedCaret = { row: frozenImeCaret.row, col: 4 };
@@ -2037,7 +2220,7 @@
         }
         imeDiag('commit "' + e.data + '" frozen=' + frozenImeCaret.row + ',' + frozenImeCaret.col +
                 ' committed=' + committedCaret.row + ',' + committedCaret.col +
-                ' cols=' + composerCols +
+                ' cols=' + composerCols + ' wrap=' + (devezVibeWrap ? 1 : 0) +
                 ' chain=' + (chainCaret ? chainCaret.row + ',' + chainCaret.col : 'none'));
         if (chainCaret) {
           // 고스트: 직전 고스트가 아직 echo 전이고 이번 확정이 바로 이어지는 위치면 문자열을
@@ -2046,8 +2229,14 @@
           if (ghost && ghost.row === committedCaret.row &&
               ghost.col + imeCellWidth(ghost.text) === committedCaret.col) {
             ghost.text += e.data;
+            ghost.waitingForDvzReflow = ghost.waitingForDvzReflow || devezVibeWrap;
           } else {
-            ghost = { row: committedCaret.row, col: committedCaret.col, text: e.data };
+            ghost = {
+              row: committedCaret.row,
+              col: committedCaret.col,
+              text: e.data,
+              waitingForDvzReflow: devezVibeWrap
+            };
           }
           showGhost();
         } else {
@@ -2263,7 +2452,16 @@
 
     // ── 세션(탭) 관리 — C# 으로 위임 (Ctrl+Shift 조합) ──
     if (ctrl && shift && !alt) {
-      if (key === 't' || key === 'T' || key === 'd' || key === 'D') { e.preventDefault(); post({ type:'action', name:'newSession' }); return false; }
+      if (key === 'd' || key === 'D') {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - (entry.lastDevezVibeUpdateKeyAt || 0) <= 700) {
+          entry.lastDevezVibeUpdateKeyAt = 0;
+          post({ type:'action', name:'devezVibeUpdate' });
+        } else entry.lastDevezVibeUpdateKeyAt = now;
+        return false;
+      }
+      if (key === 't' || key === 'T') { e.preventDefault(); post({ type:'action', name:'newSession' }); return false; }
       if (key === 'w' || key === 'W') { e.preventDefault(); post({ type:'action', name:'closeSession' }); return false; }
       if (key === 'h' || key === 'H') { e.preventDefault(); post({ type:'action', name:'hideSession' }); return false; }
       if (key === 'n' || key === 'N') { e.preventDefault(); post({ type:'action', name:'renameSession' }); return false; }
@@ -2511,9 +2709,10 @@
     const term = new TerminalCtor(termOptions);
     const fit = new FitNS.FitAddon();
     term.loadAddon(fit);
+
     term.open(el);
 
-    const entry = { term, fit, el, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
+    const entry = { term, fit, el, webgl: null, devezUnicode: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map(), devezComposerRows: null, devezEmojiOverlay: null, devezEmojiSignature: '', devezEmojiRaf: 0, devezEmojiLogged: false };
     terms[roomId] = entry;
     // Claude 2.1.22x 는 시작 시 XTVERSION(CSI > 0 q) 응답 여부로 입력 증분 렌더와
     // 동기화 출력(?2026)을 결정한다. xterm 5/6 은 이 응답이 없어 Backspace 연타와 응답 출력이
@@ -2535,6 +2734,49 @@
     // 다른 CLI의 OSC는 건드리지 않으며, clear 신호에서 오래된 행 정보를 함께 비운다.
     try {
       entry.copyOsc = term.parser.registerOscHandler(777, function (data) {
+        if (data === 'devez-unicode-v2;17.0.0') {
+          if (agent !== 'devezvibe') return false;
+          if (!entry.devezUnicode && window.UnicodeGraphemesAddon &&
+              window.DevezUnicodeAddon && term.unicode) {
+            try {
+              const graphemeAddon = new window.UnicodeGraphemesAddon.UnicodeGraphemesAddon();
+              term.loadAddon(graphemeAddon);
+              const addon = new window.DevezUnicodeAddon.DevezUnicodeAddon(graphemeAddon);
+              term.loadAddon(addon);
+              term.unicode.activeVersion = 'devez-17.0.0-graphemes';
+              entry.devezUnicode = { graphemeAddon: graphemeAddon, widthAddon: addon };
+              dlog('devez unicode 17 graphemes enabled room=' + roomId);
+              scheduleDvzEmojiOverlay(entry);
+            } catch (e) { dlog('devez unicode graphemes failed room=' + roomId + ' ' + e); }
+          }
+          return true;
+        }
+        if (data === 'devez-composer-v1;none') {
+          if (agent !== 'devezvibe') return false;
+          entry.devezComposerRows = null;
+          entry.devezEmojiSignature = '';
+          scheduleDvzEmojiOverlay(entry);
+          return true;
+        }
+        const composer = /^devez-composer-v1;(\d+);(\d+)$/.exec(data || '');
+        if (composer) {
+          if (agent !== 'devezvibe') return false;
+          const top = Number(composer[1]);
+          const bottom = Number(composer[2]);
+          entry.devezComposerRows = Number.isFinite(top) && Number.isFinite(bottom) && bottom >= top
+            ? { top: top, bottom: bottom }
+            : null;
+          entry.devezEmojiSignature = '';
+          scheduleDvzEmojiOverlay(entry);
+          return true;
+        }
+        const layout = /^devez-layout-v1;(\d+)$/.exec(data || '');
+        if (layout) {
+          const cols = Number(layout[1]);
+          el._devezVibeComposerCols = cols;
+          if (typeof el._setDevezVibeComposerCols === 'function') el._setDevezVibeComposerCols(cols);
+          return true;
+        }
         if (data === 'devez-copy-clear') {
           entry.devezCopyRows.clear();
           return true;
@@ -2586,6 +2828,8 @@
         webgl.onContextLoss(function () {
           try { webgl.dispose(); } catch (e) {}
           entry.webgl = null;
+          entry.devezEmojiSignature = '';
+          scheduleDvzEmojiOverlay(entry);
           dlog('webgl contextLoss room=' + roomId + ' agent=' + agent + ' -> DOM');
         });
         term.loadAddon(webgl);
@@ -2596,6 +2840,18 @@
     dlog('renderer room=' + roomId + ' agent=' + agent + ' engine=' + (use6 ? 'xterm6' : 'xterm5')
        + ' renderer=' + (entry.webgl ? 'WebGL' : 'DOM') + ' dpr=' + window.devicePixelRatio
        + ' enableWebgl=' + !!cfg.enableWebgl);
+    if (agent === 'devezvibe') {
+      entry.devezEmojiRender = term.onRender(function () { scheduleDvzEmojiOverlay(entry); });
+      entry.devezEmojiResize = term.onResize(function () {
+        entry.devezEmojiSignature = '';
+        scheduleDvzEmojiOverlay(entry);
+      });
+      entry.devezEmojiScroll = term.onScroll(function () {
+        entry.devezEmojiSignature = '';
+        scheduleDvzEmojiOverlay(entry);
+      });
+      scheduleDvzEmojiOverlay(entry);
+    }
 
     // ── URL/경로 링크: URL은 기본 브라우저, 파일은 Ctrl+클릭 시 에디터 탭, 폴더는 Explorer ──
     try {
