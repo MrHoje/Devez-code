@@ -44,6 +44,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -80,8 +81,37 @@
             </Grid>
         </Border>
 
+        <!-- ── 전체 작업 지시 바: 큐에 작업이 있고 선택모드가 아닐 때만 노출.
+              항목 전체에 1),2)... 순번을 매겨 하나의 프롬프트로 합쳐 전송. ── -->
+        <Border x:Name="AllActionBar" Grid.Row="1" Height="40"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                Visibility="Collapsed">
+            <Grid Margin="14,0,12,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="AllActionCountText" Grid.Column="0"
+                           VerticalAlignment="Center"
+                           FontSize="{DynamicResource Fs12}"
+                           Foreground="{DynamicResource TextMutedBrush}"/>
+                <Button Grid.Column="1" x:Name="AllActionBtn" Click="AllAction_Click"
+                        Height="28" Padding="12,0" Cursor="Arrow"
+                        Style="{StaticResource PrimaryButton}"
+                        VerticalAlignment="Center"
+                        FontSize="{DynamicResource Fs12}">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSend}"
+                              Width="13" Height="13" Stroke="White" VerticalAlignment="Center"/>
+                        <TextBlock Text="전체 작업 지시" Margin="6,0,0,0" Foreground="White"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
         <!-- ── 버블 리스트 (debit MemoList 정합) ── -->
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="2">
             <!-- 비어있을 때 안내 -->
             <StackPanel x:Name="EmptyHint" VerticalAlignment="Center" HorizontalAlignment="Center"
                         Visibility="Collapsed">
@@ -331,7 +361,7 @@
 
         <!-- ── 입력 바: devez 정합 — 상단 구분선 없이 BgBrush 로 영역과 동화,
                   상단 리사이즈 Thumb 로 높이 조절, 둥근 카드 입력칸. (code/snippet 툴바 제외) ── -->
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 Background="{DynamicResource BgBrush}"
                 Padding="10,0,10,10">
             <DockPanel LastChildFill="True">

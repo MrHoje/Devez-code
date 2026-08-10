@@ -82,6 +82,16 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     {
         // 선택 액션바('N개 선택' + 삭제)는 항상 숨김. 삭제는 컨텍스트 메뉴/Delete 키로만.
         SelectionActionBar.Visibility = Visibility.Collapsed;
+        UpdateAllActionBar();
+    }
+
+    /// <summary>'전체 작업 지시' 바: 큐에 항목이 있고 선택모드가 아닐 때만 노출.</summary>
+    private void UpdateAllActionBar()
+    {
+        if (AllActionBar == null) return;
+        AllActionBar.Visibility = (!_isSelectionMode && Items.Count > 0)
+            ? Visibility.Visible : Visibility.Collapsed;
+        AllActionCountText.Text = $"{Items.Count}개 작업";
     }
 
     private int CountSelected() => Items.Count(i => i.IsSelected);
@@ -454,6 +464,37 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             ClearActionTarget();
             Items.Remove(item);
         }
+    }
+
+    /// <summary>'전체 작업 지시' 클릭 → 큐의 모든 항목에 1),2)... 순번을 매겨 하나의 프롬프트로 합쳐
+    /// 현재 활성 탭 세션에 입력+전송 후 큐를 비운다.</summary>
+    private void AllAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (Items.Count == 0) return;
+        var text = BuildAllActionText();
+        if (string.IsNullOrEmpty(text)) return;
+
+        var ok = (Application.Current.MainWindow as DevezCode.MainWindow)?.SendTextToActiveSession(text) ?? false;
+        if (!ok)
+        {
+            ConfirmDialog.Alert("세션 없음", "현재 활성화된 세션이 없습니다.\n세션 탭을 먼저 선택하세요.");
+            return;
+        }
+        ClearActionTarget();
+        Items.Clear();
+    }
+
+    /// <summary>큐 항목 전체를 순서대로 "1) 내용\n2) 내용..." 형태로 합친다.</summary>
+    private string BuildAllActionText()
+    {
+        var lines = new List<string>();
+        for (int i = 0; i < Items.Count; i++)
+        {
+            var text = Items[i].Text?.Trim();
+            if (string.IsNullOrEmpty(text)) continue;
+            lines.Add($"{i + 1}) {text}");
+        }
+        return string.Join(Environment.NewLine, lines);
     }
 
     private void Bubble_RightClick(object sender, MouseButtonEventArgs e)
