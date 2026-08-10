@@ -248,7 +248,7 @@
                                             Panel.ZIndex="11"
                                             Width="18" Height="18"
                                             HorizontalAlignment="Right" VerticalAlignment="Top"
-                                            Margin="0,-6,-6,0"
+                                            Margin="0,-2,-6,0"
                                             CornerRadius="9"
                                             Background="{DynamicResource PrimaryBrush}"
                                             IsHitTestVisible="False"
