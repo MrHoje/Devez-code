@@ -1194,6 +1194,8 @@ public sealed class TerminalSessionManager
         System.Text.Json.JsonElement root, string trackedId, out System.Text.Json.JsonElement found)
     {
         var raw = DevezVibeStateService.StripBackendPrefix(trackedId);
+        var matched = false;
+        System.Text.Json.JsonElement candidate = default;
         foreach (var entry in root.EnumerateObject())
         {
             if (entry.Value.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
@@ -1203,13 +1205,22 @@ public sealed class TerminalSessionManager
                     && value.ValueKind == System.Text.Json.JsonValueKind.String
                     && string.Equals(value.GetString(), raw, StringComparison.OrdinalIgnoreCase))
                 {
-                    found = entry.Value;
-                    return true;
+                    if (matched)
+                    {
+                        // The same native id belongs to more than one visible
+                        // room. Choosing the first JSON object would resume an
+                        // arbitrary conversation, so let the dvz id itself win.
+                        found = default;
+                        return false;
+                    }
+                    candidate = entry.Value;
+                    matched = true;
+                    break;
                 }
             }
         }
-        found = default;
-        return false;
+        found = candidate;
+        return matched;
     }
 
     /// <summary>dvz 세션의 실체가 디스크에 있는지 확인한다. dvz 는 한 방 안에서 Codex thread(UUID)·

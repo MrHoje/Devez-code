@@ -3149,10 +3149,15 @@
         return;
       }
     }
-    if (event.key !== "Escape" || !openControl) return;
-    event.preventDefault();
-    closeMenus();
-    prompt.focus();
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (openControl) {
+      event.preventDefault();
+      closeMenus();
+      prompt.focus();
+      return;
+    }
+    // 컴포저 밖에 포커스가 있어도 응답 대기 중이면 ESC 로 중단(중단 버튼과 같은 경로).
+    if (busy) { event.preventDefault(); requestStop(); }
   });
   document.addEventListener("wheel", event => {
     if (!event.ctrlKey || event.deltaY === 0) return;

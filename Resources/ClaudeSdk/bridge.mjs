@@ -38,6 +38,7 @@ let started = false;
 let sessionLoop = null;
 let shuttingDown = false;
 let turnActive = false;
+let interruptRunning = false;
 let queuedPromptCount = 0;
 let sessionId = "";
 let currentModel = "";
@@ -57,6 +58,8 @@ const SAFE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image
 const MAX_IMAGES = 20;
 const SHUTDOWN_GUARD_MS = 6000;
 const INTERRUPT_WAIT_MS = 1500;
+const INTERRUPT_RETRY_LIMIT = 3;
+const INTERRUPT_SETTLE_MS = 1200;
 const MAX_IMAGE_BASE64_LENGTH = 10 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BASE64_LENGTH = 28 * 1024 * 1024;
 const REQUIRED_SLASH_COMMANDS = [
@@ -582,6 +585,34 @@ async function start(command) {
   }
 }
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/// 중단: interrupt 는 CLI control 요청이라 turn 이 실제로 CLI 쪽에서 시작되기 전(첫 프롬프트에서
+/// CLI 를 새로 띄우는 구간)에 보내면 조용히 버려진다. 그래서 한 번 보내고 끝내지 않고, turn 이
+/// 끝날 때까지 상한을 두고 다시 보낸다. interrupt 자체가 settle 되지 않을 수 있어 race 로 감싼다.
+async function runInterrupt() {
+  if (interruptRunning) return;
+  interruptRunning = true;
+  try {
+    for (let attempt = 0; attempt < INTERRUPT_RETRY_LIMIT; attempt++) {
+      if (!turnActive || !conversation) return;
+      await Promise.race([
+        Promise.resolve(conversation.interrupt?.()).catch(() => { }),
+        delay(INTERRUPT_WAIT_MS),
+      ]);
+      for (let waited = 0; waited < INTERRUPT_SETTLE_MS && turnActive; waited += 200) await delay(200);
+      if (!turnActive) return;
+    }
+    write({
+      type: "system_output",
+      text: "중단 요청이 적용되지 않았습니다. 잠시 후 다시 시도해 주세요.",
+      input: { kind: "notification", level: "warning" },
+    });
+  } finally {
+    interruptRunning = false;
+  }
+}
+
 /// 종료: 즉시 process.exit 하지 않고 SDK 쿼리를 정상 배수한다. prompts 를 닫아야 claude CLI 자식이
 /// stdin EOF 를 받고 transcript(.jsonl)를 flush 한 뒤 종료하는데, 예전엔 interrupt 후 50ms 만에
 /// exit 해서 마지막 턴이 디스크에 안 남고 다음 resume 에서 통째로 유실됐다.
@@ -705,7 +736,8 @@ async function handle(command) {
       await publishCapabilities();
       break;
     case "interrupt":
-      await conversation?.interrupt?.();
+      // await 하지 않는다 — 재시도 루프가 끝날 때까지 다른 명령(권한 응답 등)이 막히면 안 된다.
+      void runInterrupt();
       break;
     case "shutdown":
       await shutdown();
