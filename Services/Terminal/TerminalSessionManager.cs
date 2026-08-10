@@ -1135,25 +1135,26 @@ public sealed class TerminalSessionManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezVibe", "session-routes.json");
 
-    /// <summary>dvz 추적 ID 를 실제 대화가 있는 세션 ID 로 바로잡는다. 그대로 유효하면 그대로,
-    /// 아니면 dvz 라우트에 적힌 다른 백엔드 세션 중 디스크에 실체가 있는 것을 고른다.
+    /// <summary>dvz 추적 ID 를 실제 대화가 있는 세션 ID 로 바로잡는다. 라우트에 적힌 활성 백엔드
+    /// 세션을 먼저 고르고, 라우트가 없을 때만 추적 ID 자체를 쓴다.
+    /// <para>추적 ID 를 먼저 채택하면 대화 도중 provider 를 바꾼 방이 방을 만든 백엔드의 옛 세션으로
+    /// 되돌아간다 — 그 세션 파일도 디스크에 그대로 남아 있어 유효 판정을 통과하기 때문이다.</para>
     /// 못 찾으면 null — 그때만 새 대화로 연다.</summary>
     public static string? ResolveDevezVibeResumeId(string? sessionId, string? workingDir)
     {
         if (string.IsNullOrWhiteSpace(sessionId)) return null;
-        if (DevezVibeSessionExists(sessionId, workingDir)) return sessionId;
         foreach (var candidate in DevezVibeRoutedSessionIds(sessionId!))
         {
-            if (!string.Equals(candidate, sessionId, StringComparison.OrdinalIgnoreCase)
-                && DevezVibeSessionExists(candidate, workingDir))
-                return candidate;
+            if (DevezVibeSessionExists(candidate, workingDir)) return candidate;
         }
+        if (DevezVibeSessionExists(sessionId, workingDir)) return sessionId;
         return null;
     }
 
-    /// <summary>dvz 라우트 저장소에서 이 방(=visible thread ID)이 거친 백엔드 세션 ID 들을
-    /// 활성 백엔드 우선으로 나열한다. 파일이 없거나 항목이 없으면 빈 목록.</summary>
-    private static IEnumerable<string> DevezVibeRoutedSessionIds(string visibleId)
+    /// <summary>dvz 라우트 저장소에서 이 방이 거친 백엔드 세션 ID 들을 활성 백엔드 우선으로 나열한다.
+    /// 추적 ID 는 방의 visible ID 일 수도(방 이름), 전환 뒤 기록된 백엔드 세션 ID 일 수도 있어
+    /// 키 조회가 빗나가면 백엔드 ID 로 역조회한다. 파일이 없거나 항목이 없으면 빈 목록.</summary>
+    private static IEnumerable<string> DevezVibeRoutedSessionIds(string trackedId)
     {
         var ids = new List<string>();
         try
@@ -1161,7 +1162,9 @@ public sealed class TerminalSessionManager
             var path = DevezVibeRouteStorePath();
             if (!File.Exists(path)) return ids;
             using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
-            if (!doc.RootElement.TryGetProperty(visibleId, out var route)) return ids;
+            if (!doc.RootElement.TryGetProperty(trackedId, out var route)
+                && !TryFindDevezVibeRouteByBackingId(doc.RootElement, trackedId, out route))
+                return ids;
 
             string? Backing(string name)
                 => route.TryGetProperty(name, out var value)
@@ -1183,6 +1186,30 @@ public sealed class TerminalSessionManager
         }
         catch { }
         return ids;
+    }
+
+    /// <summary>백엔드 세션 ID 로 그 세션을 품은 라우트를 찾는다. provider 를 바꾼 뒤 기록된 추적 ID 는
+    /// 방 이름이 아니라 그때 활성이던 백엔드의 세션 ID 라서, 키 조회만으로는 라우트에 닿지 못한다.</summary>
+    private static bool TryFindDevezVibeRouteByBackingId(
+        System.Text.Json.JsonElement root, string trackedId, out System.Text.Json.JsonElement found)
+    {
+        var raw = DevezVibeStateService.StripBackendPrefix(trackedId);
+        foreach (var entry in root.EnumerateObject())
+        {
+            if (entry.Value.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
+            foreach (var name in new[] { "claude_id", "codex_id", "open_code_id" })
+            {
+                if (entry.Value.TryGetProperty(name, out var value)
+                    && value.ValueKind == System.Text.Json.JsonValueKind.String
+                    && string.Equals(value.GetString(), raw, StringComparison.OrdinalIgnoreCase))
+                {
+                    found = entry.Value;
+                    return true;
+                }
+            }
+        }
+        found = default;
+        return false;
     }
 
     /// <summary>dvz 세션의 실체가 디스크에 있는지 확인한다. dvz 는 한 방 안에서 Codex thread(UUID)·
