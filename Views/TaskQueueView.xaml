@@ -21,6 +21,11 @@
                     <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconCopy}"/>
                 </MenuItem.Icon>
             </MenuItem>
+            <MenuItem Click="BubblePin_Click">
+                <MenuItem.Icon>
+                    <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconPin}"/>
+                </MenuItem.Icon>
+            </MenuItem>
             <MenuItem Header="수정" Click="BubbleEdit_Click">
                 <MenuItem.Icon>
                     <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconPencil}"/>
@@ -238,6 +243,20 @@
                                             </Grid>
                                         </Border>
                                     </Border>
+                                    <!-- 고정 배지: IsPinned 일 때만 노출(BubbleBorder 우상단 겹침). -->
+                                    <Border x:Name="PinBadge"
+                                            Panel.ZIndex="11"
+                                            Width="18" Height="18"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Margin="0,-6,-6,0"
+                                            CornerRadius="9"
+                                            Background="{DynamicResource PrimaryBrush}"
+                                            IsHitTestVisible="False"
+                                            Visibility="Collapsed">
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPin}"
+                                              Width="10" Height="10" Stroke="White"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
                                 </Grid>
                             </DockPanel>
 
@@ -276,6 +295,10 @@
                             </Button>
                         </Grid>
                         <DataTemplate.Triggers>
+                            <!-- 고정된 버블 → 우상단 핀 배지 노출 -->
+                            <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                <Setter TargetName="PinBadge" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
                             <!-- 하이라이트(선택 OR 우클릭) → SelectionRing 노출 -->
                             <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
                                 <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>

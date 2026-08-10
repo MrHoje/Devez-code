@@ -967,22 +967,22 @@ public static class SettingsService
     // ── 우측 패널 작업 큐 (버블 항목, 프로젝트별) ────────────────────
     /// <summary>저장된 작업 큐 항목을 (text, sortOrder) 튜플 목록으로 반환. 정렬 순서대로.
     /// projectPath 가 null/empty 면 전역 큐 (별도 "__global__" 키). 저장된 게 없으면 빈 목록.</summary>
-    public static IReadOnlyList<(string Text, long SortOrder)> LoadTaskQueueItems(string? projectPath)
+    public static IReadOnlyList<(string Text, long SortOrder, bool IsPinned)> LoadTaskQueueItems(string? projectPath)
     {
         var key = string.IsNullOrEmpty(projectPath) ? "__global__" : projectPath;
         if (!Current.TaskQueueItemsByProject.TryGetValue(key, out var list))
-            return Array.Empty<(string, long)>();
+            return Array.Empty<(string, long, bool)>();
         return list
             .OrderBy(e => e.SortOrder)
-            .Select(e => (e.Text ?? "", e.SortOrder))
+            .Select(e => (e.Text ?? "", e.SortOrder, e.IsPinned))
             .ToList();
     }
 
-    public static void SaveTaskQueueItems(string? projectPath, IEnumerable<(string Text, long SortOrder)> items)
+    public static void SaveTaskQueueItems(string? projectPath, IEnumerable<(string Text, long SortOrder, bool IsPinned)> items)
     {
         var key = string.IsNullOrEmpty(projectPath) ? "__global__" : projectPath;
         var snapshot = items
-            .Select(e => new TaskQueueEntry { Text = e.Text, SortOrder = e.SortOrder })
+            .Select(e => new TaskQueueEntry { Text = e.Text, SortOrder = e.SortOrder, IsPinned = e.IsPinned })
             .ToList();
         // 빈 큐는 키 자체를 제거해 settings.json 크기 축소.
         if (snapshot.Count == 0)
@@ -1249,6 +1249,7 @@ public sealed class TaskQueueEntry
 {
     public string Text { get; set; } = "";
     public long SortOrder { get; set; }
+    public bool IsPinned { get; set; }
 }
 
 /// <summary>우측 패널 브라우저의 프로젝트별 가상 히스토리.

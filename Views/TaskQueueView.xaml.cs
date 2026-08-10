@@ -13,7 +13,8 @@ namespace DevezCode.Views;
 
 /// <summary>우측 패널 작업 큐 — doit MemoThreadView 의 task queue 슬림 포팅.
 /// 원본 차용: 우클릭 → 선택모드 진입 / 러버밴드 다중선택 / SelectCheck + SelectionRing / 상단 액션바.
-/// 원본 제외: 태그/핀/별/코드/시트/할일/타이머/첨부/URL/링크프리뷰/댓글/공유/일정등록/편집/AI채팅.
+/// 원본 제외: 태그/별/코드/시트/할일/타이머/첨부/URL/링크프리뷰/댓글/공유/일정등록/편집/AI채팅.
+/// 핀(고정)은 원본과 무관하게 자체 추가: 전송 후에도 자동 삭제되지 않는 항목 표시용.
 /// 영속화: 프로젝트 경로별(settings.json Dictionary).</summary>
 public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 {
@@ -170,8 +171,8 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         _loading = true;
         Items.Clear();
         var saved = SettingsService.LoadTaskQueueItems(_projectPath);
-        foreach (var (text, sortOrder) in saved)
-            Items.Add(new TaskQueueItem { Text = text, SortOrder = sortOrder });
+        foreach (var (text, sortOrder, isPinned) in saved)
+            Items.Add(new TaskQueueItem { Text = text, SortOrder = sortOrder, IsPinned = isPinned });
         _loading = false;
 
         IsSelectionMode = false;
@@ -183,7 +184,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private void Save()
     {
         if (_loading) return;
-        SettingsService.SaveTaskQueueItems(_projectPath, Items.Select(i => (i.Text, i.SortOrder)));
+        SettingsService.SaveTaskQueueItems(_projectPath, Items.Select(i => (i.Text, i.SortOrder, i.IsPinned)));
     }
 
     private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -462,7 +463,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         else
         {
             ClearActionTarget();
-            Items.Remove(item);
+            if (!item.IsPinned) Items.Remove(item); // 고정 항목은 전송 후에도 큐에 유지
         }
     }
 
@@ -481,7 +482,8 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             return;
         }
         ClearActionTarget();
-        Items.Clear();
+        // 고정 항목은 전송 후에도 큐에 유지, 나머지만 제거.
+        foreach (var it in Items.Where(i => !i.IsPinned).ToList()) Items.Remove(it);
     }
 
     /// <summary>큐 항목 전체를 순서대로 "1) 내용\n2) 내용..." 형태로 합친다.</summary>
@@ -916,26 +918,57 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     }
 
     /// <summary>컨텍스트 메뉴 열릴 때: 선택 수에 따라 헤더 갱신 + '줄별로 분리' 노출 결정.
-    /// 메뉴 항목 순서: [0]복사 [1]줄별로분리 [2]구분선 [3]삭제.</summary>
+    /// 메뉴 항목 순서: [0]복사 [1]고정 [2]수정 [3]줄별로분리 [4]구분선 [5]삭제.</summary>
     private void BubbleContextMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu cm) return;
         var count = CountSelected();
         bool bulk = count > 1;
-        // 메뉴 순서: [0]복사 [1]수정 [2]줄별로분리 [3]구분선 [4]삭제.
         if (cm.Items.Count > 0 && cm.Items[0] is MenuItem copy)
             copy.Header = bulk ? $"선택 {count}개 복사" : "복사";
-        if (cm.Items.Count > 4 && cm.Items[4] is MenuItem del)
+        if (cm.Items.Count > 5 && cm.Items[5] is MenuItem del)
             del.Header = bulk ? $"선택 {count}개 삭제" : "삭제";
+        // 고정: 다중 선택이면 '전부 고정'/'전부 고정 해제' 토글, 단일이면 대상 상태에 맞춘 라벨.
+        if (cm.Items.Count > 1 && cm.Items[1] is MenuItem pin)
+        {
+            if (bulk)
+            {
+                bool anyUnpinned = Items.Where(i => i.IsSelected).Any(i => !i.IsPinned);
+                pin.Header = anyUnpinned ? $"선택 {count}개 고정" : $"선택 {count}개 고정 해제";
+            }
+            else
+            {
+                pin.Header = (_contextMenuItem?.IsPinned ?? false) ? "고정 해제" : "고정";
+            }
+        }
         // 수정: 단일 대상일 때만(다중 선택 시 숨김).
-        if (cm.Items.Count > 1 && cm.Items[1] is MenuItem edit)
+        if (cm.Items.Count > 2 && cm.Items[2] is MenuItem edit)
             edit.Visibility = bulk ? Visibility.Collapsed : Visibility.Visible;
         // 줄별로 분리: 단일 대상이고 빈 줄 제외 2줄 이상일 때만(devez CanSplitMemo).
-        if (cm.Items.Count > 2 && cm.Items[2] is MenuItem split)
+        if (cm.Items.Count > 3 && cm.Items[3] is MenuItem split)
         {
             bool showSplit = !bulk && _contextMenuItem != null && CanSplit(_contextMenuItem);
             split.Visibility = showSplit ? Visibility.Visible : Visibility.Collapsed;
         }
+    }
+
+    /// <summary>'고정' 클릭: 다중 선택이면 전체 토글(하나라도 미고정이면 전부 고정, 아니면 전부 해제),
+    /// 단일이면 그 항목만 토글. 고정된 항목은 전송 후 자동 삭제되지 않는다.</summary>
+    private void BubblePin_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Items.Where(i => i.IsSelected).ToList();
+        if (selected.Count > 1)
+        {
+            bool pinAll = selected.Any(i => !i.IsPinned);
+            foreach (var it in selected) it.IsPinned = pinAll;
+            Save();
+            return;
+        }
+        var item = _contextMenuItem
+            ?? (sender is MenuItem { DataContext: TaskQueueItem mi } ? mi : null);
+        if (item == null) return;
+        item.IsPinned = !item.IsPinned;
+        Save();
     }
 
     /// <summary>메뉴 닫힘: 가짜 드래그 차단 타임스탬프 기록 + 우클릭 하이라이트 해제.</summary>

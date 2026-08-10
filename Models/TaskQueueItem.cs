@@ -1,7 +1,8 @@
 namespace DevezCode.Models;
 
 /// <summary>우측 패널 작업 큐의 한 항목(= 버블). doit MemoMessage 의 task queue 전용 슬림 버전.
-/// - Content 만 가지며 태그/핀/별/코드블럭/시트/할일/타이머/첨부/URL/댓글/공유/일정등록/AI채팅 모두 제외.
+/// - Content 만 가지며 태그/별/코드블럭/시트/할일/타이머/첨부/URL/댓글/공유/일정등록/AI채팅 모두 제외.
+/// - IsPinned 는 원본과 무관한 자체 추가 기능(전송 후 자동 삭제 방지).
 /// - IsSelected / IsRightClickHighlighted: doit 채팅방의 다중선택/우클릭하이라이트 패턴 차용.</summary>
 public sealed class TaskQueueItem : NotifyBase
 {
@@ -49,6 +50,15 @@ public sealed class TaskQueueItem : NotifyBase
     {
         get => _isActionTarget;
         set => Set(ref _isActionTarget, value);
+    }
+
+    // ── 고정: true 면 '작업지시'/'전체 작업 지시' 전송 후에도 큐에서 자동 제거되지 않는다.
+    // 컨텍스트 메뉴/Delete 키를 통한 수동 삭제는 고정 여부와 무관하게 그대로 동작.
+    private bool _isPinned;
+    public bool IsPinned
+    {
+        get => _isPinned;
+        set => Set(ref _isPinned, value);
     }
 
     // ── 인라인 수정모드 (devez MemoMessage.IsEditing 패턴 슬림) ──
