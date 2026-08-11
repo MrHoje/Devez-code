@@ -6460,6 +6460,7 @@ public partial class MainWindow : Window
         SettingsHost.Children.Clear();
         ApplyTitleBarForSettings(false);
         ResumeTerminal();
+        SettingsService.RefreshTerminalFontRendering();
         ScheduleTerminalFocusRestore();
         // 설정의 계정 사용량에서 로그인/재연결했을 수 있으니 즉시 갱신.
         _usageApi.RefreshNow();

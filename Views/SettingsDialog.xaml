@@ -662,9 +662,30 @@
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,12,0"/>
                                         </StackPanel>
-                                        <CheckBox x:Name="ClaudeGuiModeToggle" Grid.Column="1"
-                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="ClaudeGuiModeToggle_Changed" Unchecked="ClaudeGuiModeToggle_Changed"/>
+                                         <CheckBox x:Name="ClaudeGuiModeToggle" Grid.Column="1"
+                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                   Checked="ClaudeGuiModeToggle_Changed" Unchecked="ClaudeGuiModeToggle_Changed"/>
+                                     </Grid>
+                                 </Border>
+
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="터미널·Claude GUI 글꼴" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="설치된 권장 고정폭 글꼴 목록에서 선택합니다. 선택 즉시 열려 있는 터미널과 Claude GUI에 적용됩니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="DefaultFontFamilyCombo" Grid.Column="1" Width="196"
+                                                  Style="{StaticResource ThemedCombo}" VerticalAlignment="Center"
+                                                  SelectionChanged="DefaultFontFamilyCombo_Changed"
+                                                  ToolTip="터미널과 Claude GUI 글꼴"/>
                                     </Grid>
                                 </Border>
 

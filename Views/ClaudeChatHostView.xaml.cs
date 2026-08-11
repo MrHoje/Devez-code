@@ -59,6 +59,8 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
         InitializeComponent();
         ClaudeSdkSessionManager.Instance.EventReceived += OnSdkEvent;
         App.ThemeChanged += OnThemeChanged;
+        SettingsService.TerminalFontFamilyChanged += OnTerminalFontFamilyChanged;
+        SettingsService.TerminalFontRenderRefreshRequested += OnTerminalFontRenderRefreshRequested;
     }
 
     private static Task<CoreWebView2Environment> CreateEnvironmentAsync()
@@ -208,6 +210,7 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                     _pageReady = true;
                     StopReadyTimeout();
                     ApplyTheme();
+                    ApplyFontFamily();
                     SyncActiveSession();
                     FlushPendingInsertion();
                     if (_focusPending && _session != null)
@@ -720,6 +723,24 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
 
     private void OnThemeChanged(string _) => Dispatcher.BeginInvoke(new Action(ApplyTheme));
 
+    private void OnTerminalFontFamilyChanged(string _) => Dispatcher.BeginInvoke(new Action(ApplyFontFamily));
+
+    private void OnTerminalFontRenderRefreshRequested() => Dispatcher.BeginInvoke(new Action(ApplyFontFamily));
+
+    private static string EffectiveFontFamily()
+    {
+        var saved = SettingsService.LoadTerminalFontFamily();
+        return string.IsNullOrWhiteSpace(saved)
+            ? DevezCode.Services.Terminal.TerminalSessionManager.Instance.Config.FontFamily
+            : saved;
+    }
+
+    private void ApplyFontFamily()
+    {
+        if (!_pageReady) return;
+        PostJson(new { type = "setFontFamily", fontFamily = EffectiveFontFamily() });
+    }
+
     private void ApplyTheme()
     {
         try { if (_webView != null) _webView.DefaultBackgroundColor = CurrentBackgroundColor(); } catch { }
@@ -848,6 +869,8 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
         GlobalTabHotkey.SetHanjaInputSuppressed(_hanjaSuppressionOwner, false);
         ClaudeSdkSessionManager.Instance.EventReceived -= OnSdkEvent;
         App.ThemeChanged -= OnThemeChanged;
+        SettingsService.TerminalFontFamilyChanged -= OnTerminalFontFamilyChanged;
+        SettingsService.TerminalFontRenderRefreshRequested -= OnTerminalFontRenderRefreshRequested;
         StopReadyTimeout();
         ClearPendingStreamDeltas();
         try

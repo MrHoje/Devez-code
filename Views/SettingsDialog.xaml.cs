@@ -35,6 +35,7 @@ public partial class SettingsDialog : UserControl
     private bool   _originalClaudeGuiMode;
     private int    _originalIdleSessionShutdownMinutes;
     private int    _originalDefaultFontSizePt;
+    private string _originalTerminalFontFamily = "";
     private int    _originalMarkdownViewportWidth;
     private bool   _originalAutoLoadLastProject;
     private bool   _originalPromptForNewSessionName;
@@ -59,6 +60,7 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedClaudeGuiMode;
     private int    _selectedIdleSessionShutdownMinutes;
     private int    _selectedDefaultFontSizePt;
+    private string _selectedTerminalFontFamily = "";
     private int    _selectedMarkdownViewportWidth;
     private bool   _syncingMarkdownViewportWidth;
     private bool   _selectedAutoLoadLastProject;
@@ -101,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.23.12", "2026-08-10", true, new[]
+          ("v1.23.13", "2026-08-11", true, new[]
+          {
+              "터미널Claude GUI 글꼴변경기능을 추가했습니다.",
+          }),
+          ("v1.23.12", "2026-08-10", false, new[]
           {
               "Claude GUI 에서 ESC로 프롬프트를 중단하는 기능을 추가했습니다.",
           }),
@@ -619,6 +625,7 @@ public partial class SettingsDialog : UserControl
     private readonly Action<string> _themeChangedHandler;
     private readonly Action<int> _fontScaleChangedHandler;
     private bool _subscribed;
+    private bool _terminalFontFamilyReady;
 
     public SettingsDialog()
     {
@@ -644,6 +651,10 @@ public partial class SettingsDialog : UserControl
         _originalDefaultFontSizePt = Services.Terminal.TerminalSessionManager.Instance.DefaultFontSizePt;
         _selectedDefaultFontSizePt = _originalDefaultFontSizePt;
         SelectComboByTag(DefaultFontSizeCombo, _selectedDefaultFontSizePt.ToString());
+        _originalTerminalFontFamily = SettingsService.LoadTerminalFontFamily();
+        _selectedTerminalFontFamily = _originalTerminalFontFamily;
+        PopulateTerminalFontFamilyCombo(_selectedTerminalFontFamily);
+        _terminalFontFamilyReady = true;
         _originalMarkdownViewportWidth = SettingsService.LoadMarkdownViewportWidth();
         _selectedMarkdownViewportWidth = _originalMarkdownViewportWidth;
         SetMarkdownViewportWidthEditor(_selectedMarkdownViewportWidth);
@@ -1030,6 +1041,56 @@ public partial class SettingsDialog : UserControl
             _selectedDefaultFontSizePt = pt;
     }
 
+    private static readonly string[] RecommendedTerminalFontFamilies =
+    {
+        "Cascadia Mono", "Cascadia Code", "Consolas", "D2Coding", "JetBrains Mono", "Fira Code", "NanumGothicCoding"
+    };
+
+    // WebView 자산에 포함되어 있어 Windows에 설치되지 않은 PC에서도 인앱 터미널과 Claude GUI에서 사용할 수 있다.
+    private static readonly string[] BundledFontFamilies = { "Pretendard" };
+
+    private void PopulateTerminalFontFamilyCombo(string selectedFamily)
+    {
+        var installed = Fonts.SystemFontFamilies
+            .Select(font => font.Source)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var options = RecommendedTerminalFontFamilies
+            .Where(installed.Contains)
+            .Concat(BundledFontFamilies)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(selectedFamily) && !options.Contains(selectedFamily, StringComparer.OrdinalIgnoreCase))
+            options.Add(selectedFamily);
+
+        var windowsTerminalDefault = Services.Terminal.TerminalSessionManager.Instance.Config.FontFamily;
+        DefaultFontFamilyCombo.Items.Clear();
+        DefaultFontFamilyCombo.Items.Add(new ComboBoxItem
+        {
+            Content = $"Windows Terminal 기본값 ({windowsTerminalDefault})",
+            Tag = "",
+        });
+        foreach (var family in options)
+        {
+            var isBundled = BundledFontFamilies.Contains(family, StringComparer.OrdinalIgnoreCase);
+            DefaultFontFamilyCombo.Items.Add(new ComboBoxItem
+            {
+                Content = isBundled ? $"{family} (내장)" : family,
+                Tag = family,
+            });
+        }
+
+        SelectComboByTag(DefaultFontFamilyCombo, selectedFamily);
+    }
+
+    private void DefaultFontFamilyCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (DefaultFontFamilyCombo.SelectedItem is not ComboBoxItem item) return;
+        _selectedTerminalFontFamily = item.Tag?.ToString()?.Trim() ?? "";
+        if (!_terminalFontFamilyReady || string.Equals(_selectedTerminalFontFamily, _originalTerminalFontFamily, StringComparison.Ordinal)) return;
+        SettingsService.SaveTerminalFontFamily(_selectedTerminalFontFamily);
+        _originalTerminalFontFamily = _selectedTerminalFontFamily;
+    }
+
     private void SetMarkdownViewportWidthEditor(int width)
     {
         _syncingMarkdownViewportWidth = true;
@@ -1140,6 +1201,11 @@ public partial class SettingsDialog : UserControl
     ///   재시작하며 업데이트한다(세션은 저장·복원). 시작 경로가 세션 생성 전에 돌아 깨끗이 설치된다.</summary>
     private void InstantUpdateAgents_Click(object sender, MouseButtonEventArgs e)
     {
+#if DEBUG
+        ConfirmDialog.Show("Debug 실행", "Debug 실행에서는 에이전트 업데이트를 실행하지 않습니다.", okLabel: "확인");
+        return;
+#endif
+
         if (_instantUpdating) return;
         _instantUpdating = true;
         try
@@ -1983,6 +2049,8 @@ public partial class SettingsDialog : UserControl
         }
         if (_selectedDefaultFontSizePt != _originalDefaultFontSizePt)
             SettingsService.SaveTerminalFontSizePt(_selectedDefaultFontSizePt);
+        if (!string.Equals(_selectedTerminalFontFamily, _originalTerminalFontFamily, StringComparison.Ordinal))
+            SettingsService.SaveTerminalFontFamily(_selectedTerminalFontFamily);
         if (_selectedMarkdownViewportWidth != _originalMarkdownViewportWidth)
             SettingsService.SaveMarkdownViewportWidth(_selectedMarkdownViewportWidth);
         SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
@@ -2093,6 +2161,7 @@ public partial class SettingsDialog : UserControl
         _originalClaudeGuiMode = _selectedClaudeGuiMode;
         _originalIdleSessionShutdownMinutes = _selectedIdleSessionShutdownMinutes;
         _originalDefaultFontSizePt = _selectedDefaultFontSizePt;
+        _originalTerminalFontFamily = _selectedTerminalFontFamily;
         _originalMarkdownViewportWidth = _selectedMarkdownViewportWidth;
         SetMarkdownViewportWidthEditor(_selectedMarkdownViewportWidth);
         _originalAutoLoadLastProject = _selectedAutoLoadLastProject;

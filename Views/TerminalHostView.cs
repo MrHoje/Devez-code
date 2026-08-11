@@ -72,6 +72,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly List<string> _pendingPreload = new(); // pageReady 전에 들어온 백그라운드 로드 요청
     private string? _activeRoomId;
     private readonly Action<string> _themeChangedHandler;
+    private readonly Action<string> _terminalFontFamilyChangedHandler;
+    private readonly Action _terminalFontRenderRefreshHandler;
     // xterm 링크 provider와 WebView 팝업 경로가 같은 클릭을 함께 전달해도 한 번만 연다.
     private string? _lastTerminalUrl;
     private long _lastTerminalUrlTick;
@@ -87,6 +89,18 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             var saved = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();
             if (saved > 0) return Math.Round(saved * PtToPx, 1);
             return TerminalSessionManager.Instance.Config.FontSizePx;
+        }
+    }
+
+    /// <summary>사용자 지정 글꼴을 우선하고, 비어 있으면 Windows Terminal 기본 프로필 글꼴을 쓴다.</summary>
+    private static string EffectiveFontFamily
+    {
+        get
+        {
+            var saved = DevezCode.Services.SettingsService.LoadTerminalFontFamily();
+            return string.IsNullOrWhiteSpace(saved)
+                ? TerminalSessionManager.Instance.Config.FontFamily
+                : saved;
         }
     }
 
@@ -199,6 +213,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // MainWindow.ReloadAllSessionsForTheme 가 커밋 시점에 일괄 처리한다.
         _themeChangedHandler = _ => PushCurrentTheme();
         App.ThemeChanged += _themeChangedHandler;
+        _terminalFontFamilyChangedHandler = _ => ApplyTerminalFontFamily();
+        DevezCode.Services.SettingsService.TerminalFontFamilyChanged += _terminalFontFamilyChangedHandler;
+        _terminalFontRenderRefreshHandler = ApplyTerminalFontFamily;
+        DevezCode.Services.SettingsService.TerminalFontRenderRefreshRequested += _terminalFontRenderRefreshHandler;
         // 배치 재진입 신호(claude/gjc /exit·Ctrl+C 후 루프 재실행 직전) → 로딩 커버. Dispose 에서 해제.
         TerminalSessionManager.RoomReentering += OnRoomReentering;
     }
@@ -861,7 +879,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             type = "init",
             theme = cfg.Scheme,
             accent = CurrentAccentHex(), // 로딩 스피너 색 = 앱 PrimaryBrush (devez 스타일)
-            fontFamily = cfg.FontFamily,
+            fontFamily = EffectiveFontFamily,
             fontSize = fontSizePx,
             windowsBuild = Environment.OSVersion.Version.Build, // xterm windowsPty 휴리스틱 판정용
             // WebGL(GPU) 렌더러 사용 여부 — 원격 제어 중(RDP/CRD)에만 끈다. 원격엔 쓸 GPU 가 없어
@@ -908,6 +926,16 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _pendingFocus = false;
             if (IsVisible) _webView?.Focus(); // JS 쪽은 show()가 term.focus() 처리
         }
+    }
+
+    private void ApplyTerminalFontFamily()
+    {
+        if (_disposed) return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_disposed || !_pageReady) return;
+            PostJson(new { type = "setFontFamily", fontFamily = EffectiveFontFamily });
+        });
     }
 
     /// <summary>세션을 가져오거나 만들고 출력·종료 이벤트를 JS로 배선.</summary>
@@ -2487,6 +2515,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (_disposed) return;
         _disposed = true;
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
+        try { DevezCode.Services.SettingsService.TerminalFontFamilyChanged -= _terminalFontFamilyChangedHandler; } catch { }
+        try { DevezCode.Services.SettingsService.TerminalFontRenderRefreshRequested -= _terminalFontRenderRefreshHandler; } catch { }
         try { TerminalSessionManager.RoomReentering -= OnRoomReentering; } catch { }
         try
         {

@@ -36,6 +36,8 @@ public static class SettingsService
     private sealed class SettingsData
     {
         public int TerminalFontSizePt { get; set; } = 0;
+        // 빈 값이면 Windows Terminal 기본 프로필의 글꼴을 사용한다.
+        public string TerminalFontFamily { get; set; } = "";
         // 방별 폰트 고정 마이그레이션 완료 여부. 이 수정 이전 세션은 방별 크기 기록이 없어
         // 최초 1회 현재 전역 기본값으로 고정한다(이후 기본값 변경이 기존 세션에 영향 없게).
         public bool TerminalRoomFontMigrated { get; set; } = false;
@@ -335,7 +337,28 @@ public static class SettingsService
     }
 
     private static void Save() => _ = TrySave();
-    // ── 터미널 폰트 크기 ──────────────────────────────────────────
+    // ── 터미널 글꼴 ───────────────────────────────────────────────
+    /// <summary>실행 중인 WebView2 터미널에 글꼴 변경을 즉시 전달한다. 빈 값은 Windows Terminal 기본값이다.</summary>
+    public static event Action<string>? TerminalFontFamilyChanged;
+
+    /// <summary>숨겨졌던 WebView2 표면을 다시 표시한 뒤 글꼴 렌더링을 갱신한다.</summary>
+    public static event Action? TerminalFontRenderRefreshRequested;
+
+    public static string LoadTerminalFontFamily() => Current.TerminalFontFamily?.Trim() ?? "";
+    public static void SaveTerminalFontFamily(string? family)
+    {
+        var next = family?.Trim() ?? "";
+        if (string.Equals(Current.TerminalFontFamily, next, StringComparison.Ordinal)) return;
+        Current.TerminalFontFamily = next;
+        Save();
+        TerminalFontFamilyChanged?.Invoke(next);
+    }
+
+    /// <summary>현재 글꼴 값을 다시 전달해 열린 터미널과 Claude GUI의 글꼴 렌더링을 갱신한다.</summary>
+    public static void RefreshTerminalFontRendering()
+        => TerminalFontRenderRefreshRequested?.Invoke();
+
+    // ── 터미널 글꼴 크기 ──────────────────────────────────────────
     public static int LoadTerminalFontSizePt() => Current.TerminalFontSizePt;
     public static void SaveTerminalFontSizePt(int pt) { Current.TerminalFontSizePt = pt; Save(); }
 

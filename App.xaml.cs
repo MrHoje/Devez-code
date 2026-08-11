@@ -254,6 +254,12 @@ public partial class App : Application
     /// 메인 창이 뜨기 전에 진행 모달을 먼저 띄워 업데이트 결과를 보여준 뒤 메인 창을 연다.</summary>
     private async void StartupSequence()
     {
+#if DEBUG
+        // Debug 실행은 로컬 개발 환경의 CLI/플러그인 버전을 변경하지 않는다.
+        new MainWindow().Show();
+        return;
+#endif
+
         // devez-marketplace 갱신 + hoje-code 플러그인을 하루 1회, 창·모달·알림 없이 백그라운드로 조용히 최신화.
         // 아래 에이전트 자동업데이트 토글/게이트와 무관하게 항상 시도한다(사용자에게 진행을 노출하지 않음).
         TryUpdateDevezPluginsSilently();

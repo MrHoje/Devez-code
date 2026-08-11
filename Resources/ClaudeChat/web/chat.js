@@ -2791,6 +2791,18 @@
     root.style.colorScheme = message.dark ? "dark" : "light";
   }
 
+  function cssFontFamilyName(value) {
+    return '"' + String(value || "").replace(/[\\"]/g, "\\$&") + '"';
+  }
+
+  function applyFontFamily(message) {
+    const primary = String(message.fontFamily || "").trim() || "Pretendard";
+    const family = cssFontFamilyName(primary);
+    const root = document.documentElement;
+    root.style.setProperty("--chat-font", family + ", Pretendard, sans-serif");
+    root.style.setProperty("--code-font", family + ", Consolas, 'Cascadia Code', Pretendard, monospace");
+  }
+
   function insertText(text) {
     const spacer = prompt.value && !/\s$/.test(prompt.value) ? " " : "";
     prompt.value += spacer + (text || "");
@@ -3216,6 +3228,7 @@
         }
         break;
       case "setTheme": applyTheme(data); break;
+      case "setFontFamily": applyFontFamily(data); break;
       case "focus": prompt.focus(); break;
       case "insertText": insertText(data.text); break;
       case "addAttachments": void addHostAttachments(data.items); break;

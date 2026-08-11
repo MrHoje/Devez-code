@@ -65,6 +65,11 @@ public static class AgentUpdateService
     public static async Task<IReadOnlyList<AgentUpdateResult>> UpdateEnabledAgentsAsync(
         Action<string>? report = null, string? onlyAgentId = null, bool waitForCompletion = false)
     {
+#if DEBUG
+        report?.Invoke("Debug 실행에서는 에이전트 업데이트를 실행하지 않습니다.");
+        return Array.Empty<AgentUpdateResult>();
+#endif
+
         var results = new List<AgentUpdateResult>();
         try
         {
