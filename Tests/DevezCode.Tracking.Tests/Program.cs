@@ -2,6 +2,58 @@ using DevezCode.Services;
 
 var failures = new List<string>();
 
+var installerTestRoot = Path.Combine(Path.GetTempPath(), $"devezcode-installer-test-{Guid.NewGuid():N}");
+try
+{
+    Directory.CreateDirectory(installerTestRoot);
+    var validZip = Path.Combine(installerTestRoot, "valid.zip");
+    using (var archive = System.IO.Compression.ZipFile.Open(validZip, System.IO.Compression.ZipArchiveMode.Create))
+    {
+        var entry = archive.CreateEntry("DevezCode_Setup_9.9.9.exe");
+        using var stream = new StreamWriter(entry.Open());
+        stream.Write("setup");
+    }
+    var extracted = InstallerPackage.ExtractSetup(validZip, Path.Combine(installerTestRoot, "valid"));
+    Check(File.ReadAllText(extracted) == "setup", "installer archive extraction");
+
+    var unsafeZip = Path.Combine(installerTestRoot, "unsafe.zip");
+    using (var archive = System.IO.Compression.ZipFile.Open(unsafeZip, System.IO.Compression.ZipArchiveMode.Create))
+    {
+        var entry = archive.CreateEntry("..\\DevezCode_Setup_9.9.9.exe");
+        using var stream = new StreamWriter(entry.Open());
+        stream.Write("setup");
+    }
+    try
+    {
+        InstallerPackage.ExtractSetup(unsafeZip, Path.Combine(installerTestRoot, "unsafe"));
+        Check(false, "installer archive traversal rejected");
+    }
+    catch (InvalidDataException)
+    {
+        Check(true, "installer archive traversal rejected");
+    }
+
+    var multipleZip = Path.Combine(installerTestRoot, "multiple.zip");
+    using (var archive = System.IO.Compression.ZipFile.Open(multipleZip, System.IO.Compression.ZipArchiveMode.Create))
+    {
+        archive.CreateEntry("DevezCode_Setup_9.9.9.exe");
+        archive.CreateEntry("extra.exe");
+    }
+    try
+    {
+        InstallerPackage.ExtractSetup(multipleZip, Path.Combine(installerTestRoot, "multiple"));
+        Check(false, "installer archive extra file rejected");
+    }
+    catch (InvalidDataException)
+    {
+        Check(true, "installer archive extra file rejected");
+    }
+}
+finally
+{
+    try { Directory.Delete(installerTestRoot, recursive: true); } catch { }
+}
+
 Check(AgentEventOwnership.IsMatch("claude", "claude"), "same agent");
 Check(AgentEventOwnership.IsMatch("CoDeX", "codex"), "case-insensitive");
 Check(!AgentEventOwnership.IsMatch("claude", "codex"), "cross-agent");

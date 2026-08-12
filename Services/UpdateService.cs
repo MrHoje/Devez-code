@@ -15,6 +15,7 @@ public sealed class UpdateElevationDeniedException(string message) : Exception(m
 public record UpdateInfo(
     string Version, string Url, string Notes = "", bool IsUrgent = false,
     string PatchUrl = "", string PatchFrom = "", string Sha256 = "",
+    string InstallerSha256 = "",
     IReadOnlyList<UpdateReleaseNote>? Releases = null);
 
 public static class UpdateService
@@ -59,6 +60,7 @@ public static class UpdateService
         var patchUrl = root.TryGetProperty("patchUrl", out var pu) ? pu.GetString() ?? "" : "";
         var patchFrom = root.TryGetProperty("patchFrom", out var pf) ? pf.GetString() ?? "" : "";
         var sha256 = root.TryGetProperty("sha256", out var s) ? s.GetString() ?? "" : "";
+        var installerSha256 = root.TryGetProperty("installerSha256", out var ins) ? ins.GetString() ?? "" : "";
         var releases = new List<UpdateReleaseNote>();
         if (root.TryGetProperty("releases", out var re) && re.ValueKind == JsonValueKind.Array)
         {
@@ -71,7 +73,7 @@ public static class UpdateService
                     releases.Add(new UpdateReleaseNote(releaseVersion, releaseNotes));
             }
         }
-        return new UpdateInfo(version, url, notes, urgent, patchUrl, patchFrom, sha256, releases);
+        return new UpdateInfo(version, url, notes, urgent, patchUrl, patchFrom, sha256, installerSha256, releases);
     }
 
     private static string ReadNotes(JsonElement element)
@@ -221,57 +223,167 @@ public static class UpdateService
         return proc.ExitCode == 0 && File.Exists(outExe);
     }
 
+    private static string PsLiteral(string value) => value.Replace("'", "''");
+
+    private static void CloseForUpdate()
+    {
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            var mw = Application.Current.MainWindow;
+            if (mw != null)
+            {
+                if (mw is MainWindow m) m.ForceQuit = true;
+                mw.Closed += (_, _) => Application.Current.Shutdown();
+                mw.Close();
+            }
+            else Application.Current.Shutdown();
+        });
+    }
+
+    private static void StartHelper(string script, string currentExe)
+    {
+        var pfX64 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var pfX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        var needsElevation = currentExe.StartsWith(pfX64, StringComparison.OrdinalIgnoreCase)
+                          || currentExe.StartsWith(pfX86, StringComparison.OrdinalIgnoreCase);
+
+        try
+        {
+            var helper = Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"{script}\"",
+                UseShellExecute = needsElevation,
+                Verb = needsElevation ? "runas" : "",
+                CreateNoWindow = !needsElevation,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+            if (helper is null)
+                throw new InvalidOperationException("업데이트 도우미를 시작하지 못했습니다.");
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            try { File.Delete(script); } catch { }
+            throw new UpdateElevationDeniedException("업데이트 적용에 필요한 관리자 권한 승격이 거부되었습니다.");
+        }
+    }
+
+    private static async Task DownloadInstallerAndRepairAsync(UpdateInfo info, IProgress<double> progress)
+    {
+        if (string.IsNullOrWhiteSpace(info.InstallerSha256))
+            throw new InvalidOperationException("인스톨러 무결성 정보(installerSha256)가 없어 자동 복구를 중단합니다.");
+
+        var repairRoot = Path.Combine(Path.GetTempPath(), $"DevezCode_repair_{Guid.NewGuid():N}");
+        var archivePath = Path.Combine(repairRoot, "DevezCode_Setup.zip");
+        Directory.CreateDirectory(repairRoot);
+        try
+        {
+            await DownloadFileAsync(WithCacheBuster(InstallerUrl), archivePath, progress, 0.0, 0.9);
+            if (!HashMatches(archivePath, info.InstallerSha256))
+                throw new InvalidOperationException("인스톨러 해시가 일치하지 않습니다.");
+
+            var setupPath = InstallerPackage.ExtractSetup(archivePath, Path.Combine(repairRoot, "setup"));
+            var productVersion = FileVersionInfo.GetVersionInfo(setupPath).ProductVersion?.Trim();
+            if (!string.Equals(productVersion, info.Version, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("인스톨러 버전이 업데이트 버전과 일치하지 않습니다.");
+            if (!Authenticode.VerifyMatchesCurrent(setupPath, out var sigReason))
+                throw new InvalidOperationException($"인스톨러 서명 검증 실패: {sigReason}");
+
+            progress.Report(1.0);
+            var currentExe = Environment.ProcessPath!;
+            var script = Path.Combine(Path.GetTempPath(), "devezcode_repair.ps1");
+            var setupLit = PsLiteral(setupPath);
+            var targetLit = PsLiteral(currentExe);
+            var installDirLit = PsLiteral(Path.GetDirectoryName(currentExe)!);
+            var repairRootLit = PsLiteral(repairRoot);
+            File.WriteAllText(script,
+                $"$setup = '{setupLit}'\n" +
+                $"$target = '{targetLit}'\n" +
+                $"$installDir = '{installDirLit}'\n" +
+                $"$repairRoot = '{repairRootLit}'\n" +
+                $"Wait-Process -Id {Environment.ProcessId} -ErrorAction SilentlyContinue\n" +
+                "$setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR=\"' + $installDir + '\"'))\n" +
+                "$proc = Start-Process -FilePath $setup -ArgumentList $setupArgs -Wait -PassThru\n" +
+                "if ($proc.ExitCode -eq 0 -and (Test-Path -LiteralPath $target)) {\n" +
+                "    Start-Process -FilePath $target -ArgumentList '--updated' -WorkingDirectory $installDir\n" +
+                "} elseif (Test-Path -LiteralPath $target) {\n" +
+                "    Start-Process -FilePath $target -ArgumentList '--update-failed' -WorkingDirectory $installDir\n" +
+                "}\n" +
+                "Remove-Item -LiteralPath $repairRoot -Recurse -Force -ErrorAction SilentlyContinue\n" +
+                "Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue\n",
+                ScriptFile.Ps1);
+
+            StartHelper(script, currentExe);
+            CloseForUpdate();
+        }
+        catch
+        {
+            try { Directory.Delete(repairRoot, recursive: true); } catch { }
+            throw;
+        }
+    }
+
     public static async Task DownloadAndRelaunchAsync(UpdateInfo info, IProgress<double> progress)
     {
         var tempExe = Path.Combine(Path.GetTempPath(), "DevezCode_update.exe");
         var currentExe = Environment.ProcessPath!;
         bool ready = false;
 
-        // 1) 델타 경로: 직전 버전 사용자만. 실패하면 통짜로 폴백.
-        if (ShouldUseDelta(CurrentVersion, info))
+        try
         {
-            var patchPath = Path.Combine(Path.GetTempPath(), "DevezCode_update.patch");
-            try
+            // 1) 델타 경로: 직전 버전 사용자만. 실패하면 통짜로 폴백.
+            if (ShouldUseDelta(CurrentVersion, info))
             {
-                await DownloadFileAsync(WithCacheBuster(info.PatchUrl), patchPath, progress, 0.0, 0.85);
-                progress.Report(0.9);
-                if (await TryRestoreFromPatchAsync(currentExe, patchPath, tempExe)
-                    && HashMatches(tempExe, info.Sha256))
+                var patchPath = Path.Combine(Path.GetTempPath(), "DevezCode_update.patch");
+                try
                 {
-                    ready = true;
-                    progress.Report(1.0);
+                    await DownloadFileAsync(WithCacheBuster(info.PatchUrl), patchPath, progress, 0.0, 0.85);
+                    progress.Report(0.9);
+                    if (await TryRestoreFromPatchAsync(currentExe, patchPath, tempExe)
+                        && HashMatches(tempExe, info.Sha256))
+                    {
+                        ready = true;
+                        progress.Report(1.0);
+                    }
+                }
+                catch { ready = false; }
+                finally
+                {
+                    // 다운로드·복원이 예외로 끊겨도 임시 patch 가 %TEMP% 에 남지 않게 한다.
+                    try { File.Delete(patchPath); } catch { }
                 }
             }
-            catch { ready = false; }
-            finally
-            {
-                // 다운로드·복원이 예외로 끊겨도 임시 patch 가 %TEMP% 에 남지 않게 한다.
-                try { File.Delete(patchPath); } catch { }
-            }
-        }
 
-        // 2) 통짜 폴백 (델타 불가·다운로드 실패·복원 실패·해시 불일치)
-        if (!ready)
-        {
-            // 무결성 정보 필수: sha256 가 없으면(미서명 빌드에선 서명검증도 생략되므로) 무검증 실행이 되어
-            // 적용을 중단한다 → 호출부가 수동 재설치를 안내. 배포 시 version.json 에 sha256 을 반드시 포함할 것.
-            if (string.IsNullOrEmpty(info.Sha256))
-                throw new InvalidOperationException("업데이트 무결성 정보(sha256)가 없어 적용을 중단합니다.");
-            await DownloadFileAsync(WithCacheBuster(info.Url), tempExe, progress, 0.0, 1.0);
-            // 통짜 결과물은 델타 복원 결과와 동일 exe → 같은 sha256. 불일치면 전송 변조/오류이므로 중단.
-            if (!HashMatches(tempExe, info.Sha256))
+            // 2) 통짜 폴백 (델타 불가·다운로드 실패·복원 실패·해시 불일치)
+            if (!ready)
+            {
+                // 무결성 정보 필수: sha256 가 없으면(미서명 빌드에선 서명검증도 생략되므로) 무검증 실행이 되어
+                // 적용을 중단한다 → 호출부가 수동 재설치를 안내. 배포 시 version.json 에 sha256 을 반드시 포함할 것.
+                if (string.IsNullOrEmpty(info.Sha256))
+                    throw new InvalidOperationException("업데이트 무결성 정보(sha256)가 없어 적용을 중단합니다.");
+                await DownloadFileAsync(WithCacheBuster(info.Url), tempExe, progress, 0.0, 1.0);
+                // 통짜 결과물은 델타 복원 결과와 동일 exe → 같은 sha256. 불일치면 전송 변조/오류이므로 중단.
+                if (!HashMatches(tempExe, info.Sha256))
+                {
+                    try { File.Delete(tempExe); } catch { }
+                    throw new InvalidOperationException("업데이트 파일 해시가 일치하지 않습니다.");
+                }
+            }
+
+            // 3) 진위: 코드서명 검증. version.json 채널과 독립된 신뢰 앵커(MS 루트 CA + 게시자).
+            //    서명된 빌드에서는 강제, 미서명 개발 빌드에서는 자동 생략(VerifyMatchesCurrent 참조).
+            if (!Authenticode.VerifyMatchesCurrent(tempExe, out var sigReason))
             {
                 try { File.Delete(tempExe); } catch { }
-                throw new InvalidOperationException("업데이트 파일 해시가 일치하지 않습니다.");
+                throw new InvalidOperationException($"업데이트 서명 검증 실패: {sigReason}");
             }
         }
-
-        // 3) 진위: 코드서명 검증. version.json 채널과 독립된 신뢰 앵커(MS 루트 CA + 게시자).
-        //    서명된 빌드에서는 강제, 미서명 개발 빌드에서는 자동 생략(VerifyMatchesCurrent 참조).
-        if (!Authenticode.VerifyMatchesCurrent(tempExe, out var sigReason))
+        catch (Exception ex)
         {
             try { File.Delete(tempExe); } catch { }
-            throw new InvalidOperationException($"업데이트 서명 검증 실패: {sigReason}");
+            DiagLog.Write($"EXE update failed; switching to installer repair: {ex.Message}");
+            await DownloadInstallerAndRepairAsync(info, progress);
+            return;
         }
 
         // ── 이하 PowerShell 교체/재실행 스크립트 ──
@@ -280,12 +392,18 @@ public static class UpdateService
         // 경로의 작은따옴표를 PowerShell 리터럴 규칙('' → ')으로 이스케이프 (경로 보간 깨짐·명령 주입 방지).
         var srcLit = tempExe.Replace("'", "''");
         var dstLit = currentExe.Replace("'", "''");
+        var installerUrlLit = PsLiteral(WithCacheBuster(InstallerUrl));
+        var installerHashLit = PsLiteral(info.InstallerSha256.Trim());
+        var updateVersionLit = PsLiteral(info.Version);
         // copy 성공(크기 일치)을 확인한 뒤에만 새 exe 재실행.
-        // 실패 시 옛 exe를 재실행하지 않고, 받아둔 새 exe를 직접 실행해 사용자가 최소한 최신 버전을 쓰게 한다.
+        // 실패하면 검증한 인스톨러로 기존 설치 경로를 복구하고, 복구도 실패할 때만 임시 exe에서 안내한다.
         File.WriteAllText(script,
             $"$src = '{srcLit}'\n" +
             $"$dst = '{dstLit}'\n" +
             $"$expected = {newSize}\n" +
+            $"$installerUrl = '{installerUrlLit}'\n" +
+            $"$installerHash = '{installerHashLit}'\n" +
+            $"$updateVersion = '{updateVersionLit}'\n" +
             $"$ok = $false\n" +
             // 재시도 상한은 안전 종료 소요(스냅샷 cap 3s + grace 2.5s + 훅 flush cap 5s + Dispose 마진)보다
             // 넉넉해야 한다. 짧으면 exe 잠금이 풀리기 전에 소진돼 멀쩡한 업데이트가 --update-failed 로 빠진다.
@@ -300,38 +418,48 @@ public static class UpdateService
             $"    Start-Process $dst -ArgumentList '--updated' -WorkingDirectory (Split-Path $dst)\n" +
             $"    Remove-Item $src -ErrorAction SilentlyContinue\n" +
             $"}} else {{\n" +
-            $"    # 교체 실패(백신 잠금·프로세스 점유 등) — 받아둔 새 exe를 실패 플래그로 실행\n" +
-            $"    # → 앱이 '자동 업데이트 미적용' 안내 + 수동 재설치 유도를 띄운다.\n" +
-            $"    Start-Process $src -ArgumentList '--update-failed' -WorkingDirectory (Split-Path $src)\n" +
+            $"    # 교체 실패 시 인스톨러를 검증한 뒤 기존 설치 경로에 자동 복구한다.\n" +
+            $"    $repaired = $false\n" +
+            $"    $repairRoot = Join-Path ([IO.Path]::GetTempPath()) ('DevezCode_repair_' + [guid]::NewGuid().ToString('N'))\n" +
+            $"    try {{\n" +
+            $"        if ($installerHash -notmatch '^[0-9a-fA-F]{{64}}$') {{ throw 'missing installer hash' }}\n" +
+            $"        New-Item -ItemType Directory -Path $repairRoot | Out-Null\n" +
+            $"        $zip = Join-Path $repairRoot 'DevezCode_Setup.zip'\n" +
+            $"        Invoke-WebRequest -UseBasicParsing -Uri $installerUrl -OutFile $zip\n" +
+            $"        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash -ne $installerHash) {{ throw 'installer hash mismatch' }}\n" +
+            $"        $setupDir = Join-Path $repairRoot 'setup'\n" +
+            $"        Expand-Archive -LiteralPath $zip -DestinationPath $setupDir\n" +
+            $"        $setups = @(Get-ChildItem -LiteralPath $setupDir -Filter 'DevezCode_Setup_*.exe' -File)\n" +
+            $"        if ($setups.Count -ne 1) {{ throw 'invalid installer archive' }}\n" +
+            $"        $setup = $setups[0].FullName\n" +
+            $"        if ([Diagnostics.FileVersionInfo]::GetVersionInfo($setup).ProductVersion.Trim() -ne $updateVersion) {{ throw 'installer version mismatch' }}\n" +
+            $"        $currentSig = Get-AuthenticodeSignature -LiteralPath $dst\n" +
+            $"        $setupSig = Get-AuthenticodeSignature -LiteralPath $setup\n" +
+            $"        if ($currentSig.Status -eq 'Valid' -and ($setupSig.Status -ne 'Valid' -or $setupSig.SignerCertificate.Thumbprint -ne $currentSig.SignerCertificate.Thumbprint)) {{ throw 'installer signature mismatch' }}\n" +
+            $"        $installDir = Split-Path $dst\n" +
+            $"        $setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR=\"' + $installDir + '\"'))\n" +
+            $"        $setupProc = Start-Process -FilePath $setup -ArgumentList $setupArgs -Wait -PassThru\n" +
+            $"        if ($setupProc.ExitCode -ne 0) {{ throw 'installer repair failed' }}\n" +
+            $"        Start-Process $dst -ArgumentList '--updated' -WorkingDirectory $installDir\n" +
+            $"        $repaired = $true\n" +
+            $"    }} catch {{ }} finally {{ Remove-Item -LiteralPath $repairRoot -Recurse -Force -ErrorAction SilentlyContinue }}\n" +
+            $"    if (-not $repaired) {{ Start-Process $src -ArgumentList '--update-failed' -WorkingDirectory (Split-Path $src) }}\n" +
             $"}}\n",
             // ScriptFile.Ps1(BOM 있는 UTF-8) 필수 — BOM 이 없으면 powershell 5.1 이 CP949 로 읽어
             // 한글 사용자명 경로(C:\Users\김이영)의 $src/$dst 가 깨지고 업데이트가 조용히 실패한다.
             ScriptFile.Ps1);
 
-        var pfX64 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        var pfX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        var needsElevation = currentExe.StartsWith(pfX64, StringComparison.OrdinalIgnoreCase)
-                          || currentExe.StartsWith(pfX86, StringComparison.OrdinalIgnoreCase);
-
         try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "powershell.exe",
-                Arguments = $"-NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"{script}\"",
-                UseShellExecute = needsElevation,
-                Verb = needsElevation ? "runas" : "",
-                CreateNoWindow = !needsElevation,
-                WindowStyle = ProcessWindowStyle.Hidden
-            });
+            StartHelper(script, currentExe);
         }
         // ERROR_CANCELLED(1223) = UAC 프롬프트를 사용자가 취소하거나 정책이 승격을 막은 경우.
         // 여기서 구분하지 않으면 호출부가 "자동 업데이트 실패"로 뭉쳐 표시해 원인 오진단을 유발한다.
-        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        catch (UpdateElevationDeniedException)
         {
             try { File.Delete(tempExe); } catch { }
             try { File.Delete(script); } catch { }
-            throw new UpdateElevationDeniedException("업데이트 적용에 필요한 관리자 권한 승격이 거부되었습니다.");
+            throw;
         }
 
         // Shutdown() 을 직접 부르면 MainWindow.OnWindowClosing 의 안전 종료(스냅샷·오버레이·graceful)를
@@ -340,16 +468,6 @@ public static class UpdateService
         // 결과 모달 등 다른 창이 열려 있으면 메인 창만 닫혀도 프로세스가 안 내려가 exe 잠금이 유지되고,
         // 교체 스크립트가 재시도를 소진해 멀쩡한 업데이트가 실패 처리된다 → Closed 에서 Shutdown() 을
         // 명시 호출해 종료를 보장한다(이 시점엔 안전 경로가 이미 완주했으므로 우회가 아니다).
-        Application.Current.Dispatcher.Invoke(() =>
-        {
-            var mw = Application.Current.MainWindow;
-            if (mw != null)
-            {
-                if (mw is MainWindow m) m.ForceQuit = true; // '닫기 시 최소화' 무시하고 실제 종료
-                mw.Closed += (_, _) => Application.Current.Shutdown();
-                mw.Close();
-            }
-            else Application.Current.Shutdown();
-        });
+        CloseForUpdate();
     }
 }

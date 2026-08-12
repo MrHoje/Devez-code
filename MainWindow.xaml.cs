@@ -3172,13 +3172,13 @@ public partial class MainWindow : Window
 
         if (outcome == UpdateOutcome.Failed)
         {
-            // 자동 업데이트 실패 → 브라우저로 직접 다운로드 유도.
+            // 자동 복구까지 실패한 경우에도 raw exe 대신 인스톨러를 내려받게 한다.
             if (ConfirmDialog.Show(
                     "업데이트 오류",
-                    "자동 업데이트에 실패했습니다.\n브라우저에서 직접 다운로드하시겠습니까?",
-                    okLabel: "다운로드", iconKey: "IconDownload"))
+                    "자동 업데이트와 설치 복구에 실패했습니다.\n설치 파일을 받아 수동으로 복구하시겠습니까?",
+                    okLabel: "설치 파일 받기", iconKey: "IconDownload"))
                 System.Diagnostics.Process.Start(
-                    new System.Diagnostics.ProcessStartInfo(info.Url) { UseShellExecute = true });
+                    new System.Diagnostics.ProcessStartInfo(UpdateService.InstallerUrl) { UseShellExecute = true });
         }
     }
 
