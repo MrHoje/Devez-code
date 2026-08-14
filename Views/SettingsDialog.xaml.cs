@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.23.13", "2026-08-11", true, new[]
+          ("v1.24.0", "2026-08-14", true, new[]
+          {
+              "문서(md) 뷰어의 테마를 설정 > 테마/글꼴에서 앱 테마와 별도로 지정하는 기능을 추가했습니다.",
+          }),
+          ("v1.23.13", "2026-08-11", false, new[]
           {
               "터미널Claude GUI 글꼴변경기능을 추가했습니다.",
           }),
@@ -658,6 +662,7 @@ public partial class SettingsDialog : UserControl
         _originalMarkdownViewportWidth = SettingsService.LoadMarkdownViewportWidth();
         _selectedMarkdownViewportWidth = _originalMarkdownViewportWidth;
         SetMarkdownViewportWidthEditor(_selectedMarkdownViewportWidth);
+        SelectComboByTag(MarkdownThemeCombo, SettingsService.LoadMarkdownTheme());
         _originalAutoLoadLastProject = SettingsService.LoadAutoLoadLastProject();
         _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
         AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
@@ -1103,6 +1108,14 @@ public partial class SettingsDialog : UserControl
             MarkdownViewportWidthBox.Text = custom ? width.ToString() : "";
         }
         finally { _syncingMarkdownViewportWidth = false; }
+    }
+
+    /// <summary>문서 테마 선택 — 즉시 저장(SaveMarkdownTheme 이 동일값이면 무시하므로 초기 선택 발화는 무해).
+    /// 이벤트가 열려 있는 문서 뷰어에 바로 반영된다.</summary>
+    private void MarkdownThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if ((MarkdownThemeCombo.SelectedItem as ComboBoxItem)?.Tag is string tag)
+            SettingsService.SaveMarkdownTheme(tag);
     }
 
     private void MarkdownViewportWidthCombo_Changed(object sender, SelectionChangedEventArgs e)

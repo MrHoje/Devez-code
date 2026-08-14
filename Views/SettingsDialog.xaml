@@ -2205,6 +2205,26 @@
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
+
+                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
+
+                                <!-- 문서(md) 뷰어 테마 — 자동이면 앱 테마를 따르고, 그 외에는 고정 -->
+                                <TextBlock Text="문서 테마" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,22,0,6"/>
+                                <TextBlock Text="md 등 문서를 열 때 적용할 테마입니다. 자동이면 앱 테마를 따라갑니다."
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
+                                           Margin="0,0,0,12"/>
+                                <ComboBox x:Name="MarkdownThemeCombo" Width="220" HorizontalAlignment="Left"
+                                          Style="{StaticResource ThemedCombo}"
+                                          SelectionChanged="MarkdownThemeCombo_SelectionChanged">
+                                    <ComboBoxItem Tag="auto" Content="자동 (앱 테마 따라감)"/>
+                                    <ComboBoxItem Tag="minimal" Content="심플"/>
+                                    <ComboBoxItem Tag="soft" Content="소프트"/>
+                                    <ComboBoxItem Tag="dark" Content="다크"/>
+                                    <ComboBoxItem Tag="gray" Content="그레이"/>
+                                    <ComboBoxItem Tag="softpink" Content="소프트 핑크"/>
+                                    <ComboBoxItem Tag="midnight" Content="미드나이트 블루"/>
+                                </ComboBox>
                             </StackPanel>
 
                             <!-- 알림 패널 — 세션 종료 알림 / 자동 닫힘 / 표시 위치 / 모니터 -->

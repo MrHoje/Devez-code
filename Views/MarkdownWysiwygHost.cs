@@ -239,21 +239,55 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
         return System.Drawing.Color.White;
     }
 
-    public void ApplyTheme(string theme)
+    private static System.Drawing.Color ColorFromHex(string hex)
     {
-        // 페이지 페인트 전 기본 배경도 테마에 맞춰 갱신(리사이즈/재로드 시 노출될 수 있음).
-        try { if (_webView != null) _webView.DefaultBackgroundColor = CurrentBgColor(); } catch { }
-        if (!_pageReady) { _pendingTheme = theme; return; }
+        try
+        {
+            var c = (Color)ColorConverter.ConvertFromString(hex);
+            return System.Drawing.Color.FromArgb(0xFF, c.R, c.G, c.B);
+        }
+        catch { return System.Drawing.Color.White; }
+    }
+
+    public void ApplyTheme(string appTheme)
+    {
+        // 문서 뷰어 설정이 "auto"면 앱 테마를 따르고, 고정이면 그 테마로. 고정 테마가 현재 로드된 앱 테마와
+        // 같으면 라이브 리소스를 쓰고, 다르면 App.MarkdownPalette 의 색을 넘긴다.
+        string eff = App.MarkdownEffectiveTheme(appTheme);
+        bool live = eff == App.CurrentTheme;
+        bool dark = App.IsDarkTheme(eff);
+
+        string bg, panel, text, primary;
+        string? codeBg, codeText;
+        if (live)
+        {
+            bg = Hex("BgBrush", "#ffffff");
+            panel = Hex("PanelBrush", "#ffffff");
+            text = Hex("TextBrush", "#0f172a");
+            primary = Hex("PrimaryBrush", "#2563eb");
+            codeBg = Hex("CodeBgBrush", "#f1f5f9");
+            codeText = Hex("CodeTextBrush", "#0f172a");
+        }
+        else
+        {
+            var p = App.MarkdownPalette(eff);
+            bg = p.Bg; panel = p.Panel; text = p.Text; primary = p.Primary;
+            codeBg = null; codeText = null; // bridge.js 반투명 fallback 사용
+        }
+
+        // 페이지 페인트 전 기본 배경도 실효 테마에 맞춰 갱신(리사이즈/재로드 시 노출될 수 있음).
+        try { if (_webView != null) _webView.DefaultBackgroundColor = ColorFromHex(bg); } catch { }
+        if (!_pageReady) { _pendingTheme = appTheme; return; }
         PostJson(new
         {
             type = "setTheme",
-            dark = App.IsDarkTheme(theme),
-            bg = Hex("BgBrush", "#ffffff"),
-            panel = Hex("PanelBrush", "#ffffff"),
-            text = Hex("TextBrush", "#0f172a"),
-            codeBg = Hex("CodeBgBrush", "#f1f5f9"),
-            codeText = Hex("CodeTextBrush", "#0f172a"),
-            primary = Hex("PrimaryBrush", "#2563eb"),
+            dark,
+            bg,
+            panel,
+            text,
+            codeBg,
+            codeText,
+            primary,
         });
 
         // modal dialog(설정창)가 주 윈도우를 비활성화한 상태에서도 WebView2가 즉시 repaint

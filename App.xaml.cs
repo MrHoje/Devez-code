@@ -21,6 +21,26 @@ public partial class App : Application
     public static string CurrentTheme { get; private set; } = "dark";
     public static bool IsDarkTheme(string theme) => theme is "dark" or "midnight";
 
+    /// <summary>문서(md) 뷰어에 적용할 실효 테마. 설정이 "auto"면 <paramref name="appTheme"/>(앱 테마)를 따라가고,
+    /// 그 외에는 저장된 테마로 고정한다.</summary>
+    public static string MarkdownEffectiveTheme(string appTheme)
+    {
+        var pref = Services.SettingsService.LoadMarkdownTheme();
+        return pref == "auto" ? appTheme : pref;
+    }
+
+    /// <summary>문서 뷰어가 앱 테마와 다른 테마로 고정됐을 때 쓸 색(bg/panel/text/primary hex).
+    /// SetTheme 의 테마별 색과 일치. 현재 로드된 앱 테마와 같은 테마면 라이브 리소스를 쓰므로 호출하지 않는다.</summary>
+    public static (string Bg, string Panel, string Text, string Primary) MarkdownPalette(string theme) => theme switch
+    {
+        "dark"     => ("#1f1f1e", "#272727", "#e8e8e8", "#c2622a"),
+        "midnight" => ("#111827", "#1f2937", "#e5e7eb", "#60a5fa"),
+        "soft"     => ("#f2ede6", "#faf7f2", "#2a2620", "#5c8c4a"),
+        "gray"     => ("#f3f4f6", "#ffffff", "#1f2937", "#4b5563"),
+        "softpink" => ("#fff7fa", "#fffcfd", "#3b2931", "#b54a6b"),
+        _          => ("#f8fafc", "#ffffff", "#0f172a", "#2563eb"), // minimal
+    };
+
     /// <summary>디스크에 확정 저장된 테마(persist=true 로만 갱신). 미리보기(persist=false)는 반영 안 됨.
     /// 프로세스 내부에 고정되는 색(codex OSC 감지, COLORFGBG 폴백)은 미리보기가 새면 취소해도
     /// 안 돌아오므로, 라이브 <see cref="CurrentTheme"/> 대신 이 값을 참조한다.</summary>

@@ -44,6 +44,7 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         MdHost.SetViewportWidth(SettingsService.LoadMarkdownViewportWidth());
         SettingsService.MarkdownViewportWidthChanged += OnMarkdownViewportWidthChanged;
         App.ThemeChanged += OnThemeChanged;
+        SettingsService.MarkdownThemeChanged += OnMarkdownThemeChanged;
         Loaded += OnLoaded;
         // 프로젝트 전환/탭 재선택 시 포커스 복귀 → 외부 변경 점검
         PreviewGotKeyboardFocus += (_, _) => CheckExternalChange();
@@ -118,6 +119,13 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
     }
 
     private void OnThemeChanged(string theme) => MdHost.ApplyTheme(theme);
+
+    /// <summary>문서 테마 설정(자동/고정)만 바뀐 경우 — 앱 테마는 그대로이므로 현재 앱 테마로 재적용한다.</summary>
+    private void OnMarkdownThemeChanged()
+    {
+        if (Dispatcher.CheckAccess()) MdHost.ApplyTheme(App.CurrentTheme);
+        else Dispatcher.BeginInvoke(() => MdHost.ApplyTheme(App.CurrentTheme));
+    }
 
     private void OnMarkdownViewportWidthChanged(int width)
     {
@@ -344,6 +352,7 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         if (Window.GetWindow(this) is { } win)
             win.Activated -= OnWindowActivated;
         App.ThemeChanged -= OnThemeChanged;
+        SettingsService.MarkdownThemeChanged -= OnMarkdownThemeChanged;
         SettingsService.MarkdownViewportWidthChanged -= OnMarkdownViewportWidthChanged;
         MdHost.InitFailed -= OnInitFailed;
         MdHost.Dispose();

@@ -43,6 +43,8 @@ public static class SettingsService
         public bool TerminalRoomFontMigrated { get; set; } = false;
         // 마크다운 뷰어 본문 너비(px). 0=화면에 맞추기.
         public int MarkdownViewportWidth { get; set; } = 0;
+        // 문서(md) 뷰어 테마. "auto"=앱 테마를 따라감, 그 외(minimal/soft/dark/gray/softpink/midnight)=고정.
+        public string MarkdownTheme { get; set; } = "auto";
         // 토큰 사용량 비용 단가(모델별). 비어 있으면 SessionUsageService 내장 기본값 사용.
         // 채우면 내장값보다 우선(덮어쓰기/신규 모델 추가). 갱신 절차: .knowledge/토큰사용량-단가-갱신.md
         public List<UsagePriceRule> UsagePricing { get; set; } = new();
@@ -386,6 +388,22 @@ public static class SettingsService
         Current.MarkdownViewportWidth = width;
         Save();
         MarkdownViewportWidthChanged?.Invoke(width);
+    }
+
+    // ── 문서(md) 뷰어 테마 ("auto"=앱 테마 따라감) ────────────────
+    public static event Action? MarkdownThemeChanged;
+    public static string LoadMarkdownTheme()
+    {
+        var t = Current.MarkdownTheme?.Trim();
+        return string.IsNullOrEmpty(t) ? "auto" : t;
+    }
+    public static void SaveMarkdownTheme(string theme)
+    {
+        theme = string.IsNullOrWhiteSpace(theme) ? "auto" : theme.Trim();
+        if (Current.MarkdownTheme == theme) return;
+        Current.MarkdownTheme = theme;
+        Save();
+        MarkdownThemeChanged?.Invoke();
     }
 
     // ── 앱 전체 글꼴 크기 단계 (devez 이식: 0=작게, 1=크게) ───────
