@@ -213,8 +213,10 @@
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
 <script src="addon-webgl.min.js"></script>
-<!-- codex 전용 xterm 6.0 — 렌더러 레벨 ?2026(동기화 출력) 네이티브 지원으로 codex 리페인트
-     티어링을 근본 차단한다. 다른 에이전트는 기존 5.5 유지(6.0 뷰포트/스크롤바 개편의 회귀 회피).
+<!-- codex·devezvibe 전용 xterm 6.0 — codex 는 렌더러 레벨 ?2026(동기화 출력) 네이티브 지원으로
+     리페인트 티어링을 근본 차단하고, devezvibe 는 5.5 WebGL 글리프 아틀라스 오염(한글이 엉뚱한
+     글리프로 그려짐 — 선택/리사이즈 시 정상 복귀로 렌더 캐시 확진, 2026-08-15)을 6.0 + addon-webgl
+     0.19 로 회피한다. 다른 에이전트는 기존 5.5 유지(6.0 뷰포트/스크롤바 개편의 회귀 회피).
      로드 순서상 6.0 스크립트가 window.Terminal 등 전역을 덮으므로, 6.0 을 *6 전역으로 스냅샷한 뒤
      기본 전역(window.Terminal/FitAddon/…)은 5.5 로 되돌린다 → 기존 코드는 그대로 5.5 를 쓴다. -->
 <script>window.__t5 = { Terminal: window.Terminal, FitAddon: window.FitAddon, WebglAddon: window.WebglAddon };</script>
@@ -224,7 +226,7 @@
 <script>
   window.Terminal6 = window.Terminal; window.FitAddon6 = window.FitAddon;
   window.WebglAddon6 = window.WebglAddon;
-  // 기본 전역을 5.5 로 복원 (codex 외 모든 경로는 5.5 사용)
+  // 기본 전역을 5.5 로 복원 (codex·devezvibe 외 모든 경로는 5.5 사용)
   window.Terminal = window.__t5.Terminal; window.FitAddon = window.__t5.FitAddon;
   window.WebglAddon = window.__t5.WebglAddon;
 </script>
@@ -2562,9 +2564,11 @@
     el.className = 'term-container' + (agent ? ' agent-' + agent : '');
     document.body.appendChild(el);
 
-    // codex 만 xterm 6.0 엔진(+짝 addon)으로 생성 — 6.0 은 ?2026 동기화 출력을 렌더러 레벨에서
-    // 네이티브 지원해 codex 리페인트 티어링을 근본 차단한다. 나머지 에이전트는 5.5 기본 전역 사용.
-    const use6 = (agent === 'codex') && window.Terminal6;
+    // codex·devezvibe 만 xterm 6.0 엔진(+짝 addon)으로 생성 — codex 는 ?2026 동기화 출력의
+    // 렌더러 레벨 네이티브 지원(리페인트 티어링 차단), devezvibe 는 5.5 WebGL 글리프 아틀라스
+    // 오염 회피(한글 전각 출력에서 코드포인트 단위로 엉뚱한 글리프가 그려짐 — 버퍼는 정상이라
+    // 선택/리사이즈 시 정상 복귀, 2026-08-15 확진). 나머지 에이전트는 5.5 기본 전역 사용.
+    const use6 = (agent === 'codex' || agent === 'devezvibe') && window.Terminal6;
     const TerminalCtor = use6 ? window.Terminal6 : window.Terminal;
     const FitNS       = use6 ? window.FitAddon6 : window.FitAddon;
     const WebglNS     = use6 ? window.WebglAddon6 : window.WebglAddon;
