@@ -121,8 +121,10 @@ public static class SettingsService
         public List<string> EnabledAgents { get; set; } = new();
         // 레거시 설정에는 필드가 없으므로 false+빈 목록만 "첫 실행 기본값"으로 해석한다.
         public bool EnabledAgentsConfigured { get; set; }
-        // 자동 업데이트에서 제외한 에이전트 ID 목록(옵트아웃). 비어 있으면 켜진 에이전트 전부가 자동 업데이트 대상.
-        public List<string> AutoUpdateExcludedAgents { get; set; } = new();
+        // 자동 업데이트 대상 에이전트 ID 목록(옵트인). 미설정이면 '사용 중인 에이전트'를 기본값으로 본다.
+        public List<string> AutoUpdateAgentIds { get; set; } = new();
+        // 레거시 설정에는 필드가 없으므로 false+빈 목록만 "첫 실행 기본값"으로 해석한다.
+        public bool AutoUpdateAgentIdsConfigured { get; set; }
         public List<WakeScheduleEntry> WakeSchedules { get; set; } = new();
         // 마지막으로 활성이던 프로젝트/세션. 정상 종료(CleanShutdown=true) 때만 복원한다.
         public string? LastActiveProjectPath { get; set; }
@@ -1116,18 +1118,26 @@ public static class SettingsService
     public static bool LoadAutoUpdateAgents() => Current.AutoUpdateAgents;
     public static void SaveAutoUpdateAgents(bool v) { Current.AutoUpdateAgents = v; Save(); }
 
-    /// <summary>자동 업데이트에서 제외된 에이전트 ID 목록(옵트아웃 — 없으면 켜진 에이전트 전부가 대상).</summary>
-    public static IReadOnlyList<string> LoadAutoUpdateExcludedAgents() => Current.AutoUpdateExcludedAgents;
-
-    public static void SaveAutoUpdateExcludedAgents(IEnumerable<string> agentIds)
+    /// <summary>자동 업데이트 대상 에이전트 ID 목록. 미설정(레거시)이면 사용 중인 에이전트를 기본값으로 —
+    /// 쓰지 않는 에이전트는 처음부터 업데이트 대상이 아니다.</summary>
+    public static IReadOnlyList<string> LoadAutoUpdateAgentIds()
     {
-        Current.AutoUpdateExcludedAgents = agentIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var current = Current;
+        if (!current.AutoUpdateAgentIdsConfigured && current.AutoUpdateAgentIds.Count == 0)
+            return LoadEnabledAgents();
+        return current.AutoUpdateAgentIds;
+    }
+
+    public static void SaveAutoUpdateAgentIds(IEnumerable<string> agentIds)
+    {
+        Current.AutoUpdateAgentIds = agentIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        Current.AutoUpdateAgentIdsConfigured = true;
         Save();
     }
 
     /// <summary>해당 에이전트가 자동 업데이트 대상인지(에이전트 사용 여부와 별개 토글).</summary>
     public static bool IsAgentAutoUpdateEnabled(string agentId)
-        => !Current.AutoUpdateExcludedAgents.Contains(agentId, StringComparer.OrdinalIgnoreCase);
+        => LoadAutoUpdateAgentIds().Contains(agentId, StringComparer.OrdinalIgnoreCase);
 
     public static string LoadLastAgentAutoUpdateDate() => Current.LastAgentAutoUpdateDate;
     public static void SaveLastAgentAutoUpdateDate(string v) { Current.LastAgentAutoUpdateDate = v; Save(); }

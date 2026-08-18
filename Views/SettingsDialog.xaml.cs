@@ -2258,8 +2258,8 @@ public partial class SettingsDialog : UserControl
 
         _agentItems.Clear();
         var enabledSet = new HashSet<string>(SettingsService.LoadEnabledAgents(), StringComparer.OrdinalIgnoreCase);
-        var autoUpdateExcluded = new HashSet<string>(
-            SettingsService.LoadAutoUpdateExcludedAgents(), StringComparer.OrdinalIgnoreCase);
+        var autoUpdateSet = new HashSet<string>(
+            SettingsService.LoadAutoUpdateAgentIds(), StringComparer.OrdinalIgnoreCase);
         var codex = AgentRegistry.Find("codex");
         var codexInstalled = codex != null && AgentRegistry.IsInstalled(codex);
         foreach (var agent in AgentRegistry.All)
@@ -2290,7 +2290,9 @@ public partial class SettingsDialog : UserControl
                     : "",
                 Enabled = installed && enabledSet.Contains(agent.Id),
                 SupportsAutoUpdate = !string.IsNullOrWhiteSpace(agent.UpdateCommand),
-                AutoUpdate = !autoUpdateExcluded.Contains(agent.Id),
+                // Enabled 뒤에 대입해야 한다 — Enabled setter 가 자동 업데이트를 같은 값으로 맞추므로
+                // 저장된 값이 그 뒤에 와야 '켜져 있지만 자동 업데이트만 끔' 상태가 살아난다.
+                AutoUpdate = installed && enabledSet.Contains(agent.Id) && autoUpdateSet.Contains(agent.Id),
                 IsClaudeCode = agent.Id == "claude",
                 RetentionDays = agent.Id == "claude"
                     ? ClaudeGlobalSettings.GetCleanupPeriodDays()
@@ -2373,12 +2375,12 @@ public partial class SettingsDialog : UserControl
         var enabled = _agentItems.Where(a => a.Enabled).Select(a => a.Id).ToList();
         SettingsService.SaveEnabledAgents(enabled);
 
-        // 자동 업데이트는 옵트아웃 목록으로 저장한다(기본 = 대상). 목록에 없는 에이전트(UI 미노출 등)의
-        // 기존 제외 설정은 건드리지 않고 그대로 보존한다.
+        // 자동 업데이트는 대상 목록(옵트인)으로 저장한다. 목록에 없는 에이전트(UI 미노출 등)의 기존 설정은
+        // 건드리지 않고 그대로 보존한다.
         var listed = _agentItems.Select(a => a.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        SettingsService.SaveAutoUpdateExcludedAgents(
-            SettingsService.LoadAutoUpdateExcludedAgents().Where(id => !listed.Contains(id))
-                .Concat(_agentItems.Where(a => !a.AutoUpdate).Select(a => a.Id)));
+        SettingsService.SaveAutoUpdateAgentIds(
+            SettingsService.LoadAutoUpdateAgentIds().Where(id => !listed.Contains(id))
+                .Concat(_agentItems.Where(a => a.AutoUpdate).Select(a => a.Id)));
 
         AgentRegistry.InvalidateCache();
 
@@ -2534,6 +2536,9 @@ public sealed class AgentItem : INotifyPropertyChanged
             _enabled = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(AutoUpdateTogglable));
+            // 사용 토글을 따라간다 — 켜면 자동 업데이트도 켜지고, 끄면 함께 꺼진다(끈 에이전트는 대상이 아니므로).
+            // 켠 뒤 자동 업데이트만 따로 끄는 것은 그대로 가능하다.
+            AutoUpdate = _enabled;
         }
     }
 
@@ -2542,8 +2547,8 @@ public sealed class AgentItem : INotifyPropertyChanged
     public Visibility AutoUpdateVisibility
         => SupportsAutoUpdate ? Visibility.Visible : Visibility.Collapsed;
 
-    /// <summary>에이전트 사용 여부와 독립된 자동 업데이트 대상 여부(설정의 전역 자동 업데이트가 켜져 있을 때만 의미).</summary>
-    private bool _autoUpdate = true;
+    /// <summary>자동 업데이트 대상 여부. 기본은 꺼짐이며, 사용 토글을 켤 때 함께 켜진다.</summary>
+    private bool _autoUpdate;
     public bool AutoUpdate
     {
         get => _autoUpdate;
