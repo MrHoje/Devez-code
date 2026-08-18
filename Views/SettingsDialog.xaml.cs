@@ -2291,8 +2291,8 @@ public partial class SettingsDialog : UserControl
                 Enabled = installed && enabledSet.Contains(agent.Id),
                 SupportsAutoUpdate = !string.IsNullOrWhiteSpace(agent.UpdateCommand),
                 // Enabled 뒤에 대입해야 한다 — Enabled setter 가 자동 업데이트를 같은 값으로 맞추므로
-                // 저장된 값이 그 뒤에 와야 '켜져 있지만 자동 업데이트만 끔' 상태가 살아난다.
-                AutoUpdate = installed && enabledSet.Contains(agent.Id) && autoUpdateSet.Contains(agent.Id),
+                // 저장된 값이 그 뒤에 와야 사용 여부와 어긋난 조합(한쪽만 켬)이 그대로 살아난다.
+                AutoUpdate = installed && autoUpdateSet.Contains(agent.Id),
                 IsClaudeCode = agent.Id == "claude",
                 RetentionDays = agent.Id == "claude"
                     ? ClaudeGlobalSettings.GetCleanupPeriodDays()
@@ -2555,8 +2555,8 @@ public sealed class AgentItem : INotifyPropertyChanged
         set { if (_autoUpdate != value) { _autoUpdate = value; OnPropertyChanged(); } }
     }
 
-    /// <summary>꺼져 있거나 미설치인 에이전트는 애초에 업데이트 대상이 아니므로 토글을 잠근다.</summary>
-    public bool AutoUpdateTogglable => Installed && Enabled;
+    /// <summary>설치돼 있으면 사용 여부와 무관하게 조작 가능 — 쓰지 않는 에이전트도 최신으로만 유지할 수 있다.</summary>
+    public bool AutoUpdateTogglable => Installed;
 
     private string _versionText = "—";
     public string VersionText

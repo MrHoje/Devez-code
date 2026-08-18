@@ -73,13 +73,15 @@ public static class AgentUpdateService
         var results = new List<AgentUpdateResult>();
         try
         {
-            // 에이전트별 '자동 업데이트' 토글(설정 > 에이전트)이 꺼진 항목은 전체 대상에서 뺀다.
+            // 대상은 '자동 업데이트' 토글(설정 > 에이전트)이 켜진 설치 에이전트 — 사용 여부와 무관하다.
             // onlyAgentId 가 지정된 호출(Devez Vibe 업데이트 버튼 등 명시적 단일 대상)은 사용자가 그 에이전트를
             // 직접 지목한 것이므로 토글과 무관하게 진행한다.
-            var agents = AgentRegistry.GetEnabledAndInstalled()
+            var candidates = onlyAgentId == null
+                ? AgentRegistry.GetAutoUpdateTargets()
+                : AgentRegistry.All.Where(AgentRegistry.IsInstalled).ToList();
+            var agents = candidates
                 .Where(a => !string.IsNullOrWhiteSpace(a.UpdateCommand)
-                         && (onlyAgentId == null || string.Equals(a.Id, onlyAgentId, StringComparison.OrdinalIgnoreCase))
-                         && (onlyAgentId != null || SettingsService.IsAgentAutoUpdateEnabled(a.Id)))
+                         && (onlyAgentId == null || string.Equals(a.Id, onlyAgentId, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
             if (agents.Count == 0)
             {

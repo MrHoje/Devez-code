@@ -247,6 +247,14 @@ public static class AgentRegistry
         return All.Where(a => !HiddenFromUI.Contains(a.Id) && IsInstalled(a) && enabled.Contains(a.Id)).ToList();
     }
 
+    /// <summary>자동 업데이트 대상 + 실제 설치된 에이전트. 사용 여부와 무관하다 —
+    /// 세션에서 쓰지 않더라도 자동 업데이트만 따로 켜 둘 수 있다.</summary>
+    public static IReadOnlyList<AgentDef> GetAutoUpdateTargets()
+    {
+        var targets = new HashSet<string>(SettingsService.LoadAutoUpdateAgentIds(), StringComparer.OrdinalIgnoreCase);
+        return All.Where(a => !HiddenFromUI.Contains(a.Id) && IsInstalled(a) && targets.Contains(a.Id)).ToList();
+    }
+
     /// <summary>설정이 바뀐 뒤 캐시 무효화 (설치 감지 재실행).</summary>
     public static void InvalidateCache()
     {
