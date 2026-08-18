@@ -2258,6 +2258,8 @@ public partial class SettingsDialog : UserControl
 
         _agentItems.Clear();
         var enabledSet = new HashSet<string>(SettingsService.LoadEnabledAgents(), StringComparer.OrdinalIgnoreCase);
+        var autoUpdateExcluded = new HashSet<string>(
+            SettingsService.LoadAutoUpdateExcludedAgents(), StringComparer.OrdinalIgnoreCase);
         var codex = AgentRegistry.Find("codex");
         var codexInstalled = codex != null && AgentRegistry.IsInstalled(codex);
         foreach (var agent in AgentRegistry.All)
@@ -2287,6 +2289,8 @@ public partial class SettingsDialog : UserControl
                     ? "Codex가 설치되어 있지 않습니다. Devez Vibe를 사용하려면 Codex를 설치하세요."
                     : "",
                 Enabled = installed && enabledSet.Contains(agent.Id),
+                SupportsAutoUpdate = !string.IsNullOrWhiteSpace(agent.UpdateCommand),
+                AutoUpdate = !autoUpdateExcluded.Contains(agent.Id),
                 IsClaudeCode = agent.Id == "claude",
                 RetentionDays = agent.Id == "claude"
                     ? ClaudeGlobalSettings.GetCleanupPeriodDays()
@@ -2368,6 +2372,14 @@ public partial class SettingsDialog : UserControl
     {
         var enabled = _agentItems.Where(a => a.Enabled).Select(a => a.Id).ToList();
         SettingsService.SaveEnabledAgents(enabled);
+
+        // 자동 업데이트는 옵트아웃 목록으로 저장한다(기본 = 대상). 목록에 없는 에이전트(UI 미노출 등)의
+        // 기존 제외 설정은 건드리지 않고 그대로 보존한다.
+        var listed = _agentItems.Select(a => a.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        SettingsService.SaveAutoUpdateExcludedAgents(
+            SettingsService.LoadAutoUpdateExcludedAgents().Where(id => !listed.Contains(id))
+                .Concat(_agentItems.Where(a => !a.AutoUpdate).Select(a => a.Id)));
+
         AgentRegistry.InvalidateCache();
 
         // Claude Code 세션 유지기간(cleanupPeriodDays)은 설정 UI 에서 노출하지 않고,
@@ -2449,7 +2461,13 @@ public sealed class AgentItem : INotifyPropertyChanged
     public bool Installed
     {
         get => _installed;
-        set { if (_installed != value) { _installed = value; OnPropertyChanged(); } }
+        set
+        {
+            if (_installed == value) return;
+            _installed = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoUpdateTogglable));
+        }
     }
 
     private string _installedLabel = "";
@@ -2515,8 +2533,25 @@ public sealed class AgentItem : INotifyPropertyChanged
             if (_enabled == value) return;
             _enabled = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoUpdateTogglable));
         }
     }
+
+    /// <summary>갱신 명령이 있는 에이전트만 자동 업데이트 토글을 노출한다(antigravity 처럼 자체 갱신하는 CLI 는 제외).</summary>
+    public bool SupportsAutoUpdate { get; set; }
+    public Visibility AutoUpdateVisibility
+        => SupportsAutoUpdate ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>에이전트 사용 여부와 독립된 자동 업데이트 대상 여부(설정의 전역 자동 업데이트가 켜져 있을 때만 의미).</summary>
+    private bool _autoUpdate = true;
+    public bool AutoUpdate
+    {
+        get => _autoUpdate;
+        set { if (_autoUpdate != value) { _autoUpdate = value; OnPropertyChanged(); } }
+    }
+
+    /// <summary>꺼져 있거나 미설치인 에이전트는 애초에 업데이트 대상이 아니므로 토글을 잠근다.</summary>
+    public bool AutoUpdateTogglable => Installed && Enabled;
 
     private string _versionText = "—";
     public string VersionText

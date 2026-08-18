@@ -121,6 +121,8 @@ public static class SettingsService
         public List<string> EnabledAgents { get; set; } = new();
         // 레거시 설정에는 필드가 없으므로 false+빈 목록만 "첫 실행 기본값"으로 해석한다.
         public bool EnabledAgentsConfigured { get; set; }
+        // 자동 업데이트에서 제외한 에이전트 ID 목록(옵트아웃). 비어 있으면 켜진 에이전트 전부가 자동 업데이트 대상.
+        public List<string> AutoUpdateExcludedAgents { get; set; } = new();
         public List<WakeScheduleEntry> WakeSchedules { get; set; } = new();
         // 마지막으로 활성이던 프로젝트/세션. 정상 종료(CleanShutdown=true) 때만 복원한다.
         public string? LastActiveProjectPath { get; set; }
@@ -1113,6 +1115,19 @@ public static class SettingsService
 
     public static bool LoadAutoUpdateAgents() => Current.AutoUpdateAgents;
     public static void SaveAutoUpdateAgents(bool v) { Current.AutoUpdateAgents = v; Save(); }
+
+    /// <summary>자동 업데이트에서 제외된 에이전트 ID 목록(옵트아웃 — 없으면 켜진 에이전트 전부가 대상).</summary>
+    public static IReadOnlyList<string> LoadAutoUpdateExcludedAgents() => Current.AutoUpdateExcludedAgents;
+
+    public static void SaveAutoUpdateExcludedAgents(IEnumerable<string> agentIds)
+    {
+        Current.AutoUpdateExcludedAgents = agentIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        Save();
+    }
+
+    /// <summary>해당 에이전트가 자동 업데이트 대상인지(에이전트 사용 여부와 별개 토글).</summary>
+    public static bool IsAgentAutoUpdateEnabled(string agentId)
+        => !Current.AutoUpdateExcludedAgents.Contains(agentId, StringComparer.OrdinalIgnoreCase);
 
     public static string LoadLastAgentAutoUpdateDate() => Current.LastAgentAutoUpdateDate;
     public static void SaveLastAgentAutoUpdateDate(string v) { Current.LastAgentAutoUpdateDate = v; Save(); }

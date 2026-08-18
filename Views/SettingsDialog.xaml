@@ -1036,6 +1036,21 @@
                                                                   Width="14" Height="14"
                                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                                         </Button>
+                                                        <!-- 자동 업데이트(에이전트별) — 사용 토글과 독립. 갱신 명령이 없는 에이전트는 행 자체를 숨긴다. -->
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                                                    Margin="0,0,18,0"
+                                                                    Visibility="{Binding AutoUpdateVisibility}">
+                                                            <TextBlock Text="자동 업데이트" FontSize="{DynamicResource Fs11}"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                                       VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                            <CheckBox IsChecked="{Binding AutoUpdate, Mode=TwoWay}"
+                                                                      IsEnabled="{Binding AutoUpdateTogglable}"
+                                                                      Style="{StaticResource ToggleSwitchSmall}" VerticalAlignment="Center"
+                                                                      ToolTip="매일 첫 실행 시 이 에이전트를 최신 버전으로 업데이트합니다."/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="사용" FontSize="{DynamicResource Fs11}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
                                                         <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
                                                                   IsEnabled="{Binding Installed}"
                                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
