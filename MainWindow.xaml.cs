@@ -2667,6 +2667,21 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+        // 세션이 활성화돼 있으면 Terminal/Claude WebView가 Ctrl+Shift+T를 처리한다.
+        // 빈 프로젝트·파일 탭처럼 활성 세션이 없는 WPF 화면에서만 메인 창이 보완해 중복 생성을 막는다.
+        if (_settingsView == null
+            && !e.IsRepeat
+            && e.Key == System.Windows.Input.Key.T
+            && _focusedPane.ActiveSession == null
+            && _focusedPane.ActiveProject is { } activeProject
+            && (System.Windows.Input.Keyboard.Modifiers
+                & (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
+               == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            _focusedPane.AddSession(activeProject);
+            return;
+        }
         // Ctrl+Shift+D 를 짧게 두 번 → Devez Vibe 업데이트 버튼 표시.
         if (e.Key == System.Windows.Input.Key.D
             && (System.Windows.Input.Keyboard.Modifiers

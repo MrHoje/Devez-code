@@ -1,6 +1,37 @@
 using DevezCode.Services;
+using DevezCode.Services.Terminal;
 
 var failures = new List<string>();
+
+var openCodeThemeRoot = Path.Combine(Path.GetTempPath(), $"devezcode-opencode-theme-test-{Guid.NewGuid():N}");
+try
+{
+    var tuiPath = Path.Combine(openCodeThemeRoot, "tui.json");
+    var kvPath = Path.Combine(openCodeThemeRoot, "state", "opencode", "kv.json");
+    Directory.CreateDirectory(Path.GetDirectoryName(kvPath)!);
+    File.WriteAllText(kvPath, """{"sidebar":"hide","theme":"devezcode-dark","theme_mode_lock":"light"}""");
+
+    OpenCodeCustomThemes.ApplyToPaths("dark", tuiPath, kvPath);
+    using var darkTui = System.Text.Json.JsonDocument.Parse(File.ReadAllText(tuiPath));
+    using var darkKv = System.Text.Json.JsonDocument.Parse(File.ReadAllText(kvPath));
+    Check(darkTui.RootElement.GetProperty("theme").GetString() == "devez-dark", "OpenCode dark TUI theme");
+    Check(darkKv.RootElement.GetProperty("theme").GetString() == "devez-dark", "OpenCode stale theme replaced");
+    Check(darkKv.RootElement.GetProperty("theme_mode").GetString() == "dark"
+          && darkKv.RootElement.GetProperty("theme_mode_lock").GetString() == "dark",
+        "OpenCode dark mode locked");
+    Check(darkKv.RootElement.GetProperty("sidebar").GetString() == "hide", "OpenCode KV settings preserved");
+
+    OpenCodeCustomThemes.ApplyToPaths("softpink", tuiPath, kvPath);
+    using var lightKv = System.Text.Json.JsonDocument.Parse(File.ReadAllText(kvPath));
+    Check(lightKv.RootElement.GetProperty("theme").GetString() == "devez-softpink", "OpenCode light TUI theme");
+    Check(lightKv.RootElement.GetProperty("theme_mode").GetString() == "light"
+          && lightKv.RootElement.GetProperty("theme_mode_lock").GetString() == "light",
+        "OpenCode light mode locked");
+}
+finally
+{
+    try { Directory.Delete(openCodeThemeRoot, recursive: true); } catch { }
+}
 
 var installerTestRoot = Path.Combine(Path.GetTempPath(), $"devezcode-installer-test-{Guid.NewGuid():N}");
 try

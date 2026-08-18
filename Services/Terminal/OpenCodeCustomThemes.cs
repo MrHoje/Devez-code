@@ -35,6 +35,14 @@ public static class OpenCodeCustomThemes
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "opencode", "tui.json");
 
+    /// <summary>DevezCode에서 실행한 OpenCode만 쓰는 XDG 상태 루트.
+    /// OpenCode의 전역 kv.json은 /theme 선택을 tui.json보다 우선하므로 외부 세션과 상태를 분리한다.</summary>
+    public static string XdgStateHomePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "opencode", "xdg-state");
+
+    private static string KvStatePath => Path.Combine(XdgStateHomePath, "opencode", "kv.json");
+
     /// <summary>앱 시작 시 호출. 매번 번들 내용으로 덮어써 최신 팔레트를 강제 반영한다.</summary>
     public static void EnsureInstalled()
     {
@@ -69,16 +77,42 @@ public static class OpenCodeCustomThemes
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(TuiConfigPath)!);
-            var root = new System.Text.Json.Nodes.JsonObject
-            {
-                ["theme"] = MapToOpenCodeTheme(devezCodeTheme),
-            };
-            File.WriteAllText(TuiConfigPath,
-                root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
-                new UTF8Encoding(false));
+            ApplyToPaths(devezCodeTheme, TuiConfigPath, KvStatePath);
         }
         catch { /* best-effort */ }
+    }
+
+    internal static void ApplyToPaths(string devezCodeTheme, string tuiConfigPath, string kvStatePath)
+    {
+        var theme = MapToOpenCodeTheme(devezCodeTheme);
+        var mode = devezCodeTheme is "dark" or "midnight" ? "dark" : "light";
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+
+        var tui = new System.Text.Json.Nodes.JsonObject
+        {
+            ["$schema"] = "https://opencode.ai/tui.json",
+            ["theme"] = theme,
+        };
+        DevezCode.Services.AtomicFile.WriteAllText(tuiConfigPath, tui.ToJsonString(jsonOptions));
+
+        DevezCode.Services.AtomicFile.TryUpdateAllText(kvStatePath, original =>
+        {
+            var root = string.IsNullOrWhiteSpace(original)
+                ? new System.Text.Json.Nodes.JsonObject()
+                : System.Text.Json.Nodes.JsonNode.Parse(
+                    original,
+                    documentOptions: new System.Text.Json.JsonDocumentOptions
+                    {
+                        CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                        AllowTrailingCommas = true,
+                    }) as System.Text.Json.Nodes.JsonObject;
+            if (root == null) return null;
+
+            root["theme"] = theme;
+            root["theme_mode"] = mode;
+            root["theme_mode_lock"] = mode;
+            return root.ToJsonString(jsonOptions);
+        });
     }
 
     /// <summary>이전 버전이 프로젝트에 주입한 DevezCode 테마만 제거한다.</summary>

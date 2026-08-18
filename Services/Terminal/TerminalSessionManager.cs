@@ -277,6 +277,7 @@ public sealed class TerminalSessionManager
 
             TerminalSession session;
             var previousOpenCodeTuiConfig = Environment.GetEnvironmentVariable("OPENCODE_TUI_CONFIG");
+            var previousXdgStateHome = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
             var previousRoomId = Environment.GetEnvironmentVariable("DEVEZCODE_ROOM_ID");
             var previousTrackingAgent = Environment.GetEnvironmentVariable(TrackingEnvironment.VariableName);
             try
@@ -287,7 +288,10 @@ public sealed class TerminalSessionManager
                 Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", roomId);
                 Environment.SetEnvironmentVariable(TrackingEnvironment.VariableName, agent.Id);
                 if (isOpenCode)
+                {
                     Environment.SetEnvironmentVariable("OPENCODE_TUI_CONFIG", OpenCodeCustomThemes.TuiConfigPath);
+                    Environment.SetEnvironmentVariable("XDG_STATE_HOME", OpenCodeCustomThemes.XdgStateHomePath);
+                }
                 session = new TerminalSession(commandLine, startDir, cols, rows);
             }
             finally
@@ -295,7 +299,10 @@ public sealed class TerminalSessionManager
                 Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", previousRoomId);
                 Environment.SetEnvironmentVariable(TrackingEnvironment.VariableName, previousTrackingAgent);
                 if (isOpenCode)
+                {
                     Environment.SetEnvironmentVariable("OPENCODE_TUI_CONFIG", previousOpenCodeTuiConfig);
+                    Environment.SetEnvironmentVariable("XDG_STATE_HOME", previousXdgStateHome);
+                }
             }
             // 직접 실행이면 inject==null → 주입 없음. 폴백 셸이면 첫 출력 후 WireSession 에서 inject 전송.
             _pendingInitial[roomId] = inject;
@@ -629,6 +636,8 @@ public sealed class TerminalSessionManager
                 string forkBody = $"@echo off\r\n" +
                                   $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                                   TrackingEnvironment.CmdSetLine("opencode") +
+                                  $"set \"OPENCODE_TUI_CONFIG={OpenCodeCustomThemes.TuiConfigPath}\"\r\n" +
+                                  $"set \"XDG_STATE_HOME={OpenCodeCustomThemes.XdgStateHomePath}\"\r\n" +
                                   $"call opencode --session {forkSrc} --fork || call opencode\r\n";
                 try
                 {
@@ -672,6 +681,7 @@ public sealed class TerminalSessionManager
                       $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                       TrackingEnvironment.CmdSetLine("opencode") +
                       $"set \"OPENCODE_TUI_CONFIG={OpenCodeCustomThemes.TuiConfigPath}\"\r\n" +
+                      $"set \"XDG_STATE_HOME={OpenCodeCustomThemes.XdgStateHomePath}\"\r\n" +
                       $"{opencodeCmd}\r\n";
 
         try
