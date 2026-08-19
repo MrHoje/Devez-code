@@ -873,7 +873,7 @@
                             <Border x:Name="CxLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
                                     Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
                             <Image x:Name="CodexFooterIcon" Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
-                                   Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
+                                   Source="pack://application:,,,/Resources/Images/ShellPresets/codex_icon_white_50.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                             <StackPanel x:Name="CxFiveGroup" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock x:Name="CxFiveLabel" VerticalAlignment="Center"

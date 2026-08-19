@@ -63,9 +63,9 @@ public partial class App : Application
             : Services.Terminal.WtColorScheme.Campbell;
     }
 
-    /// <summary>Codex 아이콘 pack URI (파란색 고정, 테마 무관). Codex UI 공용 소스.</summary>
+    /// <summary>테마별 Codex(ChatGPT) 아이콘 pack URI (dark=흰색, light=검정). Codex UI 공용 소스.</summary>
     public static string CodexIconUri =>
-        "pack://application:,,,/Resources/Images/ShellPresets/codex.png";
+        $"pack://application:,,,/Resources/Images/ShellPresets/codex_icon_{(IsDarkTheme(CurrentTheme) ? "white" : "black")}_50.png";
     /// <summary>테마별 OpenCode 아이콘 pack URI (dark=흰색, light=검정). 푸터/사용량 패널 공용 소스.</summary>
     public static string OpenCodeIconUri =>
         $"pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_{(IsDarkTheme(CurrentTheme) ? "white" : "black")}_50.png";

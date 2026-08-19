@@ -11,7 +11,7 @@ affiliated with, endorsed by, or sponsored by any provider listed below.
 | Asset group | Provider / project | Source or reference | Local modification / provenance |
 | --- | --- | --- | --- |
 | `claude_code.png` | Anthropic / Claude Code | [Claude Code documentation](https://code.claude.com/docs/en/overview) | Imported from an earlier Devez/Deit workspace asset. The original acquisition URL was not retained; verify against the current official mark before replacing or redistributing it. |
-| `codex.png` | OpenAI / Codex | [OpenAI Codex repository](https://github.com/openai/codex) | Existing Devez asset; transparent canvas was cropped for small-icon legibility. |
+| `codex_icon_*.png` | OpenAI / ChatGPT (Codex) | [OpenAI brand guidelines](https://openai.com/brand/) | Theme-specific monochrome variants (dark=white, light=black) derived from the official ChatGPT mark on 2026-08-19; silhouette preserved, color flattened for small-icon legibility. Replaces the retired `codex.png`. |
 | `grok_icon_*.png` | xAI / Grok | [Grok CLI](https://x.ai/cli) | Theme-specific monochrome variants used only for product identification. |
 | `anti.png` | Google / Antigravity | [Antigravity CLI documentation](https://antigravity.google/docs/cli-overview) | Bundled product-identification image; no additional modification is recorded in this repository. |
 | `deepseek.png` | DeepSeek | [DeepSeek Platform](https://platform.deepseek.com/) | Used by the account-usage panel, not as a registered terminal agent. |
