@@ -103,7 +103,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.24.6", "2026-08-19", true, new[]
+          ("v1.24.7", "2026-08-19", true, new[]
+          {
+              "파일 탐색기와 일부 목록 오른쪽 아래에 흰색 사각형이 보이던 문제를 수정했습니다.",
+              "파일 탐색기를 스크롤할 때 하단 흐림 효과가 스크롤바를 덮던 문제를 수정했습니다.",
+          }),
+          ("v1.24.6", "2026-08-19", false, new[]
           {
               "Codex 구형 아이콘을 제거하고 ChatGPT 로고로 변경했습니다.",
               "라이트 테마에서 하단 셸 터미널의 입력 글자가 보이지 않던 문제를 수정했습니다.",
