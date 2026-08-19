@@ -86,11 +86,24 @@ public partial class FileExplorerView : UserControl
     private void ViewTabScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
         => UpdateViewTabOverflow();
 
+    /// <summary>전역 ScrollBar 스타일의 두께(폭·높이 8)와 동일. 페이드가 스크롤바를 비켜가게 하는 데 쓴다.</summary>
+    private const double ScrollBarThickness = 8;
+
     private void Tree_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         // ScrollChanged 는 TreeView 버블링 이벤트라 sender 가 TreeView(ScrollViewer 아님).
         // 캐스트하면 InvalidCastException 크래시 → e 의 오프셋을 직접 사용.
         double scrollableHeight = e.ExtentHeight - e.ViewportHeight;
+
+        // 페이드는 목록 콘텐츠만 흐리게 해야 한다. 스크롤바 위에 겹치면 트랙·썸이 반투명하게
+        // 뭉개져 스크롤 위치를 못 읽으므로, 표시 중인 스크롤바 두께만큼 우측·하단을 비운다.
+        double right  = scrollableHeight > 0.5 ? ScrollBarThickness : 0;
+        double bottom = e.ExtentWidth > e.ViewportWidth + 0.5 ? ScrollBarThickness : 0;
+        var topMargin    = new Thickness(0, 0, right, 0);
+        var bottomMargin = new Thickness(0, 0, right, bottom);
+        if (FileTreeFadeTop.Margin != topMargin) FileTreeFadeTop.Margin = topMargin;
+        if (FileTreeFadeBottom.Margin != bottomMargin) FileTreeFadeBottom.Margin = bottomMargin;
+
         FileTreeFadeTop.Visibility = e.VerticalOffset > 0.5
             ? Visibility.Visible : Visibility.Collapsed;
         FileTreeFadeBottom.Visibility = e.VerticalOffset < scrollableHeight - 0.5

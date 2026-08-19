@@ -236,6 +236,9 @@
                 </ItemsPanelTemplate>
             </TreeView.ItemsPanel>
             <TreeView.Resources>
+                <!-- TreeView 내부 ScrollViewer: 가로+세로 스크롤바 동시 표시 시 우하단에 생기던
+                     시스템색 코너 사각형(다크 테마에서 흰 네모)을 없앤 템플릿을 쓴다. -->
+                <Style TargetType="ScrollViewer" BasedOn="{StaticResource CornerlessScrollViewer}"/>
                 <!-- TreeView 펼침 토글(삼각형). 기본 시스템 화살표 대신 테마색 -->
                 <Style x:Key="FileTreeExpander" TargetType="ToggleButton">
                     <Setter Property="Focusable" Value="False"/>
