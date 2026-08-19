@@ -766,6 +766,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         RubberBandRect.Width = 0;
         RubberBandRect.Height = 0;
         if (CountSelected() == 0) IsSelectionMode = false;
+        else DropInputFocus(); // 선택이 남았으면 Delete 가 이 패널로 오도록 키 포커스 유지
     }
 
     private static Border? FindBubbleBorder(DependencyObject? from)
@@ -798,7 +799,9 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             e.Handled = true;
             return;
         }
-        if (e.Key == Key.Delete && delTargets.Count > 0 && !inputBusy)
+        // 선택모드에서 고른 버블이 있으면 입력창에 글자가 남아 있어도 Delete 는 버블 삭제로 본다.
+        // (드래그로 다중선택해 놓고 Delete 를 눌렀는데 입력창 텍스트 때문에 무시되던 편차 제거.)
+        if (e.Key == Key.Delete && delTargets.Count > 0 && (selActive || !inputBusy))
         {
             DeleteItemsWithConfirm(delTargets);
             e.Handled = true;

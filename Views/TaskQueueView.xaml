@@ -102,8 +102,10 @@
                            VerticalAlignment="Center"
                            FontSize="{DynamicResource Fs12}"
                            Foreground="{DynamicResource TextMutedBrush}"/>
+                <!-- 높이 27 = 위쪽 뷰 전환 탭(ViewTabButton: Height 35 - Border Margin 4*2)의
+                     실제 보이는 높이. 탭 아이콘 버튼과 같은 크기로 보이게 맞춘 값이다. -->
                 <Button Grid.Column="1" x:Name="AllActionBtn" Click="AllAction_Click"
-                        Height="28" Padding="12,0" Cursor="Arrow"
+                        Height="27" Padding="12,0" Cursor="Arrow"
                         Style="{StaticResource PrimaryButton}"
                         VerticalAlignment="Center"
                         FontSize="{DynamicResource Fs12}">
@@ -111,10 +113,11 @@
                         <!-- 이 버튼만 라운드를 낮춘다(전역 PrimaryButton 은 10 유지). -->
                         <CornerRadius x:Key="PrimaryButtonRadius">7</CornerRadius>
                     </Button.Resources>
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSend}"
                               Width="13" Height="13" Stroke="White" VerticalAlignment="Center"/>
-                        <TextBlock Text="전체 작업 지시" Margin="6,0,0,0" Foreground="White"/>
+                        <TextBlock Text="전체 작업 지시" Margin="6,0,0,0" Foreground="White"
+                                   VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
             </Grid>
