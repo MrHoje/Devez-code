@@ -192,7 +192,7 @@ public sealed class TerminalSessionManager
                 // 하단 터미널 패널: 에이전트 미연결 빈 셸. 훅/resume/세션 추적 없음.
                 // cmd 래핑 없이 pwsh 를 직접 스폰(순수 .exe 라 셸 경유 불필요). cwd = 사용자 홈.
                 startDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                commandLine = $"\"{ResolveShellExe()}\" -NoLogo";
+                commandLine = $"\"{ResolveShellExe()}\" -NoLogo -NoExit -Command \"{ShellPSReadLineColors}\"";
             }
             else if (ccDir != null && agent.Id == "codex")
             {
@@ -325,6 +325,17 @@ public sealed class TerminalSessionManager
         OpenCodeCustomThemes.Apply(theme);
         KimiCustomThemes.Apply(theme);
     }
+
+    /// <summary>하단 셸 진입 시 -Command 로 주입하는 PSReadLine 색 보정.
+    /// PSReadLine 기본색은 다크 콘솔 전제라 입력 텍스트를 흰색(37/97)으로 칠하는데, 라이트 테마 스킴의
+    /// white 는 배경과 같은 값이라(soft #F2EDE6, minimal #F8FAFC) 타이핑한 글자가 통째로 사라진다.
+    /// hex 를 박지 않고 팔레트 인덱스(39 기본전경/33/32/36/90/31)로 지정해야 테마 전환 시 실행 중인
+    /// 셸도 xterm 테마를 따라간다. -Colors 를 모르는 구버전 PSReadLine 은 catch 로 조용히 무시.</summary>
+    private const string ShellPSReadLineColors =
+        "$e=[char]27; try { Set-PSReadLineOption -Colors @{" +
+        "Default=$e+'[39m';Type=$e+'[39m';Number=$e+'[39m';Member=$e+'[39m';" +
+        "Command=$e+'[33m';Keyword=$e+'[32m';Variable=$e+'[32m';String=$e+'[36m';" +
+        "Comment=$e+'[90m';Operator=$e+'[90m';Parameter=$e+'[90m';Error=$e+'[31m'} } catch {}";
 
     /// <summary>하단 터미널 패널용 셸 실행 파일. 이름 우선순위(pwsh → powershell)로 PATH 전체를 훑는다
     /// (AgentRegistry.ResolvePath 는 디렉터리 우선이라 System32 의 powershell 이 pwsh 를 이길 수 있음).</summary>
