@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.24.3", "2026-08-18", true, new[]
+          ("v1.24.4", "2026-08-19", true, new[]
+          {
+              "설정 > 에이전트에서 에이전트별로 자동 업데이트를 켜고 끌 수 있도록 추가했습니다.",
+          }),
+          ("v1.24.3", "2026-08-18", false, new[]
           {
               "세션이 없는 프로젝트에서도 Ctrl+Shift+T로 새 세션을 열 수 있도록 수정했습니다.",
           }),
