@@ -1124,6 +1124,10 @@ public partial class WorkspacePaneView : UserControl
     private void OnClaudeChatSessionAction(string name, int index) => Dispatcher.BeginInvoke(() =>
         HandleSessionAction(name, index));
 
+    /// <summary>전역 훅(Ctrl+Shift 세션 단축키) 진입점. 포커스가 터미널 밖에 있어도 들어오지만,
+    /// 터미널이 조합 중일 수도 있으므로 터미널 경로와 동일하게 IME 를 먼저 끊는다.</summary>
+    public void InvokeSessionAction(string name) => OnTerminalSessionAction(name, 0);
+
     private void HandleSessionAction(string name, int index)
     {
         switch (name)

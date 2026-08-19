@@ -834,6 +834,7 @@ public partial class MainWindow : Window
             // 우리 앱이 포그라운드가 아니어도(다른 앱/터미널 점유 중에도) 동작 — 전환 후 창을 앞으로.
             var (hkMod, hkPrev, hkNext) = SettingsService.LoadTabHotkey();
             GlobalTabHotkey.Configure(hkMod, hkPrev, hkNext);
+            GlobalTabHotkey.SetOwnerWindow(new System.Windows.Interop.WindowInteropHelper(this).Handle);
             GlobalTabHotkey.Install(next =>
             {
                 bool moved = _focusedPane?.CycleActiveSession(next) ?? false;
@@ -854,7 +855,7 @@ public partial class MainWindow : Window
                     }
                 }
                 BringToForegroundFromHotkey();
-            });
+            }, HandleGlobalSessionHotkey);
         };
 
         // 창 위치/크기는 닫히기 직전(Closing)에 저장한다 — RestoreBounds 가 유효한 시점.
@@ -2624,6 +2625,23 @@ public partial class MainWindow : Window
 
     private void SessionHistoryPanelBtn_Click(object sender, RoutedEventArgs e)
         => RunPanelToggleCovered(() => SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true));
+
+    /// <summary>Ctrl+Shift 세션 단축키 — 전역 훅에서 들어온다. 터미널 WebView2 뿐 아니라 파일 탭·
+    /// Monaco 편집기·Claude 채팅·사이드바 어디에 포커스가 있어도 같은 동작을 하도록 한 창구.</summary>
+    private void HandleGlobalSessionHotkey(int vk)
+    {
+        if (_settingsView != null) return; // 설정 오버레이 중엔 세션 조작 금지(F1~F4 가드와 같은 이유)
+        var action = vk switch
+        {
+            0x54 => "newSession",
+            0x57 => "closeSession",
+            0x48 => "hideSession",
+            0x4E => "renameSession",
+            0x2E => "deleteSession",
+            _ => null,
+        };
+        if (action != null) _focusedPane?.InvokeSessionAction(action);
+    }
 
     /// <summary>F1~F4 — 패널 토글 단축키.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)

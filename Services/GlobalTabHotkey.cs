@@ -38,6 +38,13 @@ public static class GlobalTabHotkey
     private static volatile int _nextVk = 0x27;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<object, byte> HanjaSuppressors = new();
 
+    private const int VK_SHIFT   = 0x10;
+    private const int VK_CONTROL = 0x11;
+    private const int VK_MENU    = 0x12;
+    // Ctrl+Shift 세션 관리 단축키 — T(새 세션) W(닫기) H(숨김) N(이름변경) Delete(삭제).
+    // 복사/붙여넣기/스크롤(Ctrl+Shift+C/V/A/방향키)은 터미널 자체 동작이라 가로채지 않는다.
+    private static readonly int[] SessionVks = { 0x54, 0x57, 0x48, 0x4E, 0x2E };
+
     private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
 
     private static HookProc? _proc;
@@ -45,6 +52,8 @@ public static class GlobalTabHotkey
     private static bool _modDown;             // 훅 스레드에서만 접근
     private static Action<bool>? _onPrevNext; // 인자 true = 다음, false = 이전
     private static Action<int>? _captureCallback; // 키 리바인드 캡처 모드: 다음 키다운 1회를 가로채 콜백
+    private static Action<int>? _onSessionKey;    // Ctrl+Shift 세션 단축키: vk 전달
+    private static IntPtr _ownerHwnd = IntPtr.Zero; // 세션 단축키를 받을 메인 창
 
     private static Thread? _hookThread;
     private static uint _hookThreadId;
@@ -56,11 +65,17 @@ public static class GlobalTabHotkey
         _modDown = false;
     }
 
+    /// <summary>세션 단축키를 받을 메인 창을 등록한다. 이 창이 포그라운드일 때만 Ctrl+Shift 조합을
+    /// 가로채므로, 모달 다이얼로그·별도 창(MCP 관리 등)이 떠 있으면 자동으로 제외된다.</summary>
+    public static void SetOwnerWindow(IntPtr hwnd) => _ownerHwnd = hwnd;
+
     /// <summary>훅 설치. onPrevNext = 탭 이동 콜백(UI 스레드에서 호출됨).
+    /// onSessionKey = Ctrl+Shift 세션 단축키 콜백(vk, UI 스레드).
     /// 훅은 전용 스레드에 설치돼 UI 스레드 부하와 무관하게 즉시 서비스된다.</summary>
-    public static void Install(Action<bool> onPrevNext)
+    public static void Install(Action<bool> onPrevNext, Action<int>? onSessionKey = null)
     {
         _onPrevNext = onPrevNext;
+        _onSessionKey = onSessionKey;
         if (_hookThread != null) return;
 
         using var ready = new ManualResetEventSlim(false);
@@ -126,6 +141,18 @@ public static class GlobalTabHotkey
                 return (IntPtr)1;
             }
 
+            // Ctrl+Shift 세션 단축키 — 메인 창이 포그라운드면 포커스가 어디에 있든(터미널 WebView2,
+            // Monaco 편집기, Claude 채팅, 사이드바) 훅에서 먼저 처리하고 전파를 차단한다.
+            // 터미널의 handleKey 는 이 차단으로 도달하지 않으므로 이중 실행되지 않는다.
+            if (isDown && _onSessionKey != null && Array.IndexOf(SessionVks, vk) >= 0
+                && IsKeyDown(VK_CONTROL) && IsKeyDown(VK_SHIFT) && !IsKeyDown(VK_MENU)
+                && GetForegroundWindow() == _ownerHwnd && _ownerHwnd != IntPtr.Zero)
+            {
+                var sk = _onSessionKey;
+                Application.Current?.Dispatcher.BeginInvoke(() => sk(vk));
+                return (IntPtr)1;
+            }
+
             if (vk == _modVk)
             {
                 if (isDown) _modDown = true;
@@ -176,6 +203,8 @@ public static class GlobalTabHotkey
         catch { return $"0x{vk:X2}"; }
     }
 
+    private static bool IsKeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
     private static bool IsCurrentProcessForeground()
     {
         var foreground = GetForegroundWindow();
@@ -208,5 +237,6 @@ public static class GlobalTabHotkey
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostThreadMessage(uint idThread, uint Msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 }
