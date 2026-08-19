@@ -29,12 +29,16 @@ public static class OpenCodeGoCredentialStore
     {
         if (File.Exists(DisconnectedPath)) return null;
 
+        // ① 자체 스토어 → ② 플러그인 파일 → ③ env. env 를 먼저 보면 예전 워크스페이스가 박힌
+        // 환경변수가 남아 있을 때 브라우저로 새로 로그인해 저장한 값이 계속 밀려, 엉뚱한
+        // 워크스페이스 대시보드를 조회하고 사용량이 비어 보인다.
+        if (ReadFile(OwnStorePath) is { } own) return own;
+        if (ReadFile(PluginPath) is { } plugin) return plugin;
+
         // ③ env
         var envWs = Environment.GetEnvironmentVariable("OPENCODE_GO_WORKSPACE_ID")?.Trim();
         var envCk = Environment.GetEnvironmentVariable("OPENCODE_GO_AUTH_COOKIE")?.Trim();
-        if (!string.IsNullOrEmpty(envWs) && !string.IsNullOrEmpty(envCk)) return new Creds(envWs, envCk);
-
-        return ReadFile(OwnStorePath) ?? ReadFile(PluginPath);
+        return !string.IsNullOrEmpty(envWs) && !string.IsNullOrEmpty(envCk) ? new Creds(envWs, envCk) : null;
     }
 
     private static Creds? ReadFile(string path)
