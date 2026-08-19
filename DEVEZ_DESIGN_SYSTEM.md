@@ -1355,7 +1355,8 @@ Scrollbar:
 - track transparent
 - thumb 배경 Border soft
 - thumb 라운드 `3`
-- thumb margin `1,2`
+- thumb margin `1,2`(세로 기준: 좌우 1 이 두께, 상하 2 가 길이 방향 여백)
+- 가로 변형은 두께·길이 축이 90도 돌아가므로 margin 도 뒤집어 `2,1` 을 쓴다. 세로용을 그대로 쓰면 thumb 두께가 `4`가 되어 세로(`6`)보다 얇아 보인다.
 - hover 시 Text secondary 또는 strong border 계열
 
 Splitter:

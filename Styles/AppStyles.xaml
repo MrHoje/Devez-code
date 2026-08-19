@@ -1488,6 +1488,7 @@
     </Style>
 
     <!-- ── Slim scroll bar ──────────────────────────────────────────────── -->
+    <!-- 세로 thumb: 좌우 1 이 두께(8-2=6px), 상하 2 는 길이 방향 여백 -->
     <Style x:Key="SlimScrollThumb" TargetType="Thumb">
         <Setter Property="Template">
             <Setter.Value>
@@ -1495,6 +1496,20 @@
                     <Border CornerRadius="3"
                             Background="{DynamicResource LineBrush}"
                             Margin="1,2"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 가로 thumb: 두께·길이 축이 90도 돌아가므로 마진도 뒤집는다(1,2 → 2,1).
+         세로용을 그대로 쓰면 상하 2 가 빠져 두께가 4px 이 되어 세로(6px)보다 얇아 보인다. -->
+    <Style x:Key="SlimScrollThumbHorizontal" TargetType="Thumb">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border CornerRadius="3"
+                            Background="{DynamicResource LineBrush}"
+                            Margin="2,1"/>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -1535,7 +1550,7 @@
                             <Grid Background="Transparent">
                                 <Track x:Name="PART_Track">
                                     <Track.Thumb>
-                                        <Thumb Style="{StaticResource SlimScrollThumb}"/>
+                                        <Thumb Style="{StaticResource SlimScrollThumbHorizontal}"/>
                                     </Track.Thumb>
                                     <Track.IncreaseRepeatButton>
                                         <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0" Focusable="False"/>
