@@ -1442,12 +1442,16 @@ public partial class SettingsDialog : UserControl
         ShowRemainingUsageToggle.IsChecked = _originalShowRemainingUsage;
         _loadingFooterUsage = false;
 
-        // DeepSeek 연결 토글 상태 복원 — 키가 이미 저장되어 있으면 입력 영역은 숨김
+        // DeepSeek 연결 토글 상태 복원 — 키가 이미 저장되어 있으면 입력 영역은 숨김.
+        // 키 없이 켜 둔 선택(키 입력을 기다리는 중)은 그대로 살린다. 이 복원은 카테고리를 다시 열
+        // 때마다 도는데, 토글 ON 자체는 디스크에 남는 값이 아니라 키 유무만으로 되돌리면 방금 켠
+        // 토글이 곧바로 꺼지고 입력창도 같이 사라진다.
         bool hasKey = DeepSeekCredentialStore.IsConnected();
+        bool on = hasKey || _selectedDeepSeekEnabled;
         _originalDeepSeekEnabled = hasKey;
-        _selectedDeepSeekEnabled = hasKey;
-        DeepSeekEnabledToggle.IsChecked = hasKey;
-        DeepSeekKeyArea.Visibility = Visibility.Collapsed;
+        _selectedDeepSeekEnabled = on;
+        DeepSeekEnabledToggle.IsChecked = on;
+        DeepSeekKeyArea.Visibility = on && !hasKey ? Visibility.Visible : Visibility.Collapsed;
         DeepSeekKeyStatus.Visibility = Visibility.Collapsed;
     }
 
@@ -2057,13 +2061,15 @@ public partial class SettingsDialog : UserControl
     {
         // 테마는 저장은 즉시 하되 세션 재시작이 필요하므로, 재시작 여부는 창을 닫을 때 묻는다.
         // 되돌리기 기준은 "처음 바꾼 시점의 이전 테마"를 유지한다(여러 번 바꿔도 원본으로 복귀).
+        // 테마가 실제로 바뀐 경우에만 적용한다. 무조건 부르면 설정에서 아무 값이나 건드릴 때마다
+        // ThemeChanged 가 나가 현재 카테고리가 통째로 재로드되고(RefreshAfterThemeChange), 에이전트
+        // 테마 파일 재작성·세션 색 재전송까지 매번 따라붙는다.
         if (_selectedTheme != _originalTheme)
         {
             _themeBeforeChange ??= _originalTheme;
             _themeReloadPending = true;
+            (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         }
-
-        (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);
         SettingsService.SavePreloadAllProjectSessions(_selectedPreloadAllSessions);
         if (_selectedClaudeGuiMode != _originalClaudeGuiMode)
