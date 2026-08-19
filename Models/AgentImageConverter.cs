@@ -23,7 +23,7 @@ public sealed class AgentImageConverter : IValueConverter
             "opencode"    => isDark ? "opencode_icon_white_50.png" : "opencode_icon_black_50.png",
             "grok"        => isDark ? "grok_icon_white_50.png" : "grok_icon_black_50.png",
             "claude"      => "claude_code.png",
-            "codex"       => isDark ? "codex_icon_white_50.png" : "codex_icon_black_50.png",
+            "codex"       => isDark ? "codex_icon_white_30.png" : "codex_icon_black_30.png",
             "gajae"       => "gajae_code.png",
             "antigravity" => "anti.png",
             "kimi"        => isDark ? "kimi_icon_white_50.png" : "kimi_icon_black_50.png",

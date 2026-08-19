@@ -1534,7 +1534,7 @@
                                                 ToolTip="ChatGPT(Codex) 계정으로 로그인해 사용량 연결">
                                             <StackPanel Orientation="Horizontal">
                                                 <Image x:Name="CodexLoginIcon"
-                                                       Source="pack://application:,,,/Resources/Images/ShellPresets/codex_icon_white_50.png"
+                                                       Source="pack://application:,,,/Resources/Images/ShellPresets/codex_icon_white_30.png"
                                                        Width="13" Height="13" VerticalAlignment="Center"
                                                        RenderOptions.BitmapScalingMode="HighQuality"/>
                                                 <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"

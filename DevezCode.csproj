@@ -140,9 +140,10 @@
     <!-- 에이전트/공급자 브랜드 자산. MIT 적용 대상이 아니며 BRAND_ASSETS.md의 별도 고지를 따른다. -->
     <Resource Include="Resources\Images\ShellPresets\claude_code.png" />
     <!-- 에이전트 아이콘 (devez 이식) — 세션 행에 에이전트별 로고 표시 -->
-    <!-- codex(ChatGPT logo): dark=흰색 글리프, light=검정 글리프 (opencode 와 동일 패턴) -->
-    <Resource Include="Resources\Images\ShellPresets\codex_icon_black_50.png" />
-    <Resource Include="Resources\Images\ShellPresets\codex_icon_white_50.png" />
+    <!-- codex(ChatGPT logo): dark=흰색 글리프, light=검정 글리프. 얇은 매듭 선이 15px 에서 뭉개지지 않도록
+         표시 크기의 2배(30px)로 굽고 선 굵기·알파 대비를 보정한 마스터를 쓴다. -->
+    <Resource Include="Resources\Images\ShellPresets\codex_icon_black_30.png" />
+    <Resource Include="Resources\Images\ShellPresets\codex_icon_white_30.png" />
     <Resource Include="Resources\Images\ShellPresets\opencode_icon_black_50.png" />
     <Resource Include="Resources\Images\ShellPresets\opencode_icon_white_50.png" />
     <Resource Include="Resources\Images\ShellPresets\gajae_code.png" />
