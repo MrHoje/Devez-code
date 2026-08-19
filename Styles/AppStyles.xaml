@@ -679,6 +679,10 @@
     </Style>
 
     <!-- ── Primary button ────────────────────────────────────────────────── -->
+    <!-- 라운드는 토큰으로 뺀다. 개별 버튼에서 <Button.Resources> 로 같은 키를 재정의하면
+         그 버튼만 다른 라운드를 쓸 수 있다(템플릿 내부 DynamicResource 는 버튼 리소스까지 조회). -->
+    <CornerRadius x:Key="PrimaryButtonRadius">10</CornerRadius>
+
     <Style x:Key="PrimaryButton" TargetType="Button">
         <Setter Property="IsTabStop" Value="False"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -691,7 +695,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                            CornerRadius="10" Padding="16,0">
+                            CornerRadius="{DynamicResource PrimaryButtonRadius}" Padding="16,0">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           TextElement.Foreground="{TemplateBinding Foreground}"/>
                     </Border>

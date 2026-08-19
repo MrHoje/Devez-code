@@ -107,6 +107,10 @@
                         Style="{StaticResource PrimaryButton}"
                         VerticalAlignment="Center"
                         FontSize="{DynamicResource Fs12}">
+                    <Button.Resources>
+                        <!-- 이 버튼만 라운드를 낮춘다(전역 PrimaryButton 은 10 유지). -->
+                        <CornerRadius x:Key="PrimaryButtonRadius">7</CornerRadius>
+                    </Button.Resources>
                     <StackPanel Orientation="Horizontal">
                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSend}"
                               Width="13" Height="13" Stroke="White" VerticalAlignment="Center"/>
