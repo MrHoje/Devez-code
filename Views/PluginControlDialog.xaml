@@ -852,6 +852,9 @@
                                  PreviewKeyDown="EditorBox_PreviewKeyDown">
                             <TextBox.Resources>
                                 <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                                <!-- 내부 스크롤 호스트: 가로+세로 동시 표시 시 우하단에 생기던
+                                     시스템색 코너 사각형(다크 테마에서 흰 네모) 제거 -->
+                                <Style TargetType="ScrollViewer" BasedOn="{StaticResource CornerlessScrollViewer}"/>
                             </TextBox.Resources>
                         </TextBox>
                     </Border>

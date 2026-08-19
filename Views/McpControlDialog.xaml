@@ -231,7 +231,9 @@
                 <Border Grid.Row="1" CornerRadius="10" Padding="12,10"
                         Background="{DynamicResource PanelSoftBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                    <!-- 가로+세로 동시 표시 시 우하단 시스템색 코너 사각형이 생기지 않는 템플릿 -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                  Style="{StaticResource CornerlessScrollViewer}">
                         <TextBox x:Name="DetailText" IsReadOnly="True" BorderThickness="0"
                                  Background="Transparent" TextWrapping="NoWrap"
                                  FontFamily="Consolas, Cascadia Code, PretendardFont"
