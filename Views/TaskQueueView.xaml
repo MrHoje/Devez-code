@@ -86,9 +86,10 @@
             </Grid>
         </Border>
 
-        <!-- ── 전체 작업 지시 바: 큐에 작업이 있고 선택모드가 아닐 때만 노출.
+        <!-- ── 전체 작업 지시 바: 큐에 작업이 있으면 항상 노출(다중선택 중에도 유지 — 바가 사라지면
+              리스트가 위로 튀어 선택 중인 버블이 커서 밑에서 밀려난다).
               항목 전체에 1),2)... 순번을 매겨 하나의 프롬프트로 합쳐 전송. ── -->
-        <Border x:Name="AllActionBar" Grid.Row="1" Height="40"
+        <Border x:Name="AllActionBar" Grid.Row="1" Height="35"
                 Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Visibility="Collapsed">

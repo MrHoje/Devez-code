@@ -86,12 +86,12 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         UpdateAllActionBar();
     }
 
-    /// <summary>'전체 작업 지시' 바: 큐에 항목이 있고 선택모드가 아닐 때만 노출.</summary>
+    /// <summary>'전체 작업 지시' 바: 큐에 항목이 있으면 선택모드에서도 계속 노출.
+    /// (선택 중에 바가 사라지면 리스트가 위로 튀어 드래그 선택이 어긋난다.)</summary>
     private void UpdateAllActionBar()
     {
         if (AllActionBar == null) return;
-        AllActionBar.Visibility = (!_isSelectionMode && Items.Count > 0)
-            ? Visibility.Visible : Visibility.Collapsed;
+        AllActionBar.Visibility = Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         AllActionCountText.Text = $"{Items.Count}개 작업";
     }
 
@@ -360,9 +360,12 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     /// <summary>버블 클릭 시 입력창에서 키보드 포커스를 빼 루트로 옮긴다.
     /// → 입력창에 텍스트가 있어도 Delete 가 (텍스트 편집이 아니라) 버블 삭제로 동작.
     /// 키 이벤트는 PreviewKeyDown(루트 터널링)으로 계속 Root_PreviewKeyDown 에 도달.</summary>
+    /// <summary>버블을 건드릴 때 키 입력(Delete/Esc/Ctrl+C)을 이 패널이 받도록 포커스를 끌어온다.
+    /// 입력창뿐 아니라 터미널 WebView2 등 패널 밖에 포커스가 있을 때도 가져와야 한다.
+    /// (밖에 있으면 PreviewKeyDown 이 이 컨트롤을 통과조차 하지 않아 Delete 가 영영 안 먹는다.)</summary>
     private void DropInputFocus()
     {
-        if (!InputBox.IsKeyboardFocusWithin) return;
+        if (IsKeyboardFocusWithin && !InputBox.IsKeyboardFocusWithin) return;
         Focusable = true;
         Keyboard.Focus(this);
     }
@@ -630,6 +633,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             if (Math.Abs(cur.X - origin.X) > 4 || Math.Abs(cur.Y - origin.Y) > 4)
             {
                 // devez StartRubberBand 정합: 캔버스 노출 + 인덱스 리셋 + 마우스 캡처 후 갱신.
+                DropInputFocus(); // 드래그 선택 결과를 Delete 로 지울 수 있게 키 포커스 확보
                 _rubberActive = true;
                 _rubberTopIdx = -1;
                 _rubberBottomIdx = -1;
