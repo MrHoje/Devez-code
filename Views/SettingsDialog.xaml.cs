@@ -103,7 +103,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.24.7", "2026-08-19", true, new[]
+          ("v1.24.8", "2026-08-20", true, new[]
+          {
+              "다른 창이나 팝업을 거쳐 터미널로 돌아온 뒤 한글을 입력하면 조합 중인 글자가 화면 왼쪽 위에 나타나던 문제를 수정했습니다.",
+              "알림 팝업이 떠오를 때 입력 포커스를 빼앗던 문제를 수정했습니다.",
+          }),
+          ("v1.24.7", "2026-08-19", false, new[]
           {
               "파일 탐색기와 일부 목록 오른쪽 아래에 흰색 사각형이 보이던 문제를 수정했습니다.",
               "파일 탐색기를 스크롤할 때 하단 흐림 효과가 스크롤바를 덮던 문제를 수정했습니다.",
