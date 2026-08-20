@@ -16,6 +16,8 @@ public sealed class MonacoHost : ContentControl, IDisposable
 
     /// <summary>Monaco DiffEditor 준비 완료(pageReady 수신 후). 호스트가 구독.</summary>
     public event Action? PageReady;
+    /// <summary>자식 WebView2 HWND가 실제 입력 포커스를 얻음. 부모 WPF 마우스 이벤트가 닿지 않는 경계용.</summary>
+    public event Action? UserInteracted;
     /// <summary>WebView2 초기화 실패 또는 pageReady 무응답(타임아웃) — 호스트가
     /// 이걸 받아 로딩 스피너를 내리고 에러를 보여줘야 한다. 안 그러면 스피너가 영원히 돈다(무한 스피너 버그).</summary>
     public event Action<string>? InitFailed;
@@ -59,6 +61,7 @@ public sealed class MonacoHost : ContentControl, IDisposable
             // 투명을 지원 못 함) → diff 에디터가 열릴 때 한 번 까매졌다 뜨는 원인. 테마 배경색으로 맞춰
             // 페인트 전 구간이 주변(커튼/패널 배경)과 동일하게 보이도록 한다. 테마 변경 시 ApplyTheme 이 갱신.
             _webView = new WebView2 { DefaultBackgroundColor = CurrentBgColor() };
+            _webView.GotKeyboardFocus += (_, _) => UserInteracted?.Invoke();
             Content = _webView;
 
             var env = await SharedEnvironment.Value;

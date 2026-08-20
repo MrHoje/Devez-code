@@ -68,6 +68,12 @@ public partial class WorkspacePaneView : UserControl
 
     /// <summary>사용자가 이 패널을 클릭/조작 → 포커스 패널로 지정 요청.</summary>
     public event Action<WorkspacePaneView>? FocusRequested;
+    /// <summary>사용자가 터미널 HWND를 직접 클릭함. 셸의 예약된 프로그램적 포커스 복귀 취소용.</summary>
+    public event Action<WorkspacePaneView>? NativeTerminalInteracted;
+    /// <summary>이미 포커스된 터미널에서 실제 키 입력이 시작됨. 보류된 화면 전환 취소용.</summary>
+    public event Action<WorkspacePaneView>? InputIntent;
+    /// <summary>브라우저/PDF/Monaco 자식 HWND가 포커스를 얻음. 프로그램적 복원일 수 있어 클릭 명령과 구분.</summary>
+    public event Action<WorkspacePaneView>? NativeSurfaceFocused;
     /// <summary>활성 프로젝트/세션/탭이 바뀜 → 셸이 파일탐색기·사이드바 하이라이트·last-active 저장을 갱신.</summary>
     public event Action<WorkspacePaneView>? ActiveChanged;
     /// <summary>분할 토글 버튼 클릭 → 셸이 분할/해제 처리.</summary>
@@ -153,7 +159,14 @@ public partial class WorkspacePaneView : UserControl
         _terminal.MenuInputSubmitted += id => { var s = FindSession(id); if (s is { IsWaitingChoice: true }) s.IsWaitingChoice = false; };
         _terminal.SessionActionRequested += OnTerminalSessionAction;
         _terminal.DevezVibeUpdateRequested += () => DevezVibeUpdateRequested?.Invoke();
-        _terminal.UserInteracted += () => FocusRequested?.Invoke(this);
+        _terminal.UserInteracted += () =>
+        {
+            // TerminalHostView가 자체 60ms 예약을 먼저 취소한 뒤 셸 예약도 무효화한다.
+            // 실제 표면 클릭이 항상 프로그램적 복귀보다 우선해야 조합 중 재포커스를 막을 수 있다.
+            NativeTerminalInteracted?.Invoke(this);
+            FocusRequested?.Invoke(this);
+        };
+        _terminal.InputIntent += () => InputIntent?.Invoke(this);
         _terminal.SessionActivity += id => SessionActivity?.Invoke(id);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
         _terminal.FontSizePxChanged += ApplyHeaderFontSize;
@@ -162,7 +175,16 @@ public partial class WorkspacePaneView : UserControl
         _terminal.BrowserUrlOpenRequested += OnTerminalBrowserUrlOpenRequested;
         // Explorer 파일이 WebView2 터미널에 들어오면 HWND를 숨기고 패널 전체 드롭 선택 화면으로 전환.
         _terminal.ExternalFileDragEntered += ShowFileDropOverlay;
-        _terminal.ExternalFileDropReceived += DismissFileDropOverlay;
+        _terminal.ExternalFileDropReceived += paths =>
+        {
+            DismissFileDropOverlay();
+            var session = _activeSession;
+            if (session == null) return;
+            if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(
+                    () => InsertDroppedPathsIntoTerminal(session, paths)) == true)
+                return;
+            InsertDroppedPathsIntoTerminal(session, paths);
+        };
         _fileDropOverlayCursorTimer.Tick += (_, _) => CheckFileDropOverlayCursor();
         Unloaded += (_, _) => _fileDropOverlayCursorTimer.Stop();
         // synced reveal 준비 완료 → 셸로 전달(셸이 좌우를 모아 동시에 fade)
@@ -236,6 +258,15 @@ public partial class WorkspacePaneView : UserControl
         if (_activeProject == null || files.Length == 0) return;
 
         FocusRequested?.Invoke(this);
+        var project = _activeProject;
+        if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(() => OpenDroppedFiles(project, files)) == true)
+            return;
+        OpenDroppedFiles(project, files);
+    }
+
+    private void OpenDroppedFiles(ProjectItem project, IReadOnlyList<string> files)
+    {
+        if (!IsVisible || !ReferenceEquals(_activeProject, project)) return;
         foreach (var path in files)
             OpenFileAsTab(path);
     }
@@ -278,7 +309,7 @@ public partial class WorkspacePaneView : UserControl
 
     /// <summary>파일을 열 프로젝트를 확보한다 — 이미 활성 프로젝트가 있으면 그대로, 없으면 경로로 추론해 활성화.
     /// 어느 프로젝트에도 속하지 않으면 안내하고 false.</summary>
-    private bool EnsureProjectForPaths(string[] files)
+    private bool EnsureProjectForPaths(IReadOnlyList<string> files)
     {
         if (_activeProject != null) return true;
         var proj = ResolveProjectForPaths(files);
@@ -338,8 +369,10 @@ public partial class WorkspacePaneView : UserControl
     public void ShowFileDropOverlay()
     {
         // 프로젝트 미선택(빈 패널)도 허용한다 — 드롭 시 경로로 프로젝트를 추론해 연다(EnsureProjectForPaths).
-        if (_fileDropOverlayActive) return;
+        if (_fileDropOverlayActive || MainWindow.Current?.IsTerminalVisualTransitionBusy == true) return;
 
+        _terminal.CancelPendingFocusTransfer();
+        TerminalHostView.InvalidateGlobalFocusRequests();
         _fileDropOverlayActive = true;
         // 파일 탭 활성 중엔 _activeSession 이 null 이라 터미널의 활성 방으로 판단한다(마지막 세션에 첨부).
         AddFileDropZone.IsEnabled = _activeSession is { IsExternal: false } session
@@ -481,15 +514,29 @@ public partial class WorkspacePaneView : UserControl
         }
 
         HideFileDropOverlay();
+        if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(() => ApplyFileDrop(action, files)) == true)
+            return;
+        ApplyFileDrop(action, files);
+    }
+
+    private void ApplyFileDrop(string? action, IReadOnlyList<string> files)
+    {
+        if (!IsVisible) return;
         if (string.Equals(action, "Add", StringComparison.Ordinal))
         {
-            _terminal.InsertFilePaths(files);
+            _terminal.InsertFilePaths(files, forceImeReattach: true);
             return;
         }
 
         if (!EnsureProjectForPaths(files)) return; // 빈 패널이면 경로로 프로젝트를 골라 활성화
         foreach (var path in files)
             OpenFileAsTab(path);
+    }
+
+    private void InsertDroppedPathsIntoTerminal(SessionItem session, IReadOnlyList<string> paths)
+    {
+        if (!IsVisible || !ReferenceEquals(_activeSession, session) || session.IsExternal) return;
+        _terminal.InsertFilePaths(paths, forceImeReattach: true);
     }
 
     /// <summary>분할 시 이 패널이 우측(PaneB)인지. 좌/우 위치 스왑 추적에 쓰인다.</summary>
@@ -738,6 +785,10 @@ public partial class WorkspacePaneView : UserControl
     // NotifySessionStateChanged → UpdateEmptyState 를 태우면 Visible 복원으로 라이브 HWND 가
     // 스냅샷 위로 되살아난다(airspace) — suspend 중엔 표시 복원을 건너뛰게 하는 가드.
     private bool _overlaySuspended;
+    // 패널 전환·우측 드로어용 캡처가 await 중인 순간에도 복귀 스케줄러가
+    // 다시 터미널 포커스를 예약하지 못하게 동기 가드를 먼저 올린다.
+    private bool _terminalOnlySuspended;
+    private bool _terminalOnlyWebCover;
 
     /// <summary>분할 열림/닫힘·프로젝트 전환 직전 — 세션은 웹 레이어 커튼(#xfer-cover)으로, 파일 에디터는
     /// 단색 커튼(TerminalCurtain, md=WebView2 는 airspace 라 에디터를 숨기고 덮음)으로 가려 리플로우/조기표시를 막는다.</summary>
@@ -1130,6 +1181,9 @@ public partial class WorkspacePaneView : UserControl
 
     private void HandleSessionAction(string name, int index)
     {
+        if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(() => HandleSessionAction(name, index)) == true)
+            return;
+        if (!IsVisible) return;
         switch (name)
         {
             case "newSession": if (_activeProject != null) AddSession(_activeProject); break;
@@ -1239,7 +1293,7 @@ public partial class WorkspacePaneView : UserControl
         {
             ConfirmDialog.Alert("에이전트 없음",
                 "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
-            FocusActiveSessionTerminal();
+            FocusActiveSessionTerminal(forceImeReattach: true);
             return null;
         }
         string agentId;
@@ -1249,7 +1303,7 @@ public partial class WorkspacePaneView : UserControl
             var picked = AgentPickerDialog.Pick(Window.GetWindow(this), available, proj.Path);
             if (picked == null)
             {
-                FocusActiveSessionTerminal();
+                FocusActiveSessionTerminal(forceImeReattach: true);
                 return null;
             }
             agentId = picked;
@@ -1262,7 +1316,7 @@ public partial class WorkspacePaneView : UserControl
                                                 defaultValue: sessionName, maxLength: 60);
             if (enteredName == null)
             {
-                FocusActiveSessionTerminal();
+                FocusActiveSessionTerminal(forceImeReattach: true);
                 return null;
             }
             sessionName = enteredName;
@@ -1280,7 +1334,7 @@ public partial class WorkspacePaneView : UserControl
             // 하고(우측에 전체 세션 쏟아짐 방지), 반대 패널에선 숨겨 양쪽 중복을 막는다.
             bool isolated = _isolatedTabs != null;
             if (isolated) IsolateTab(session);
-            OpenSession(session);
+            OpenSession(session, forceImeReattach: true);
             if (isolated) IsolatedTabOpened?.Invoke(this, session);
         }
         return session;
@@ -1375,17 +1429,17 @@ public partial class WorkspacePaneView : UserControl
         // 포크는 "새 세션이 열리게" 하는 게 목적 → 항상 연다(다른 프로젝트면 OpenSession 이 전환).
         bool isolatedSameProj = _isolatedTabs != null && ReferenceEquals(_activeProject, proj);
         if (isolatedSameProj) IsolateTab(session);
-        OpenSession(session);
+        OpenSession(session, forceImeReattach: true);
         if (isolatedSameProj) IsolatedTabOpened?.Invoke(this, session);
     }
 
     /// <summary>세션 클릭 — 필요하면 프로젝트 전환 후 해당 세션 활성화.</summary>
-    public void OpenSession(SessionItem session)
+    public void OpenSession(SessionItem session, bool forceImeReattach = false)
     {
         var parent = ParentOf(session);
         if (parent == null) return;
         if (!ReferenceEquals(_activeProject, parent)) SetActiveProject(parent);
-        ActivateSession(session);
+        ActivateSession(session, forceImeReattach: forceImeReattach);
     }
 
     /// <summary>세션을 선택하거나 포커스를 옮기지 않고 터미널만 백그라운드에서 시작한다.</summary>
@@ -1465,7 +1519,7 @@ public partial class WorkspacePaneView : UserControl
     private bool _returnRequested;      // "인앱으로 가져오기" 눌러 복귀 진행 중(버튼 재활성 방지)
     private SessionItem? _externalBusyWatch; // busy 변화 구독 중인 외부 세션
 
-    private void ActivateSession(SessionItem session, bool unHide = true)
+    private void ActivateSession(SessionItem session, bool unHide = true, bool forceImeReattach = false)
     {
         session.AcknowledgeCompletionPulse();
         if (session.IsExternal)
@@ -1478,6 +1532,10 @@ public partial class WorkspacePaneView : UserControl
             ActivateClaudeGuiSession(session, unHide);
             return;
         }
+        // 파일·브라우저·별도 채팅 WebView에서 돌아오는 동안 TerminalHostView는 화면 밖에 주차된다.
+        // 이때 Win32 포커스 클래스는 여전히 Chrome_*일 수 있으므로 클래스명만 믿지 않고 실제
+        // WPF→터미널 포커스 경계를 한 번 만든다. 세션↔세션 전환은 같은 WebView라 개입하지 않는다.
+        forceImeReattach |= _termParked;
         if (ReferenceEquals(_activeSession, session) && ClaudeChatHostContainer.Visibility == Visibility.Visible)
         {
             session.IsActive = false;
@@ -1599,9 +1657,9 @@ public partial class WorkspacePaneView : UserControl
         // reemit 로 재방출 1회를 강제해 자가치유(세션↔세션 전환은 주차가 없어 발동 안 함).
         // [실험] reemit 바운스가 codex 컴포저를 손상시킴이 로그로 확인됨 → 비활성화하고 baseline 확인.
         bool reemitOnShow = false;
-        DiagLog.Write($"ActivateSession reemit-decide room={session.Id} termParked={_termParked} sessionReady={sessionReady} => reemit={reemitOnShow} (bounce disabled)");
+        DiagLog.Write($"ActivateSession reemit-decide room={session.Id} termParked={_termParked} sessionReady={sessionReady} => reemit={reemitOnShow} imeReattach={forceImeReattach} (output bounce disabled)");
         _terminal.ShowTerminal(session.Id, reemit: reemitOnShow);
-        _terminal.FocusTerminal();
+        _terminal.FocusTerminal(forceImeReattach);
         UpdateEmptyState();
         // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
         // 기대 크기를 캡처해야 웹 스피너 게이트(뷰포트=목표 일치 대기)의 목표가 처음부터 정확하다.
@@ -1748,7 +1806,7 @@ public partial class WorkspacePaneView : UserControl
         session.Write(text);
         session.Write("\r");
         _terminal.ShowTerminal(id);
-        _terminal.FocusTerminal();
+        _terminal.FocusTerminal(forceImeReattach: true);
         return true;
     }
 
@@ -1769,7 +1827,7 @@ public partial class WorkspacePaneView : UserControl
             if (UsesClaudeGui(_activeSession)) _claudeChat.InsertFilePaths(dialog.FileNames);
             else _terminal.InsertFilePaths(dialog.FileNames);
         }
-        FocusActiveSessionTerminal();
+        FocusActiveSessionTerminal(forceImeReattach: true);
     }
 
     private void ActivateFileTab(FileTabItem tab)
@@ -1845,6 +1903,7 @@ public partial class WorkspacePaneView : UserControl
             if (ReferenceEquals(BrowserHostContainer.Content, browser)) BrowserHostContainer.Content = null;
             BrowserHostContainer.Content = browser;
         }
+        HookBrowserInteract(tab);
         UpdateEmptyState();
         browser.EnsureStarted();
         browser.ResumeContent();
@@ -1863,6 +1922,13 @@ public partial class WorkspacePaneView : UserControl
         {
             if (ReferenceEquals(_activeTab, tab)) FocusRequested?.Invoke(this);
         };
+        if (tab.Editor is INativeInputSurface nativeSurface)
+        {
+            nativeSurface.NativeSurfaceFocused += (_, _) =>
+            {
+                if (ReferenceEquals(_activeTab, tab)) NativeSurfaceFocused?.Invoke(this);
+            };
+        }
         // md 편집기는 WebView2(별도 HWND)라 WPF DragOver 가 안 온다 — 웹에서 알려주는 드래그 진입으로
         // 세션과 동일한 드롭 선택 화면을 띄운다(에디터는 패널 간 공유 인스턴스라 표시 중인 패널만 반응).
         if (tab.Editor is MarkdownFileEditorView md)
@@ -1878,6 +1944,16 @@ public partial class WorkspacePaneView : UserControl
         }
     }
     private readonly HashSet<IFileTabEditor> _interactHooked = new();
+
+    private void HookBrowserInteract(BrowserTabItem tab)
+    {
+        if (!_browserInteractHooked.Add(tab.Browser)) return;
+        tab.Browser.NativeSurfaceFocused += () =>
+        {
+            if (ReferenceEquals(_activeTab, tab)) NativeSurfaceFocused?.Invoke(this);
+        };
+    }
+    private readonly HashSet<BrowserHostView> _browserInteractHooked = new();
 
     // ── 메타바 model/effort dock ─────────────────────────────────
     private static readonly ModelEffortOption[] ClaudeModelOptions =
@@ -1927,10 +2003,22 @@ public partial class WorkspacePaneView : UserControl
         // 다른 입력 컨트롤로 이동한 경우는 보존하고, 해당 콤보에 남은 포커스만 터미널로 돌린다.
         if (Window.GetWindow(this) is MainWindow window)
         {
-            window.ScheduleTerminalFocusRestore(sender as ComboBox);
+            window.ScheduleTerminalFocusRestore(sender as ComboBox, imeBoundary: true);
             return;
         }
-        FocusActiveSessionTerminal();
+        FocusActiveSessionTerminal(forceImeReattach: true);
+    }
+
+    private void DockCombo_DropDownOpened(object? sender, EventArgs e)
+    {
+        if (Window.GetWindow(this) is MainWindow window)
+        {
+            window.PrepareForModalInputBoundary();
+            return;
+        }
+        _terminal.AbortIme();
+        _terminal.CancelPendingFocusTransfer();
+        TerminalHostView.InvalidateGlobalFocusRequests();
     }
 
     private void SyncFontSizeCombo(double px)
@@ -2547,12 +2635,12 @@ public partial class WorkspacePaneView : UserControl
         if (_activeProject == null)
         {
             ConfirmDialog.Alert("프로젝트 없음", "먼저 왼쪽 사이드바에서 프로젝트를 추가하세요.");
-            FocusActiveSessionTerminal();
+            FocusActiveSessionTerminal(forceImeReattach: true);
             return;
         }
         if (NewTabBtn.ContextMenu is not { } menu)
         {
-            FocusActiveSessionTerminal();
+            FocusActiveSessionTerminal(forceImeReattach: true);
             return;
         }
         menu.PlacementTarget = NewTabBtn;
@@ -2562,25 +2650,51 @@ public partial class WorkspacePaneView : UserControl
 
     private void NewSessionMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        if (_activeProject != null) AddSession(_activeProject);
+        var project = _activeProject;
+        if (project == null) return;
+        if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(() => AddSessionFromMenu(project)) == true) return;
+        AddSessionFromMenu(project);
+    }
+
+    private void AddSessionFromMenu(ProjectItem project)
+    {
+        if (!IsVisible || !ReferenceEquals(_activeProject, project)) return;
+        AddSession(project);
     }
 
     private void NewBrowserMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        if (_activeProject != null) AddBrowserTab(_activeProject);
+        var project = _activeProject;
+        if (project == null) return;
+        if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(() => AddBrowserFromMenu(project)) == true) return;
+        AddBrowserFromMenu(project);
+    }
+
+    private void AddBrowserFromMenu(ProjectItem project)
+    {
+        if (!IsVisible || !ReferenceEquals(_activeProject, project)) return;
+        AddBrowserTab(project);
     }
 
     private void OpenFileMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        if (_activeProject == null) return;
+        var project = _activeProject;
+        if (project == null) return;
+        if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(() => OpenFileFromMenu(project)) == true) return;
+        OpenFileFromMenu(project);
+    }
+
+    private void OpenFileFromMenu(ProjectItem project)
+    {
+        if (!IsVisible || !ReferenceEquals(_activeProject, project)) return;
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = "텍스트, 이미지, PDF 열기",
             Filter = "지원 파일|*.pdf;*.txt;*.md;*.markdown;*.json;*.xml;*.yml;*.yaml;*.toml;*.csv;*.log;*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp;*.ico;*.tif;*.tiff|PDF 파일|*.pdf|텍스트 파일|*.txt;*.md;*.markdown;*.json;*.xml;*.yml;*.yaml;*.toml;*.csv;*.log|이미지 파일|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp;*.ico;*.tif;*.tiff",
             FilterIndex = 1,
         };
-        if (Directory.Exists(_activeProject.Path))
-            dialog.InitialDirectory = _activeProject.Path;
+        if (Directory.Exists(project.Path))
+            dialog.InitialDirectory = project.Path;
         if (dialog.ShowDialog() == true)
             OpenFileAsTab(dialog.FileName);
     }
@@ -2595,7 +2709,7 @@ public partial class WorkspacePaneView : UserControl
                                                 defaultValue: name, maxLength: 60);
             if (enteredName == null)
             {
-                FocusActiveSessionTerminal();
+                FocusActiveSessionTerminal(forceImeReattach: true);
                 return null;
             }
             name = enteredName;
@@ -2688,7 +2802,7 @@ public partial class WorkspacePaneView : UserControl
             session.Name = name;
             WorkspaceStore.Save(Projects);
         }
-        FocusActiveSessionTerminal();
+        FocusActiveSessionTerminal(forceImeReattach: true);
     }
 
     public void RenameBrowserTab(BrowserTabItem browser)
@@ -2754,6 +2868,9 @@ public partial class WorkspacePaneView : UserControl
     public void OnExternalSessionEnded(SessionItem session)
     {
         bool active = ReferenceEquals(_activeSession, session);
+        if (active && MainWindow.Current?.DeferWorkspaceContinuationIfBusy(
+                () => OnExternalSessionEnded(session)) == true)
+            return;
         _terminal.EndExternalPreview(session.Id, reconnect: active);
         if (!active) return;
         HideExternalSessionPreview();
@@ -2761,7 +2878,7 @@ public partial class WorkspacePaneView : UserControl
         _activeSession = null;
         _activeTab = null;
         if (!session.IsEffectivelyHidden)
-            ActivateSession(session, unHide: false);
+            ActivateSession(session, unHide: false, forceImeReattach: true);
         else
             ClearActiveSession();
     }
@@ -2782,6 +2899,11 @@ public partial class WorkspacePaneView : UserControl
     public void OnHideStopFinished(SessionItem session)
     {
         var roomId = session.Id;
+        if (_pendingReactivateAfterHideStop.Contains(roomId)
+            && ReferenceEquals(_activeSession, session)
+            && MainWindow.Current?.DeferWorkspaceContinuationIfBusy(
+                () => OnHideStopFinished(session)) == true)
+            return;
         bool pending = _pendingReactivateAfterHideStop.Remove(roomId);
         if (TerminalSessionManager.Instance.Get(roomId) is not { IsAlive: true })
             CloseTerminalRoom(roomId);
@@ -2989,6 +3111,7 @@ public partial class WorkspacePaneView : UserControl
         int idx = parent?.Tabs.IndexOf(tab) ?? -1;
         if (ReferenceEquals(BrowserHostContainer.Content, tab.Browser))
             BrowserHostContainer.Content = null;
+        _browserInteractHooked.Remove(tab.Browser);
         MainWindow.Current?.UnparkAutomationBrowser(tab.Browser);   // 주차장에 있던 자동화 탭 정리
         tab.Browser.DisposeAll();
         SettingsService.RemoveBrowserLastUrl(tab.PersistenceKey);
@@ -3099,8 +3222,18 @@ public partial class WorkspacePaneView : UserControl
 
         await Task.Delay(150);
 
-        if (_activeSession != null && allClaudeSessions.Contains(_activeSession))
-            ActivateSession(_activeSession);
+        var activeAfterRestart = _activeSession;
+        if (activeAfterRestart != null && allClaudeSessions.Contains(activeAfterRestart))
+        {
+            void ReactivateIfCurrent()
+            {
+                if (IsVisible && ReferenceEquals(_activeSession, activeAfterRestart)
+                    && allClaudeSessions.Contains(activeAfterRestart))
+                    ActivateSession(activeAfterRestart);
+            }
+            if (MainWindow.Current?.DeferWorkspaceContinuationIfBusy(ReactivateIfCurrent) != true)
+                ReactivateIfCurrent();
+        }
     }
 
     /// <summary>테마 전역 재시작 1단계. 이 패널의 xterm/이벤트 배선만 모두 끊는다.
@@ -3146,6 +3279,9 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>세션 재시작 2단계. 잠금을 풀고 현재 보이는 세션을 새 표면으로 다시 연다.</summary>
     public void CompleteSessionReload(IReadOnlyList<SessionItem> allSessions, bool restartActive = true)
     {
+        if (restartActive && MainWindow.Current?.DeferWorkspaceContinuationIfBusy(
+                () => CompleteSessionReload(allSessions.ToArray(), restartActive: true)) == true)
+            return;
         foreach (var s in allSessions)
         {
             _themeReloadRoomIds.Remove(s.Id);
@@ -3195,16 +3331,29 @@ public partial class WorkspacePaneView : UserControl
         if (_tabDidDrag) { _tabDidDrag = false; return; }
         if (sender is FrameworkElement { DataContext: TabItemBase tab })
         {
-            // 이미 선택된 세션 탭도 다시 누르면 터미널에 실제 포커스를 재진입시킨다. 기존에는
-            // ActivateSession의 same-session 조기 반환으로 아무 일도 없어 IME 이상 상태를 복구할 수 없었다.
-            if (tab is SessionItem s)
-            {
-                if (ReferenceEquals(_activeSession, s)) _terminal.FocusTerminal();
-                else OpenSession(s);
-            }
-            else if (tab is FileTabItem f) ActivateFileTab(f);
-            else if (tab is BrowserTabItem b) ActivateBrowserTab(b);
+            if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(() =>
+                {
+                    FocusRequested?.Invoke(this);
+                    ActivateClickedTab(tab);
+                }) == true)
+                return;
+            ActivateClickedTab(tab);
         }
+    }
+
+    private void ActivateClickedTab(TabItemBase tab)
+    {
+        var parent = ParentOfTab(tab);
+        if (!IsVisible || parent == null || !ReferenceEquals(_activeProject, parent) || !ShowsTab(tab)) return;
+        // 이미 선택된 세션 탭도 다시 누르면 터미널에 실제 포커스를 재진입시킨다. 기존에는
+        // ActivateSession의 same-session 조기 반환으로 아무 일도 없어 IME 이상 상태를 복구할 수 없었다.
+        if (tab is SessionItem s)
+        {
+            if (ReferenceEquals(_activeSession, s)) _terminal.FocusTerminal(forceImeReattach: true);
+            else OpenSession(s, forceImeReattach: true);
+        }
+        else if (tab is FileTabItem f) ActivateFileTab(f);
+        else if (tab is BrowserTabItem b) ActivateBrowserTab(b);
     }
 
     private void Tab_RightClick(object sender, MouseButtonEventArgs e)
@@ -3405,7 +3554,7 @@ public partial class WorkspacePaneView : UserControl
         {
             RequestCloseBrowserTab(b);
         }
-        FocusActiveSessionTerminal();
+        FocusActiveSessionTerminal(forceImeReattach: true);
     }
 
     // ── 탭 드래그 순서변경 ─────────────────────────────────────────
@@ -3884,13 +4033,13 @@ public partial class WorkspacePaneView : UserControl
     private void TabScrollLeft_Click(object sender, RoutedEventArgs e)
     {
         AnimateTabScroll(TabScroller.HorizontalOffset - TabScrollStep);
-        FocusActiveSessionTerminal();
+        FocusActiveSessionTerminal(forceImeReattach: true);
     }
 
     private void TabScrollRight_Click(object sender, RoutedEventArgs e)
     {
         AnimateTabScroll(TabScroller.HorizontalOffset + TabScrollStep);
-        FocusActiveSessionTerminal();
+        FocusActiveSessionTerminal(forceImeReattach: true);
     }
 
     private void TabBar_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -4046,6 +4195,9 @@ public partial class WorkspacePaneView : UserControl
 
     private void ParkTerminalHost()
     {
+        // 이미 예약된 60ms 바운스가 파일/브라우저 화면으로 전환한 뒤 터미널 포커스를 되빼앗지 않게 한다.
+        // 강제 IME 재부착 필요 상태는 TerminalHostView 내부에 남아 다음 실제 복귀가 소비한다.
+        _terminal.CancelPendingFocusTransfer();
         if (_termParked) return;
         _termParked = true;
         // 0×0 대신 '전체폭 유지 + 화면 밖(Margin)'으로 주차. 이렇게 하면 unpark 이 리사이즈(0→full grow)가
@@ -4250,6 +4402,9 @@ public partial class WorkspacePaneView : UserControl
     private void UpdateEmptyState()
     {
         bool hasActive = _activeTab != null;
+        // webCover 전환은 라이브 xterm/file/GUI를 그대로 둔다. 우측 드로어의 snapshot 경로만
+        // HWND를 실제로 숨기므로, 상태 훅이 그 표면을 다시 표시하지 못하게 구분한다.
+        bool hiddenByTerminalOnly = _terminalOnlySuspended && !_terminalOnlyWebCover;
 
         if (_fileDropOverlayActive)
         {
@@ -4281,7 +4436,8 @@ public partial class WorkspacePaneView : UserControl
                 ParkTerminalHost();
                 ParkFileEditorHost();
                 ParkBrowserHost();
-                ClaudeChatHostContainer.Visibility = _overlaySuspended ? Visibility.Collapsed : Visibility.Visible;
+                ClaudeChatHostContainer.Visibility = _overlaySuspended || hiddenByTerminalOnly
+                    ? Visibility.Collapsed : Visibility.Visible;
             }
             else if (_activeTab is SessionItem)
             {
@@ -4289,10 +4445,12 @@ public partial class WorkspacePaneView : UserControl
                 _claudeChat.Deactivate();
                 // 콜드 게이트 중이면 unpark 과 파일 에디터 파킹 둘 다 ACK(RevealTerminalAfterGate)까지 미룬다 —
                 // 파일(md)에서 세션 전환 시 md 를 먼저 파킹하면 airspace 갭에 검정이 새므로, md 를 띄워둔 채 대기.
-                if (!_gateUnpark) { UnparkTerminalHost(); ParkFileEditorHost(); ParkBrowserHost(); }
+                if (!_gateUnpark && !hiddenByTerminalOnly)
+                { UnparkTerminalHost(); ParkFileEditorHost(); ParkBrowserHost(); }
                 // suspend(스냅샷+Collapsed) 중 훅발 갱신이 HWND 를 되살리면 airspace 로 스냅샷을 뚫고
                 // 라이브 터미널이 보인다(설정창 열어둔 채 codex 응답 완료 등) — 복원은 ResumeTerminal 만.
-                if (!_overlaySuspended) TerminalHostContainer.Visibility = Visibility.Visible;
+                if (!_overlaySuspended && !hiddenByTerminalOnly)
+                    TerminalHostContainer.Visibility = Visibility.Visible;
             }
             else if (_activeTab is FileTabItem)
             {
@@ -4305,7 +4463,8 @@ public partial class WorkspacePaneView : UserControl
                 // Collapsed 로 감추면 md HWND 생성/재표시가 reveal 순간으로 밀려 컴포지터 첫 프레임(검정)이
                 // 번쩍인다 — 주차는 HWND 를 안 보이게 살려 두므로 reveal 이 '리사이즈'가 되어 검정 프레임이 없다.
                 if (_coverActive) ParkFileEditorHost();
-                else if (!_overlaySuspended) UnparkFileEditorHost(); // suspend 중 Visible 복원 금지(위 세션 분기와 동일)
+                else if (!_overlaySuspended && !hiddenByTerminalOnly)
+                    UnparkFileEditorHost(); // snapshot suspend 중 Visible 복원 금지(위 세션 분기와 동일)
             }
             else if (_activeTab is BrowserTabItem)
             {
@@ -4314,7 +4473,7 @@ public partial class WorkspacePaneView : UserControl
                 ParkTerminalHost();
                 ParkFileEditorHost();
                 if (_coverActive) ParkBrowserHost();
-                else if (!_overlaySuspended) UnparkBrowserHost();
+                else if (!_overlaySuspended && !_terminalOnlySuspended) UnparkBrowserHost();
             }
             else
             {
@@ -4568,6 +4727,7 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>터미널 WebView2 를 스냅샷/커튼으로 대체하고 숨긴다. FileExplorer 는 셸이 처리.</summary>
     public async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
+        _terminal.CancelPendingFocusTransfer();
         _overlaySuspended = true; // ResumeTerminal 이 해제 — 그 사이 훅발 UpdateEmptyState 의 표시 복원 차단
         if (_activeSession != null && UsesClaudeGui(_activeSession))
         {
@@ -4629,6 +4789,8 @@ public partial class WorkspacePaneView : UserControl
     public void ResumeTerminal()
     {
         _overlaySuspended = false;
+        _terminalOnlySuspended = false;
+        _terminalOnlyWebCover = false;
         if (_activeSession != null && UsesClaudeGui(_activeSession))
         {
             ClaudeChatHostContainer.Visibility = Visibility.Visible;
@@ -4656,13 +4818,19 @@ public partial class WorkspacePaneView : UserControl
         TerminalCurtain.Visibility = Visibility.Collapsed;
     }
 
-    /// <summary>오버레이 종료 뒤 활성 세션 터미널로 키보드 포커스를 안전하게 복귀시킨다.</summary>
-    public void FocusActiveSessionTerminal()
+    /// <summary>오버레이 종료 뒤 활성 세션의 터미널 또는 채팅 입력으로 포커스를 안전하게 복귀시킨다.</summary>
+    public bool FocusActiveSessionTerminal(bool forceImeReattach = false)
     {
-        if (_overlaySuspended || _activeSession is not { IsExternal: false }) return;
-        Keyboard.ClearFocus();
-        if (UsesClaudeGui(_activeSession)) _claudeChat.FocusInput();
-        else _terminal.FocusTerminal();
+        if (_overlaySuspended || _terminalOnlySuspended
+            || _activeSession is not { IsExternal: false }) return false;
+        if (UsesClaudeGui(_activeSession))
+        {
+            Keyboard.ClearFocus();
+            _claudeChat.FocusInput();
+            return true; // 현재 입력 표면 복귀 완료. 이후 터미널 전환은 _termParked 경계가 별도 처리한다.
+        }
+        _terminal.FocusTerminal(forceImeReattach);
+        return true;
     }
 
     /// <summary>스냅샷만(커튼 없이) 정지 — 우측 오버레이 드로어용.
@@ -4672,10 +4840,13 @@ public partial class WorkspacePaneView : UserControl
     public async Task SuspendTerminalOnlyAsync(bool anchorTopLeft = false, bool webCover = false,
         bool stretchCover = false, bool captureSplitWide = false)
     {
+        _terminal.CancelPendingFocusTransfer();
         // 전체 오버레이(설정 화면 등)로 이미 정지·숨김 상태면 아무것도 하지 않는다.
         // 숨겨진(Collapsed) WebView2 는 CapturePngAsync 가 <b>완료되지 않으므로</b> 여기서 await 하면
         // 호출자(최대화 커버·패널 토글 커버·종료 준비)가 그대로 매달린다.
         if (_overlaySuspended) return;
+        _terminalOnlySuspended = true;
+        _terminalOnlyWebCover = webCover;
         if (_activeSession != null && UsesClaudeGui(_activeSession))
         {
             // DOM 기반 채팅은 패널 리사이즈를 자체 처리하므로 webCover 경로에서는 그대로 둔다.
@@ -4701,6 +4872,28 @@ public partial class WorkspacePaneView : UserControl
         if (_activeTab is BrowserTabItem browser)
         {
             await browser.Browser.SuspendContentAsync();
+            return;
+        }
+        if (_activeTab is FileTabItem file)
+        {
+            // 패널/셸 리사이즈(webCover)는 파일 WebView 자체가 그대로 크기를 따라가게 둔다.
+            // 좁은 창의 WPF 드로어는 HwndHost 위를 가릴 수 없으므로 스냅샷을 올리고 실제 HWND를 숨긴다.
+            if (webCover) return;
+            var fileSnapshot = await file.Editor.CaptureSnapshotAsync();
+            if (fileSnapshot != null)
+            {
+                if (anchorTopLeft)
+                {
+                    TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Left;
+                    TerminalSnapshot.VerticalAlignment = VerticalAlignment.Top;
+                    TerminalSnapshot.Width = FileEditorHostContainer.ActualWidth;
+                    TerminalSnapshot.Height = FileEditorHostContainer.ActualHeight;
+                }
+                TerminalSnapshot.Source = fileSnapshot;
+                TerminalSnapshot.Visibility = Visibility.Visible;
+                await WaitForFramesAsync(2);
+            }
+            FileEditorHostContainer.Visibility = Visibility.Collapsed;
             return;
         }
         if (_activeSession is { IsExternal: true } externalSession
@@ -4840,6 +5033,8 @@ public partial class WorkspacePaneView : UserControl
         // 전체 오버레이가 떠 있는 동안은 되살리지 않는다(Suspend 를 스킵했으므로 되살릴 것도 없고,
         // 되살리면 라이브 HWND 가 오버레이를 뚫는다). 해제는 ResumeTerminal 이 담당.
         if (_overlaySuspended) return;
+        _terminalOnlySuspended = false;
+        _terminalOnlyWebCover = false;
         if (_activeSession != null && UsesClaudeGui(_activeSession))
         {
             if (webCover) return;
@@ -4858,6 +5053,18 @@ public partial class WorkspacePaneView : UserControl
             browser.Browser.ResumeContent();
             return;
         }
+        if (_activeTab is FileTabItem)
+        {
+            if (webCover) return;
+            FileEditorHostContainer.Visibility = Visibility.Visible;
+            TerminalSnapshot.Visibility = Visibility.Collapsed;
+            TerminalSnapshot.Source = null;
+            TerminalSnapshot.Width = double.NaN;
+            TerminalSnapshot.Height = double.NaN;
+            TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
+            TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
+            return;
+        }
         if (_activeSession is { IsExternal: true } externalSession)
         {
             ShowExternalSessionPreview(externalSession);
@@ -4868,6 +5075,13 @@ public partial class WorkspacePaneView : UserControl
         // 라이브 터미널로 크로스페이드한다 → resume 리플로우가 커버 아래서 일어나 안 보이고, HWND 전환 플래시도 없다.
         if (webCover)
         {
+            if (!IsVisible)
+            {
+                // 캡처 await 중 분할/프로젝트 전환으로 패널이 숨겨졌다면 0px 폭 fit은 하지 않고
+                // 웹 커버만 해제한다. guard와 커버를 남기면 다음 표시 때 입력이 영구 차단된다.
+                _terminal.RevealAfterTransition(null);
+                return;
+            }
             if (_activeSession != null)
             {
                 UpdateLayout();
@@ -4898,6 +5112,10 @@ public partial class WorkspacePaneView : UserControl
 
     private void OnTerminalFileOpenRequested(string rawPath, int? line, int? column)
     {
+        if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(
+                () => OnTerminalFileOpenRequested(rawPath, line, column)) == true)
+            return;
+        if (!IsVisible) return;
         if (string.IsNullOrEmpty(rawPath)) return;
 
         // 절대경로(C:\... 또는 /...) → 그대로, 상대경로 → 프로젝트 루트와 조합
@@ -4934,6 +5152,9 @@ public partial class WorkspacePaneView : UserControl
 
     private void OnTerminalBrowserUrlOpenRequested(string url)
     {
+        if (MainWindow.Current?.DeferWorkspaceNavigationIfBusy(() => OnTerminalBrowserUrlOpenRequested(url)) == true)
+            return;
+        if (!IsVisible) return;
         if (_activeProject == null)
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }

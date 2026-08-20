@@ -7,13 +7,14 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>Monaco DiffEditor 를 호스팅하는 파일 탭 에디터(읽기 전용 diff).</summary>
-public partial class MonacoDiffHostView : UserControl, IFileTabEditor, IDisposable
+public partial class MonacoDiffHostView : UserControl, IFileTabEditor, INativeInputSurface, IDisposable
 {
     public event EventHandler? CloseRequested;
 #pragma warning disable CS0067 // diff 는 dirty 없음 — IFileTabEditor 요구 이벤트라 선언만 하고 발화하지 않음
     public event EventHandler? DirtyChanged;
 #pragma warning restore CS0067
     public event EventHandler? Interacted;
+    public event EventHandler? NativeSurfaceFocused;
 
     private readonly string _repo;
     private readonly string _relPath;   // repo 기준 상대경로(/)
@@ -30,6 +31,7 @@ public partial class MonacoDiffHostView : UserControl, IFileTabEditor, IDisposab
         Loaded += async (_, _) => await _host.EnsureReadyAsync();
         Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged;
         _host.PreviewMouseDown += (_, _) => Interacted?.Invoke(this, EventArgs.Empty);
+        _host.UserInteracted += () => NativeSurfaceFocused?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnThemeChanged(string _) => _host.ApplyTheme();

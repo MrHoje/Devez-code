@@ -45,6 +45,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<double>? FontSizePxChanged;
     /// <summary>사용자가 WebView2 터미널 표면을 클릭/조작함. WPF PreviewMouseDown 이 HWND 경계를 넘지 못해 별도 통지한다.</summary>
     public event Action? UserInteracted;
+    /// <summary>이미 포커스된 네이티브 터미널에서 키 입력이 시작됨. 지연된 표면 전환 취소용.</summary>
+    public event Action? InputIntent;
     /// <summary>사용자가 특정 방의 터미널을 실제로 조작함. 유휴 종료 타이머 갱신용.</summary>
     public event Action<string>? SessionActivity;
     /// <summary>터미널 출력의 파일 또는 폴더 경로 열기 요청. 파일은 에디터 탭, 폴더는 Explorer로 연다.
@@ -55,7 +57,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>Explorer 파일 드래그가 WebView2 터미널 표면에 들어옴. WPF 패널 전체 드롭 선택 화면 전환용.</summary>
     public event Action? ExternalFileDragEntered;
     /// <summary>WebView2가 파일 드롭을 직접 받은 폴백 경로. 경로 입력 전에 열린 WPF 드롭 화면 정리용.</summary>
-    public event Action? ExternalFileDropReceived;
+    public event Action<IReadOnlyList<string>>? ExternalFileDropReceived;
     /// <summary>synced reveal 준비 완료(폭 안정·fit·재동기 끝, 커튼은 아직 유지) — 셸이 양쪽 준비를 모아 동시에 걷는다.</summary>
     public event Action? RevealPrepared;
     /// <summary>web 로딩 커버가 DOM 에 반영·페인트됨 — 셸이 이 ACK 후에 터미널 HWND 를 unpark 해 콜드 세션
@@ -455,8 +457,31 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         t.Start();
     }
 
-    /// <summary>pageReady 전에 들어온 포커스 요청 보류 플래그 (첫 init 중 호출 대비).</summary>
+    /// <summary>pageReady 전에 들어온 포커스 요청 보류 상태 (첫 init 중 호출 대비).</summary>
     private bool _pendingFocus;
+    private string _pendingFocusCaller = "";
+    private long _pendingFocusGlobalRequest;
+    private System.Windows.IInputElement? _pendingFocusWpfElement;
+
+    /// <summary>
+    /// Win32 포커스 바운스는 항상 한 건만 유지한다. 창 복귀·다른 WebView에서 복귀처럼 IME 재부착이
+    /// 필요한 요청은 실제 WebView 포커스 적용 전까지 sticky 로 남겨, 뒤따른 일반 포커스 요청이
+    /// 강제 재부착을 덮어쓰지 못하게 한다.
+    /// </summary>
+    private System.Windows.Threading.DispatcherTimer? _focusBounceTimer;
+    private int _focusRequestGeneration;
+    private bool _imeReattachPending;
+    private static WeakReference<TerminalHostView>? s_lastFocusedHost;
+    // PaneA/PaneB/하단 셸은 서로 다른 인스턴스다. 인스턴스별 generation만으로는 다른 호스트의
+    // 늦은 60ms 타이머가 최신 클릭을 되뺏을 수 있으므로 앱 전체 포커스 요청도 한 줄로 직렬화한다.
+    private static long s_globalFocusRequestGeneration;
+
+    /// <summary>호스트가 달라도 이전에 예약된 포커스보다 새 사용자 의도를 우선한다.</summary>
+    internal static long InvalidateGlobalFocusRequests()
+        => System.Threading.Interlocked.Increment(ref s_globalFocusRequestGeneration);
+
+    internal static bool IsGlobalFocusRequestCurrent(long request)
+        => request == System.Threading.Volatile.Read(ref s_globalFocusRequestGeneration);
 
     /// <summary>WPF 모달(에이전트 선택·이름 입력·확인창)을 띄우기 직전에 호출.
     /// ShowDialog 는 부모 HWND 만 disable 해 WebView2 안 helper-textarea 의 blur 이벤트가 오지 않는다.
@@ -476,63 +501,198 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// [바운스] 페이지 내 blur→focus 경계(case 'focus'/initial-focus 리셋)는 이미 이 경로 전부에
     /// 걸려 있는데도 증상이 나므로 웹 안 처방으로는 불충분이 확정. 수동 우회("밖 클릭→터미널 클릭")가
     /// 항상 성공하는 것은 두 포커스 전이가 사람 타이밍으로 분리되기 때문이라는 가설에 따라,
-    /// 의심 전환(현재 Win32 포커스가 Chromium 밖)일 때만 ① WPF 본체 HWND 에 SetFocus 로 전이를
-    /// 확정시키고 ② 60ms 뒤 WebView2 로 넘기는 2단계 바운스를 수행한다. 포커스가 이미 Chromium
-    /// 안이면 기존 동작 그대로(조합 중인 터미널을 건드릴 일 없음).
+    /// ① WPF 입력 공급자로 본체 포커스를 확정하고 ② 60ms 뒤 WebView2 로 넘긴다.
+    ///
+    /// Chromium 클래스명만으로는 "같은 터미널이 건강하게 포커스됨"과 "팝업/다른 WebView에서 자동
+    /// 복귀했지만 IME 컨텍스트가 낡음"을 구분할 수 없다. 호출자가 알려 준 복귀 경계와 다른
+    /// TerminalHostView에서 넘어온 경우는 Chromium 포커스로 보여도 반드시 바운스한다. 여러 호출이
+    /// 겹치면 마지막 요청 하나만 남기고, 직접 터미널 클릭이나 화면 주차가 오면 예약을 취소한다.
     /// 계측·판독: .knowledge/ime-모니터좌상단-조합창-고착.md</summary>
-    public void FocusTerminal([System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    public void FocusTerminal(bool forceImeReattach = false,
+        [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
-        if (_pageReady && _activeRoomId != null)
+        if (_disposed) return;
+
+        // 콜드 호스트의 pageReady 전 요청도 다른 호스트에 남은 60ms 예약보다 최신 의도다.
+        // 준비 분기보다 먼저 epoch를 올려야 기존 패널이 로딩 중인 패널에서 포커스를 되뺏지 못한다.
+        long globalRequest = InvalidateGlobalFocusRequests();
+
+        bool hostChanged = LastFocusedTerminalHostDiffers();
+        _imeReattachPending |= forceImeReattach || hostChanged;
+
+        if (!_pageReady || _activeRoomId == null)
         {
-            var room = _activeRoomId;
-            bool suspect = false;
-            try
-            {
-                var gti = new GuiThreadInfo { cbSize = Marshal.SizeOf<GuiThreadInfo>() };
-                if (GetGUIThreadInfo(0, ref gti))
-                    suspect = !Win32ClassName(gti.hwndFocus).StartsWith("Chrome_", StringComparison.Ordinal);
-            }
-            catch { }
-            DevezCode.Services.DiagLog.Write($"[ime focus-path] from={caller} room={room} suspect={(suspect ? 1 : 0)}");
-            if (!suspect)
-            {
-                ApplyTerminalFocus(room);
-                return;
-            }
-            // 1단계 — WPF 본체에 Win32 포커스 확정(모달 닫힘 등 진행 중인 전이를 여기서 끝낸다).
-            try
-            {
-                var win = Window.GetWindow(this);
-                var hwnd = win != null ? new System.Windows.Interop.WindowInteropHelper(win).Handle : IntPtr.Zero;
-                if (hwnd != IntPtr.Zero) SetFocus(hwnd);
-            }
-            catch { }
-            // 2단계 — 한 박자 뒤 WebView2 로 전달. 그 사이 방이 바뀌었거나 사용자가 WPF 입력칸
-            // (세션 이름 변경 등)에 들어갔으면 포커스를 빼앗지 않고 폐기한다.
-            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
-            timer.Tick += (s, e) =>
-            {
-                timer.Stop();
-                if (!_pageReady || _activeRoomId != room) return;
-                if (System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase) return;
-                ApplyTerminalFocus(room);
-            };
-            timer.Start();
-        }
-        else
-        {
-            // 첫 생성 시 WebView2 초기화가 끝나기 전 — OnPageReady 에서 적용
             _pendingFocus = true;
+            _pendingFocusCaller = caller;
+            _pendingFocusGlobalRequest = globalRequest;
+            _pendingFocusWpfElement = System.Windows.Input.Keyboard.FocusedElement;
+            return;
         }
+
+        _pendingFocus = false;
+        _pendingFocusCaller = "";
+        _pendingFocusGlobalRequest = 0;
+        _pendingFocusWpfElement = null;
+        StopFocusBounceTimer();
+        int request = ++_focusRequestGeneration;
+        var room = _activeRoomId;
+
+        bool chromiumFocused = false;
+        try
+        {
+            var gti = new GuiThreadInfo { cbSize = Marshal.SizeOf<GuiThreadInfo>() };
+            if (GetGUIThreadInfo(0, ref gti))
+                chromiumFocused = Win32ClassName(gti.hwndFocus).StartsWith("Chrome_", StringComparison.Ordinal);
+        }
+        catch { }
+
+        // Chromium 밖에서 들어오는 기존 의심 경로도 sticky 로 승격한다. 1단계 WPF 포커스 뒤 새 일반
+        // 요청이 와도 재부착 요구가 사라지지 않고, 최신 요청의 2단계 적용 때 한 번만 소비된다.
+        _imeReattachPending |= !chromiumFocused;
+        bool bounce = _imeReattachPending;
+        DevezCode.Services.DiagLog.Write(
+            $"[ime focus-path] from={caller} room={room} force={(forceImeReattach ? 1 : 0)} " +
+            $"hostChanged={(hostChanged ? 1 : 0)} chromium={(chromiumFocused ? 1 : 0)} " +
+            $"bounce={(bounce ? 1 : 0)} request={request} epoch={globalRequest}");
+
+        var owner = Window.GetWindow(this);
+        if (owner is { IsActive: false })
+        {
+            DevezCode.Services.DiagLog.Write($"[ime focus-path] defer room={room} request={request} reason=inactive-window");
+            return; // sticky 재부착 요구는 다음 활성 포커스 요청이 소비한다.
+        }
+        if (!IsVisible || _webView is not { IsVisible: true }) return;
+
+        if (bounce)
+        {
+            // WPF는 키보드 포커스를 비워도 focus scope의 논리 포커스를 기억해, owner HWND가
+            // 다시 활성화될 때 이전 WebView2/HwndHost를 자동 복원할 수 있다. 강제 경계에서만
+            // 둘 다 비워 1단계 detach를 확정한다. 평상 WebView 경로는 조합 중 blur를 피한다.
+            try
+            {
+                if (System.Windows.Input.Keyboard.FocusedElement is DependencyObject focusedElement)
+                {
+                    var scope = System.Windows.Input.FocusManager.GetFocusScope(focusedElement);
+                    System.Windows.Input.FocusManager.SetFocusedElement(scope, null);
+                }
+                if (owner != null)
+                    System.Windows.Input.FocusManager.SetFocusedElement(owner, null);
+            }
+            catch { }
+            System.Windows.Input.Keyboard.ClearFocus();
+        }
+        else if (System.Windows.Input.Keyboard.FocusedElement is
+            System.Windows.Controls.Primitives.TextBoxBase or PasswordBox or ComboBox or MenuItem)
+        {
+            // 포커스를 받지 않는 버튼으로 명시 전환했는데 이전 WPF 입력만 남은 경우다.
+            System.Windows.Input.Keyboard.ClearFocus();
+        }
+
+        if (!bounce)
+        {
+            ApplyTerminalFocus(room, request, globalRequest);
+            return;
+        }
+
+        // 1단계 — WPF 입력 공급자를 통해 본체에 포커스를 확정한다. raw SetFocus(owner)는
+        // HwndSource가 기억한 이전 WebView2 자식 HWND를 즉시 자동 복원할 수 있어 사용하지 않는다.
+        bool ownerFocused = false;
+        try
+        {
+            if (owner != null)
+            {
+                System.Windows.Input.FocusManager.SetFocusedElement(owner, owner);
+                ownerFocused = ReferenceEquals(System.Windows.Input.Keyboard.Focus(owner), owner);
+            }
+        }
+        catch { }
+        if (!ownerFocused)
+        {
+            DevezCode.Services.DiagLog.Write(
+                $"[ime focus-path] defer room={room} request={request} reason=owner-focus-failed");
+            return;
+        }
+
+        // 2단계 — 한 박자 뒤 WebView2 로 전달. 최신 요청만 실행하며, 그 사이 사용자가 입력 컨트롤이나
+        // 다른 화면으로 이동했으면 포커스를 빼앗지 않는다. 재부착 요구는 다음 복귀 때까지 보존한다.
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+        _focusBounceTimer = timer;
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (ReferenceEquals(_focusBounceTimer, timer)) _focusBounceTimer = null;
+            if (_disposed || request != _focusRequestGeneration
+                || globalRequest != System.Threading.Volatile.Read(ref s_globalFocusRequestGeneration)
+                || !_pageReady || _activeRoomId != room) return;
+            if (owner is { IsActive: false }) return;
+            if (!IsVisible || _webView is not { IsVisible: true }) return;
+            var focusedElement = System.Windows.Input.Keyboard.FocusedElement;
+            if (focusedElement != null && !ReferenceEquals(focusedElement, owner)
+                && !IsKeyboardFocusWithin) return;
+
+            _imeReattachPending = false;
+            ApplyTerminalFocus(room, request, globalRequest);
+        };
+        timer.Start();
+    }
+
+    /// <summary>화면 전환이 포커스 예약보다 우선할 때 호출. 강제 재부착 필요 상태는 다음 복귀까지 보존한다.</summary>
+    public void CancelPendingFocusTransfer()
+    {
+        _pendingFocus = false;
+        _pendingFocusCaller = "";
+        _pendingFocusGlobalRequest = 0;
+        _pendingFocusWpfElement = null;
+        ++_focusRequestGeneration;
+        StopFocusBounceTimer();
+    }
+
+    private void StopFocusBounceTimer()
+    {
+        if (_focusBounceTimer == null) return;
+        _focusBounceTimer.Stop();
+        _focusBounceTimer = null;
+    }
+
+    private bool LastFocusedTerminalHostDiffers()
+    {
+        if (s_lastFocusedHost == null || !s_lastFocusedHost.TryGetTarget(out var host)) return false;
+        if (host._disposed) { s_lastFocusedHost = null; return false; }
+        return !ReferenceEquals(host, this);
+    }
+
+    private void MarkAsFocusedTerminalHost()
+        => s_lastFocusedHost = new WeakReference<TerminalHostView>(this);
+
+    private void AcceptNativeTerminalFocus()
+    {
+        bool interruptedBounce = _focusBounceTimer != null;
+        _imeReattachPending = false; // 실제 표면 클릭은 검증된 수동 복구 경계다.
+        CancelPendingFocusTransfer();
+        long globalRequest = InvalidateGlobalFocusRequests(); // 다른 패널/하단 셸에 남은 예약도 함께 무효화
+        MarkAsFocusedTerminalHost();
+
+        // 외부 앱에서 터미널을 직접 눌러 창을 활성화하면 OnActivated 복귀가 JS mousedown보다
+        // 먼저 owner로 detach할 수 있다. 그 예약을 취소한 직접 클릭이 WebView 포커스도 다시 확정한다.
+        if (!interruptedBounce || !_pageReady || _activeRoomId is not { } room
+            || !IsVisible || _webView is not { IsVisible: true }) return;
+        if (Window.GetWindow(this) is { IsActive: false }) return;
+        ApplyTerminalFocus(room, _focusRequestGeneration, globalRequest);
     }
 
     /// <summary>실제 포커스 적용 + 250ms 후 Win32 안착 상태 스냅샷(조합 없이도 stale 관측).</summary>
-    private void ApplyTerminalFocus(string room)
+    private void ApplyTerminalFocus(string room, int request, long globalRequest)
     {
         _webView?.Focus();
+        MarkAsFocusedTerminalHost();
         PostJson(new { type = "focus", roomId = room });
         _ = System.Threading.Tasks.Task.Delay(250).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
-            DevezCode.Services.DiagLog.Write($"[ime focus-path] settle room={room} " + DescribeWin32ImeState())));
+        {
+            if (_disposed || request != _focusRequestGeneration || _activeRoomId != room
+                || globalRequest != System.Threading.Volatile.Read(ref s_globalFocusRequestGeneration)) return;
+            DevezCode.Services.DiagLog.Write(
+                $"[ime focus-path] settle room={room} request={request} epoch={globalRequest} " + DescribeWin32ImeState());
+        }));
     }
 
     private async Task InitWebViewAsync()
@@ -630,15 +790,26 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     break;
                 }
                 case "fileDrop":
-                    ExternalFileDropReceived?.Invoke();
-                    InsertFilePaths(e.AdditionalObjects.OfType<CoreWebView2File>().Select(file => file.Path));
+                {
+                    var paths = e.AdditionalObjects.OfType<CoreWebView2File>()
+                        .Select(file => file.Path).Where(path => !string.IsNullOrWhiteSpace(path)).ToArray();
+                    if (paths.Length == 0) break;
+                    if (ExternalFileDropReceived != null) ExternalFileDropReceived(paths);
+                    else InsertFilePaths(paths);
                     break;
+                }
                 case "fileDragEnter":
                     ExternalFileDragEntered?.Invoke();
                     break;
                 case "interact":
+                    // 실제 터미널 표면 클릭은 Windows가 Chromium HWND로 직접 포커스를 옮긴 경로다.
+                    // 대기 중인 프로그램적 바운스가 60ms 뒤 다시 blur→focus 해 조합을 끊지 않게 취소한다.
+                    AcceptNativeTerminalFocus();
                     UserInteracted?.Invoke();
                     if (_activeRoomId != null) SessionActivity?.Invoke(_activeRoomId);
+                    break;
+                case "inputIntent":
+                    InputIntent?.Invoke();
                     break;
                 case "revealPrepared":
                     RevealPrepared?.Invoke();
@@ -923,8 +1094,23 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 보류된 포커스 적용 — 그 사이 다른 방(채팅 등)으로 전환했으면 훔치지 않음
         if (_pendingFocus)
         {
+            var caller = _pendingFocusCaller;
+            var globalRequest = _pendingFocusGlobalRequest;
+            var wpfElement = _pendingFocusWpfElement;
             _pendingFocus = false;
-            if (IsVisible) _webView?.Focus(); // JS 쪽은 show()가 term.focus() 처리
+            _pendingFocusCaller = "";
+            _pendingFocusGlobalRequest = 0;
+            _pendingFocusWpfElement = null;
+            var currentWpfElement = System.Windows.Input.Keyboard.FocusedElement;
+            var owner = Window.GetWindow(this);
+            // pageReady를 기다리는 사이 키보드 탐색으로 Tree/List/문서 등 어느 WPF 표면으로든
+            // 이동했다면 옛 요청을 재생하지 않는다. 자기 owner/WebView로의 준비 과정 포커스는 허용한다.
+            bool replacedByWpfInput = !ReferenceEquals(wpfElement, currentWpfElement)
+                && currentWpfElement != null && !ReferenceEquals(currentWpfElement, owner)
+                && !IsKeyboardFocusWithin;
+            if (IsVisible && !replacedByWpfInput
+                && globalRequest == System.Threading.Volatile.Read(ref s_globalFocusRequestGeneration))
+                FocusTerminal(_imeReattachPending, string.IsNullOrEmpty(caller) ? nameof(OnPageReady) : caller);
         }
     }
 
@@ -1833,11 +2019,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     [DllImport("imm32.dll")]
     private static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
 
-    /// <summary>포커스 바운스 1단계용 — 자기 스레드 큐의 창(WPF 본체)에만 사용한다.
-    /// 타 프로세스(Chromium) HWND 에는 동작하지 않음(그쪽은 _webView.Focus() 경유).</summary>
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr SetFocus(IntPtr hWnd);
-
     private static string Win32ClassName(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return "null";
@@ -2486,7 +2667,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         !_externalPreviewRooms.Contains(_activeRoomId) &&
         TerminalSessionManager.Instance.Get(_activeRoomId) is { IsAlive: true };
 
-    public void InsertFilePaths(IEnumerable<string> paths)
+    public void InsertFilePaths(IEnumerable<string> paths, bool forceImeReattach = false)
     {
         var room = _activeRoomId;
         if (string.IsNullOrEmpty(room)) return;
@@ -2499,7 +2680,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
         // 일반 터미널의 파일 드롭처럼 공백으로 구분하고 제출(Enter)은 하지 않는다.
         sess.Write(text);
-        FocusTerminal();
+        FocusTerminal(forceImeReattach);
     }
 
     private static string FormatFilePathsForInput(IEnumerable<string> paths)
@@ -2514,6 +2695,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        CancelPendingFocusTransfer();
+        if (s_lastFocusedHost != null && s_lastFocusedHost.TryGetTarget(out var focusedHost)
+            && ReferenceEquals(focusedHost, this))
+            s_lastFocusedHost = null;
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
         try { DevezCode.Services.SettingsService.TerminalFontFamilyChanged -= _terminalFontFamilyChangedHandler; } catch { }
         try { DevezCode.Services.SettingsService.TerminalFontRenderRefreshRequested -= _terminalFontRenderRefreshHandler; } catch { }

@@ -16,6 +16,9 @@ namespace DevezCode.Views;
 /// </summary>
 public partial class BrowserHostView : UserControl
 {
+    /// <summary>브라우저 WebView가 실제 키보드 포커스를 받음. HwndHost라 부모 WPF 마우스 이벤트로는 관측할 수 없다.</summary>
+    public event Action? NativeSurfaceFocused;
+
     private WebView2? _view;
     private bool _initStarted;
     private string? _pendingOpenUrl;
@@ -234,6 +237,7 @@ public partial class BrowserHostView : UserControl
         try
         {
             _view = new WebView2();
+            _view.GotKeyboardFocus += (_, _) => NativeSurfaceFocused?.Invoke();
             BrowserContent.Children.Add(_view);
 
             var userDataDir = Path.Combine(

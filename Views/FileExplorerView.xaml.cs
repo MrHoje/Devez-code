@@ -30,10 +30,19 @@ public partial class FileExplorerView : UserControl
     public event Action<string, string, bool>? DiffFileActivated;
     /// <summary>git 상태 변경(repo). MainWindow 가 구독해 브랜치 버블 갱신.</summary>
     public event Action<string>? GitStateChanged;
+    /// <summary>우측 파일 탐색기의 WPF 또는 브라우저 입력 표면을 사용함.</summary>
+    public event Action? UserInteracted;
+    /// <summary>도킹 브라우저 자식 HWND가 포커스를 얻음. 프로그램적 복원일 수도 있어 pointer intent와 구분.</summary>
+    public event Action? NativeSurfaceFocused;
 
     public FileExplorerView()
     {
         InitializeComponent();
+        AddHandler(Mouse.PreviewMouseDownEvent,
+            new MouseButtonEventHandler((_, _) => UserInteracted?.Invoke()), true);
+        AddHandler(Keyboard.GotKeyboardFocusEvent,
+            new KeyboardFocusChangedEventHandler((_, _) => UserInteracted?.Invoke()), true);
+        Browser.NativeSurfaceFocused += () => NativeSurfaceFocused?.Invoke();
         ScmView.DiffFileActivated += (repo, rel, staged) => DiffFileActivated?.Invoke(repo, rel, staged);
         ScmView.GitStateChanged += repo => GitStateChanged?.Invoke(repo);
         _fileSearchDebounceTimer.Tick += (_, _) =>

@@ -9,13 +9,14 @@ using Microsoft.Web.WebView2.Wpf;
 namespace DevezCode.Views;
 
 /// <summary>WebView2(Edge) 내장 PDF 뷰어를 사용하는 읽기 전용 파일 탭.</summary>
-public sealed class PdfFileEditorView : UserControl, IFileTabEditor
+public sealed class PdfFileEditorView : UserControl, IFileTabEditor, INativeInputSurface
 {
     public event EventHandler? CloseRequested;
 #pragma warning disable CS0067 // PDF는 읽기 전용
     public event EventHandler? DirtyChanged;
 #pragma warning restore CS0067
     public event EventHandler? Interacted;
+    public event EventHandler? NativeSurfaceFocused;
 
     private WebView2? _webView;
     private string? _path;
@@ -52,6 +53,9 @@ public sealed class PdfFileEditorView : UserControl, IFileTabEditor
         try
         {
             _webView = new WebView2 { DefaultBackgroundColor = CurrentBackgroundColor() };
+            // WebView2는 자식 HWND라 부모 UserControl의 PreviewMouseDown으로 실제 본문 클릭이 올라오지 않는다.
+            // 네이티브 입력면이 포커스를 얻는 순간 패널 라우팅에 알려 늦은 터미널 복귀를 취소한다.
+            _webView.GotKeyboardFocus += (_, _) => NativeSurfaceFocused?.Invoke(this, EventArgs.Empty);
             Content = _webView;
             await _webView.EnsureCoreWebView2Async();
 
@@ -69,7 +73,6 @@ public sealed class PdfFileEditorView : UserControl, IFileTabEditor
             core.Settings.HiddenPdfToolbarItems = CoreWebView2PdfToolbarItems.FullScreen;
             core.Profile.PreferredColorScheme = PreferredColorScheme;
             core.Navigate(new Uri(_path).AbsoluteUri);
-            _webView.Focus();
         }
         catch (Exception ex)
         {

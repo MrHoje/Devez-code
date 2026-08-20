@@ -21,6 +21,13 @@ public interface IFileTabEditor
     Task<BitmapSource?> CaptureSnapshotAsync();
 }
 
+/// <summary>자식 HWND가 포커스를 얻었음을 알리는 보조 계약. 실제 pointer intent와 분리해
+/// 프로그램적 WebView 복원이 보류 중인 사용자 탐색 명령을 덮지 않게 한다.</summary>
+public interface INativeInputSurface
+{
+    event EventHandler? NativeSurfaceFocused;
+}
+
 public static class FileTabEditorExtensions
 {
     public static UserControl AsControl(this IFileTabEditor editor) => (UserControl)editor;

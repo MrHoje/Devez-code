@@ -11,7 +11,7 @@
          분할 시 MainWindow 가 BorderThickness 를 조정한다. -->
     <Border x:Name="CenterArea" Background="{DynamicResource BgBrush}"
             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,1,0"
-            MouseLeftButtonDown="Pane_PreviewInteract" PreviewMouseLeftButtonDown="Pane_PreviewInteract">
+            PreviewMouseDown="Pane_PreviewInteract">
       <!-- 분할 포커스 프레임: 1px 공간은 항상 예약하고 색상만 바꿔 터미널 리사이즈를 막는다. -->
       <Border x:Name="FocusFrame" BorderThickness="1" BorderBrush="Transparent"
               Margin="0,1,0,0" UseLayoutRounding="True" SnapsToDevicePixels="True">
@@ -122,11 +122,13 @@
                       <ComboBox x:Name="ModelCombo" Style="{StaticResource DockComboBox}" MinWidth="104" Margin="0,4,0,4"
                                 SelectedValuePath="Value"
                                 SelectionChanged="ModelCombo_SelectionChanged"
+                                DropDownOpened="DockCombo_DropDownOpened"
                                 DropDownClosed="DockCombo_DropDownClosed"
                                 ToolTip="이 세션의 모델"/>
                       <ComboBox x:Name="EffortCombo" Style="{StaticResource DockComboBox}" MinWidth="92" Margin="8,4,0,4"
                                 SelectedValuePath="Value"
                                 SelectionChanged="EffortCombo_SelectionChanged"
+                                DropDownOpened="DockCombo_DropDownOpened"
                                 DropDownClosed="DockCombo_DropDownClosed"
                                 ToolTip="이 세션의 추론 강도(effort)"/>
                   </StackPanel>
@@ -144,6 +146,7 @@
                   <ComboBox x:Name="FontSizeCombo" Style="{StaticResource DockComboBox}" MinWidth="72" Margin="8,4,0,4"
                             SelectedValuePath="Value"
                             SelectionChanged="FontSizeCombo_SelectionChanged"
+                            DropDownOpened="DockCombo_DropDownOpened"
                             DropDownClosed="DockCombo_DropDownClosed"
                             ToolTip="글꼴 크기"/>
               </StackPanel>

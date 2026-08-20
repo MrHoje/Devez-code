@@ -161,7 +161,7 @@ public partial class MainWindow : Window
                             : Application.Current?.MainWindow as MainWindow) is { } window)
                 {
                     window._openContextMenus.Remove(menu);
-                    window.ScheduleTerminalFocusRestore();
+                    window.ScheduleTerminalFocusRestore(null, imeBoundary: true);
                 }
             }));
         EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.OpenedEvent,
@@ -173,7 +173,9 @@ public partial class MainWindow : Window
                             : Application.Current?.MainWindow as MainWindow) is { } window)
                 {
                     window._openContextMenus.Add(menu);
-                    window._terminalFocusRestoreGeneration++;
+                    // WPF Popup은 별도 HWND를 쓰지만 MainWindow.Deactivated가 항상 오지는 않는다.
+                    // 조합 중 메뉴가 열려도 helper textarea의 blur에 의존하지 않고 즉시 정리한다.
+                    window.PrepareForModalInputBoundary();
                 }
             }));
     }
@@ -181,6 +183,31 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // WPF 입력은 터널링 단계에서 이 창을 먼저 거친다. 버튼·사이드바·우클릭도
+        // 다른 호스트의 60ms 포커스 예약보다 최신 사용자 의도로 취급한다.
+        AddHandler(Mouse.PreviewMouseDownEvent,
+            new MouseButtonEventHandler((_, _) =>
+            {
+                SupersedePendingTerminalFocus();
+            }), true);
+        AddHandler(Keyboard.GotKeyboardFocusEvent,
+            new KeyboardFocusChangedEventHandler((_, e) =>
+            {
+                if (e.NewFocus is TextBoxBase or PasswordBox or ComboBox or MenuItem)
+                {
+                    RegisterUserInputIntent();
+                    SupersedePendingTerminalFocus();
+                }
+            }), true);
+        AddHandler(Keyboard.PreviewKeyDownEvent,
+            new KeyEventHandler((_, _) =>
+            {
+                if (Keyboard.FocusedElement is TextBoxBase or PasswordBox or ComboBox or MenuItem)
+                {
+                    RegisterUserInputIntent();
+                    SupersedePendingTerminalFocus();
+                }
+            }), true);
         _wakeScheduler = new WakeSchedulerService(DispatchWakeAsync);
 
 #if DEBUG
@@ -189,6 +216,18 @@ public partial class MainWindow : Window
 #endif
 
         // 하단 터미널 패널: 셸이 exit 로 끝나면 패널을 닫고 방을 정리 — 다음 토글에 새 pwsh.
+        ShellTerminal.UserInteracted += () =>
+        {
+            RegisterUserInputIntent();
+            MarkShellInputSurface();
+            CancelScheduledTerminalFocusRestore();
+        };
+        ShellTerminal.InputIntent += () =>
+        {
+            RegisterUserInputIntent();
+            MarkShellInputSurface();
+            SupersedePendingTerminalFocus();
+        };
         ShellTerminal.SessionExited += id =>
         {
             if (!string.Equals(id, ShellRoomId, StringComparison.Ordinal)) return;
@@ -263,9 +302,19 @@ public partial class MainWindow : Window
         // SCM 패널 → 포커스 패널에 diff 탭 열기 / git 상태 변경 시 브랜치 버블 갱신.
         FileExplorer.DiffFileActivated += (repo, rel, staged) =>
         {
-            var proj = _focusedPane.ActiveProject;
-            if (proj != null) _focusedPane.OpenDiffTab(proj, repo, rel, staged);
+            MarkWorkspaceInputSurface();
+            var pane = _focusedPane;
+            var proj = pane.ActiveProject;
+            if (proj == null) return;
+            if (DeferWorkspaceNavigationIfBusy(() =>
+                {
+                    if (_panes.Contains(pane) && _projects.Concat(_archivedProjects).Contains(proj))
+                        pane.OpenDiffTab(proj, repo, rel, staged);
+                })) return;
+            pane.OpenDiffTab(proj, repo, rel, staged);
         };
+        FileExplorer.UserInteracted += MarkFileExplorerInputSurface;
+        FileExplorer.NativeSurfaceFocused += MarkFileExplorerNativeSurface;
         FileExplorer.GitStateChanged += repo =>
         {
             foreach (var pane in _panes) pane.RefreshBranchIfRepo(repo);
@@ -837,23 +886,15 @@ public partial class MainWindow : Window
             GlobalTabHotkey.SetOwnerWindow(new System.Windows.Interop.WindowInteropHelper(this).Handle);
             GlobalTabHotkey.Install(next =>
             {
-                bool moved = _focusedPane?.CycleActiveSession(next) ?? false;
-                // 포커스 패널 안에서 경계(맨 끝)라 못 옮겼으면, 분할 중일 때만 반대편 패널로 이동.
-                // 좌측 마지막 탭에서 다음 → 우측 첫 탭 / 우측 첫 탭에서 이전 → 좌측 마지막 탭.
-                // (그 반대 방향, 즉 우측 마지막에서 다음·좌측 첫 탭에서 이전은 더 갈 곳이 없어 정지.)
-                if (!moved && _splitActive)
+                MarkWorkspaceInputSurface();
+                if (DeferGlobalTabHotkeyIfBusy(next))
                 {
-                    var other = next && ReferenceEquals(_focusedPane, LeftPane) ? RightPane
-                              : !next && ReferenceEquals(_focusedPane, RightPane) ? LeftPane
-                              : null;
-                    if (other != null)
-                    {
-                        _focusedPane = other;
-                        other.SelectEdgeSession(first: next);
-                        SyncShellToFocusedPane();
-                        UpdatePaneFocusVisual();
-                    }
+                    // 비활성 창에서 누른 전역키는 전면화만 즉시 하고, 탭 이동은 캡처 전환 뒤 실행한다.
+                    BringToForegroundFromHotkey();
+                    return;
                 }
+                SupersedePendingTerminalFocus();
+                MoveGlobalTabHotkey(next);
                 BringToForegroundFromHotkey();
             }, HandleGlobalSessionHotkey);
         };
@@ -1070,6 +1111,12 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
+        CancelAllPendingTerminalFocusTransfers();
+        if (_rightOverlayOpen || _rightOverlayTransitionBusy)
+            await CloseRightOverlayAsync(restoreFocus: false);
+        // 다른 캡처/리빌이 끝난 뒤 종료 스냅샷을 단독으로 준비한다. 종료가 이 gate를
+        // 소유하는 동안에는 어떤 전환도 terminal-only 상태를 먼저 해제할 수 없다.
+        await _terminalVisualTransitionGate.WaitAsync();
         // WebView2(터미널/md 에디터/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
         // 2단계 suspend: ①모든 패널이 스냅샷만 올리고(HWND 유지) → 스냅샷 present 대기 →
         // ②모든 HWND 를 '같은 프레임'에 일괄 숨김. 패널별 순차(캡처→hide) 방식은 HWND 가
@@ -1122,6 +1169,7 @@ public partial class MainWindow : Window
             DevezCode.Services.DiagLog.Write("Shutdown: HWNDs hidden");
         }
         catch { /* best effort */ }
+        finally { ReleaseTerminalVisualTransition(); }
         // 스냅샷이 실제로 한 프레임 그려진 뒤 오버레이를 올린다 → WebView 가 사라진 직후 빈 배경이 비치는 깜빡임 제거.
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
         if (RestartingForUpdate) ShutdownRestartNote.Visibility = Visibility.Visible;
@@ -2276,6 +2324,9 @@ public partial class MainWindow : Window
     private const double NarrowThreshold = 1100;
     private bool? _narrow;                 // null=미초기화. 폭 변화로 모드 전환 감지
     private bool _rightOverlayOpen;        // 좁은 창에서 오버레이가 열려 있는지
+    private bool _rightOverlayTransitionBusy;
+    private bool _rightOverlayTerminalSuspended; // 드로어가 소유한 terminal-only 정지 상태
+    private long _rightOverlayOpenFocusRequest;  // busy 중 재-open이 기존 continuation에 넘길 최신 입력 token
     private readonly System.Windows.Media.TranslateTransform _rightT = new();
 
     // GridSplitter 수동 드래그
@@ -2354,9 +2405,13 @@ public partial class MainWindow : Window
 
     /// <summary>창 크기 전환 중 중앙 `*` 컬럼이 리사이즈될 때, 보이는 워크스페이스 패널의
     /// 터미널 WebView2 를 스냅샷으로 정지해 reflow 깜빡임을 막는다.</summary>
-    private Task FreezeWorkspaceTerminalsAsync(bool stretchCover = false)
-        => Task.WhenAll(_panes.Where(p => p.Visibility == Visibility.Visible)
-                              .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true, stretchCover: stretchCover)));
+    private List<WorkspacePaneView> VisibleWorkspaceTerminalPanes()
+        => _panes.Where(p => p.Visibility == Visibility.Visible).ToList();
+
+    private static Task FreezeWorkspaceTerminalsAsync(IReadOnlyList<WorkspacePaneView> panes,
+        bool stretchCover = false)
+        => Task.WhenAll(panes.Select(p => p.SuspendTerminalOnlyAsync(
+            anchorTopLeft: true, webCover: true, stretchCover: stretchCover)));
 
     /// <summary>리사이즈가 끝난 뒤 터미널 재fit만 수행(커버 없음).
     /// OS 최대화/복원은 DWM 애니메이션이 자연스러우므로 캡처·단색 커버를 씌우지 않는다 —
@@ -2371,33 +2426,239 @@ public partial class MainWindow : Window
             p.RevealAfterTransition();
     }
 
-    private void UnfreezeWorkspaceTerminals()
+    private static void UnfreezeWorkspaceTerminals(IEnumerable<WorkspacePaneView> panes)
     {
-        // freeze 와 동일하게 '보이는' 패널만 reveal — 숨긴 패널에 불필요한 fit/재동기를 걸지 않는다.
-        foreach (var p in _panes.Where(p => p.Visibility == Visibility.Visible))
+        // 시작 때 정지한 정확한 집합을 해제한다. await 중 숨겨진 패널도 focus guard/웹 커버가
+        // 누수되지 않아야 하며, WorkspacePaneView가 숨김 상태에서는 폭 0 fit 없이 정리한다.
+        foreach (var p in panes)
             p.ResumeTerminalOnly(webCover: true);
     }
 
     private bool _panelCoverBusy; // 패널 토글 커버 진행 중(연타 무시 — 커버/리빌 순서 꼬임 방지)
+    // 패널·셸·분할·전체화면·우측 오버레이가 같은 TerminalHostView 정지/복귀 상태를 공유한다.
+    // 서로 다른 버튼의 개별 busy 플래그만으로는 캡처 await가 겹치므로 실제 시각 전환은 한 번씩 직렬화한다.
+    private readonly System.Threading.SemaphoreSlim _terminalVisualTransitionGate = new(1, 1);
+    private Action? _pendingWorkspaceNavigation;
+    private int _pendingWorkspaceNavigationInputGeneration;
+    private int _workspaceInputGeneration;
+    private bool _pendingWorkspaceNavigationDrainScheduled;
+    private bool _runningPendingWorkspaceNavigation;
+    private int _pendingGlobalTabDelta;
+    private readonly List<Action> _pendingWorkspaceContinuations = [];
+    private readonly Queue<Action> _pendingWorkspaceCommands = new();
+    private bool IsWorkspaceNavigationBlocked => _terminalVisualTransitionGate.CurrentCount == 0
+        || _overlaySuspended || _rightOverlayOpen || _rightOverlayTerminalSuspended;
+    internal bool IsTerminalVisualTransitionBusy => IsWorkspaceNavigationBlocked;
+
+    /// <summary>터미널 캡처/커버 전환 중 들어온 최신 활성표면 변경을 전환 완료 직후 한 번 실행한다.
+    /// 캡처 도중 탭·프로젝트가 바뀌면 suspend 시작 표면과 resume 대상이 달라져 커버·포커스가
+    /// 서로의 상태를 해제하므로, 사용자 진입점에서만 지연하고 내부 복원 경로는 그대로 둔다.</summary>
+    internal bool DeferWorkspaceNavigationIfBusy(Action navigation)
+    {
+        if (_runningPendingWorkspaceNavigation) return false;
+        int inputGeneration = RegisterUserInputIntent();
+        SupersedePendingTerminalFocus();
+        if (!IsWorkspaceNavigationBlocked && _pendingWorkspaceCommands.Count == 0)
+        {
+            // Release와 예약 drain 사이에 들어온 새 명령은 이미 적용되므로 오래된 보류 명령만 폐기한다.
+            _pendingWorkspaceNavigation = null;
+            _pendingGlobalTabDelta = 0;
+            return false;
+        }
+        _pendingGlobalTabDelta = 0;
+        _pendingWorkspaceNavigation = navigation;
+        _pendingWorkspaceNavigationInputGeneration = inputGeneration;
+        CloseRightOverlayForPendingWork();
+        return true;
+    }
+
+    private bool DeferGlobalTabHotkeyIfBusy(bool next)
+    {
+        if (_runningPendingWorkspaceNavigation) return false;
+        int inputGeneration = RegisterUserInputIntent();
+        SupersedePendingTerminalFocus();
+        if (!IsWorkspaceNavigationBlocked && _pendingWorkspaceCommands.Count == 0)
+        {
+            _pendingWorkspaceNavigation = null;
+            _pendingGlobalTabDelta = 0;
+            return false;
+        }
+        int delta = _pendingGlobalTabDelta + (next ? 1 : -1);
+        _pendingGlobalTabDelta = delta;
+        _pendingWorkspaceNavigation = () =>
+        {
+            int steps = Math.Abs(delta);
+            bool direction = delta > 0;
+            for (int i = 0; i < steps; i++) MoveGlobalTabHotkey(direction);
+            BringToForegroundFromHotkey();
+        };
+        _pendingWorkspaceNavigationInputGeneration = inputGeneration;
+        CloseRightOverlayForPendingWork();
+        return true;
+    }
+
+    /// <summary>파일 드롭·추가·닫기·삭제처럼 유실되면 안 되는 명령은 FIFO로 보존한다.
+    /// 뒤의 사용자 탐색은 generation으로 앞선 replaceable 탐색만 폐기하고 이 큐는 건드리지 않는다.</summary>
+    internal bool DeferWorkspaceCommandIfBusy(Action command)
+    {
+        if (_runningPendingWorkspaceNavigation) return false;
+        RegisterUserInputIntent();
+        SupersedePendingTerminalFocus();
+        if (!IsWorkspaceNavigationBlocked && _pendingWorkspaceCommands.Count == 0) return false;
+        _pendingWorkspaceCommands.Enqueue(command);
+        CloseRightOverlayForPendingWork();
+        SchedulePendingWorkspaceNavigationDrain();
+        return true;
+    }
+
+    /// <summary>세션 종료·재시작 같은 비동기 완료는 사용자 최신 명령을 덮지 않도록 별도 보존한다.
+    /// 안정 상태가 된 뒤 내부 완료를 먼저 재검증하고, 사용자 명령을 마지막에 실행한다.</summary>
+    internal bool DeferWorkspaceContinuationIfBusy(Action continuation)
+    {
+        if (!IsWorkspaceNavigationBlocked) return false;
+        _pendingWorkspaceContinuations.Add(continuation);
+        return true;
+    }
+
+    private void CloseRightOverlayForPendingWork()
+    {
+        if (_pendingWorkspaceNavigation != null
+            && _pendingWorkspaceNavigationInputGeneration != _workspaceInputGeneration)
+        {
+            _pendingWorkspaceNavigation = null;
+            _pendingGlobalTabDelta = 0;
+            return;
+        }
+        bool hasCurrentNavigation = _pendingWorkspaceNavigation != null
+            && _pendingWorkspaceNavigationInputGeneration == _workspaceInputGeneration;
+        if (!hasCurrentNavigation && _pendingWorkspaceCommands.Count == 0) return;
+        if (!_rightOverlayOpen || _rightOverlayTransitionBusy || _overlaySuspended) return;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            bool stillHasCurrentNavigation = _pendingWorkspaceNavigation != null
+                && _pendingWorkspaceNavigationInputGeneration == _workspaceInputGeneration;
+            if ((stillHasCurrentNavigation || _pendingWorkspaceCommands.Count > 0)
+                && _rightOverlayOpen && !_rightOverlayTransitionBusy && !_overlaySuspended)
+                _ = CloseRightOverlayAsync(restoreFocus: false);
+        }), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void MoveGlobalTabHotkey(bool next)
+    {
+        bool moved = _focusedPane?.CycleActiveSession(next) ?? false;
+        // 포커스 패널 안에서 경계(맨 끝)라 못 옮겼으면, 분할 중일 때만 반대편 패널로 이동.
+        // 좌측 마지막 탭에서 다음 → 우측 첫 탭 / 우측 첫 탭에서 이전 → 좌측 마지막 탭.
+        if (!moved && _splitActive)
+        {
+            var other = next && ReferenceEquals(_focusedPane, LeftPane) ? RightPane
+                      : !next && ReferenceEquals(_focusedPane, RightPane) ? LeftPane
+                      : null;
+            if (other != null)
+            {
+                _focusedPane = other;
+                other.SelectEdgeSession(first: next);
+                SyncShellToFocusedPane();
+                UpdatePaneFocusVisual();
+            }
+        }
+    }
+
+    private void ReleaseTerminalVisualTransition()
+    {
+        _terminalVisualTransitionGate.Release();
+        SchedulePendingWorkspaceNavigationDrain();
+    }
+
+    private void SchedulePendingWorkspaceNavigationDrain()
+    {
+        if ((_pendingWorkspaceNavigation == null && _pendingWorkspaceContinuations.Count == 0
+                && _pendingWorkspaceCommands.Count == 0)
+            || _pendingWorkspaceNavigationDrainScheduled) return;
+        _pendingWorkspaceNavigationDrainScheduled = true;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _pendingWorkspaceNavigationDrainScheduled = false;
+            // Release가 다음 대기 전환에 permit을 넘겼다면 그 전환의 최종 Release가 다시 예약한다.
+            if (IsWorkspaceNavigationBlocked) return;
+            var continuations = _pendingWorkspaceContinuations.ToArray();
+            _pendingWorkspaceContinuations.Clear();
+            if (_shuttingDown) return;
+            foreach (var continuation in continuations)
+            {
+                try { continuation(); }
+                catch (Exception ex) { DiagLog.Write($"Deferred workspace continuation failed: {ex.Message}"); }
+            }
+            if (IsWorkspaceNavigationBlocked) return;
+            if (_pendingWorkspaceCommands.TryDequeue(out var command))
+            {
+                try
+                {
+                    _runningPendingWorkspaceNavigation = true;
+                    SupersedePendingTerminalFocus();
+                    command();
+                }
+                catch (Exception ex)
+                {
+                    DiagLog.Write($"Deferred workspace command failed: {ex.Message}");
+                }
+                finally
+                {
+                    _runningPendingWorkspaceNavigation = false;
+                    SchedulePendingWorkspaceNavigationDrain();
+                }
+                return;
+            }
+            var navigation = _pendingWorkspaceNavigation;
+            int inputGeneration = _pendingWorkspaceNavigationInputGeneration;
+            _pendingWorkspaceNavigation = null;
+            _pendingGlobalTabDelta = 0;
+            if (navigation == null || inputGeneration != _workspaceInputGeneration) return;
+            try
+            {
+                _runningPendingWorkspaceNavigation = true;
+                // 내부 완료가 방금 만든 60ms 터미널 포커스보다 사용자 보류 명령이 항상 최신이다.
+                SupersedePendingTerminalFocus();
+                navigation();
+            }
+            catch (Exception ex)
+            {
+                DiagLog.Write($"Deferred workspace navigation failed: {ex.Message}");
+            }
+            finally
+            {
+                _runningPendingWorkspaceNavigation = false;
+            }
+        }), System.Windows.Threading.DispatcherPriority.Input);
+    }
 
     /// <summary>애니메이션 없는 즉시 패널 토글을 터미널 webCover 로 감싸 실행.
     /// 커버(캡처) 아래에서 컬럼 폭을 바꾸고, 최종 폭에서 fit·재동기 후 크로스페이드 —
     /// 즉시 토글의 터미널 reflow 깜빡임(claude 포함)을 감춘다. 세션 없으면 freeze/reveal 모두 no-op.</summary>
-    private async void RunPanelToggleCovered(Action change)
+    private async void RunPanelToggleCovered(Action change, bool imeBoundaryOnRestore = false)
     {
         // 설정 화면(오버레이)이 열려 있는 동안은 패널을 토글하지 않는다 — 되살아난 WebView2 HWND 가
         // 오버레이를 뚫고 보인다(airspace). 상단바 버튼은 오버레이에 덮이지 않으므로 여기서 막는다.
-        if (_settingsView != null) return;
+        if (_shuttingDown || _settingsView != null || _overlaySuspended || _rightOverlayOpen) return;
         if (_panelCoverBusy) return;
         _panelCoverBusy = true;
+        long focusRequest = SupersedePendingTerminalFocus();
+        List<WorkspacePaneView>? frozenPanes = null;
+        await _terminalVisualTransitionGate.WaitAsync();
         try
         {
-            await FreezeWorkspaceTerminalsAsync();
+            if (_shuttingDown || _overlaySuspended || _rightOverlayOpen) return;
+            frozenPanes = VisibleWorkspaceTerminalPanes();
+            await FreezeWorkspaceTerminalsAsync(frozenPanes);
             change();
-            UnfreezeWorkspaceTerminals();
-            ScheduleTerminalFocusRestore();
         }
-        finally { _panelCoverBusy = false; }
+        finally
+        {
+            if (frozenPanes != null) UnfreezeWorkspaceTerminals(frozenPanes);
+            ReleaseTerminalVisualTransition();
+            _panelCoverBusy = false;
+        }
+        if (Views.TerminalHostView.IsGlobalFocusRequestCurrent(focusRequest))
+            ScheduleTerminalFocusRestore(null, imeBoundary: imeBoundaryOnRestore);
     }
 
     // ── 하단 터미널 패널 (에이전트 미연결 pwsh) ─────────────────────────
@@ -2407,7 +2668,7 @@ public partial class MainWindow : Window
 
     private async void ShellTerminalBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (_settingsView != null) return;   // 설정 화면이 열려 있는 동안은 토글 금지(airspace)
+        if (_shuttingDown || _settingsView != null || _overlaySuspended || _rightOverlayOpen) return; // 숨긴 HWND 중첩 캡처 금지
         if (_shellPanelBusy) return;
         _shellPanelBusy = true;
         try { await ToggleShellPanelAsync(!_shellPanelOpen); }
@@ -2421,10 +2682,24 @@ public partial class MainWindow : Window
     /// 하단 보더 + 4px 채널 + 패널 상단 보더의 더블라인 채널(devez 관례)을 만든다.</summary>
     private async Task ToggleShellPanelAsync(bool open)
     {
-        _shellPanelOpen = open;
-        await FreezeWorkspaceTerminalsAsync();
+        long shellFocusRequest = SupersedePendingTerminalFocus();
+        List<WorkspacePaneView>? frozenPanes = null;
+        bool applied = false;
+        await _terminalVisualTransitionGate.WaitAsync();
         try
         {
+            if (_shuttingDown || _overlaySuspended || _rightOverlayOpen) return;
+            _shellPanelOpen = open;
+            // gate 대기 중 더 최신 workspace/explorer 입력이 생겼다면 시각 토글만 적용하고
+            // 마지막 입력 표면은 덮어쓰지 않는다. 이후 포커스도 같은 token 검사가 막는다.
+            if (Views.TerminalHostView.IsGlobalFocusRequestCurrent(shellFocusRequest))
+            {
+                if (open) MarkShellInputSurface();
+                else MarkWorkspaceInputSurface();
+            }
+            if (!open) ShellTerminal.CancelPendingFocusTransfer();
+            frozenPanes = VisibleWorkspaceTerminalPanes();
+            await FreezeWorkspaceTerminalsAsync(frozenPanes);
             if (open)
             {
                 SettingsService.SaveAgentForRoom(ShellRoomId, "shell"); // LaunchSession 의 shell 분기로 라우팅
@@ -2447,14 +2722,28 @@ public partial class MainWindow : Window
             var paneBottom = new Thickness(0, 0, 0, open ? 1 : 0);
             PaneA.BorderThickness = paneBottom;
             PaneB.BorderThickness = paneBottom;
+            applied = true;
         }
         finally
         {
-            UpdateLayout(); // webCover resume 전 최종 폭 확정 (expectWidth 정확성)
-            UnfreezeWorkspaceTerminals();
-            UpdateShellToggleVisual();
-            if (open) ShellTerminal.FocusTerminal(); // 열리면 바로 입력 가능 (pageReady 전이면 내부 보류 후 적용)
-            else ScheduleTerminalFocusRestore();
+            if (frozenPanes != null)
+            {
+                UpdateLayout(); // webCover resume 전 최종 폭 확정 (expectWidth 정확성)
+                UnfreezeWorkspaceTerminals(frozenPanes);
+            }
+            ReleaseTerminalVisualTransition();
+        }
+        if (!applied) return;
+        UpdateShellToggleVisual();
+        if (open)
+        {
+            if (_shellPanelOpen && _shellWasLastInputSurface && IsActive
+                && Views.TerminalHostView.IsGlobalFocusRequestCurrent(shellFocusRequest))
+                ShellTerminal.FocusTerminal(forceImeReattach: true); // 숨김 HWND 재표시 경계까지 포함
+        }
+        else if (Views.TerminalHostView.IsGlobalFocusRequestCurrent(shellFocusRequest))
+        {
+            ScheduleTerminalFocusRestore();
         }
     }
 
@@ -2494,11 +2783,22 @@ public partial class MainWindow : Window
     {
         var files = GetTitleBarDroppedFiles(e);
         e.Handled = true;
-        _focusedPane.DismissFileDropOverlay();
-        if (_focusedPane.ActiveProject == null || files.Length == 0) return;
+        var pane = _focusedPane;
+        pane.DismissFileDropOverlay();
+        var project = pane.ActiveProject;
+        if (project == null || files.Length == 0) return;
 
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => OpenTitleBarDroppedFiles(pane, project, files))) return;
+        OpenTitleBarDroppedFiles(pane, project, files);
+    }
+
+    private static void OpenTitleBarDroppedFiles(WorkspacePaneView pane, ProjectItem project,
+        IReadOnlyList<string> files)
+    {
+        if (!pane.IsVisible || !ReferenceEquals(pane.ActiveProject, project)) return;
         foreach (var path in files)
-            _focusedPane.OpenFileAsTab(path);
+            pane.OpenFileAsTab(path);
     }
 
     /// <summary>스플리터(패널 사이 4~6px 채널) 위 외부 파일 드래그를 삼킨다. 드래그를 처리하지 않으면
@@ -2567,15 +2867,17 @@ public partial class MainWindow : Window
 
     private void RightPanelBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (_settingsView != null) return;   // 설정 화면이 열려 있는 동안은 토글 금지(airspace)
+        if (_shuttingDown || _settingsView != null || _overlaySuspended) return;   // 설정 화면이 열려 있는 동안은 토글 금지(airspace)
+        if (_rightOverlayTransitionBusy) return;
         // 좁은 창: 도킹 대신 오버레이 드로어를 토글한다(자체 스냅샷 정지 경로 사용 — 커버 불필요).
         if (_narrow == true)
         {
-            if (_rightOverlayOpen) CloseRightOverlay();
+            if (_rightOverlayOpen) _ = CloseRightOverlayAsync();
             else _ = OpenRightOverlay();
             return;
         }
-        RunPanelToggleCovered(ToggleRightPanel);
+        bool closingExplorerInput = !_rightCollapsed && _fileExplorerWasLastInputSurface;
+        RunPanelToggleCovered(ToggleRightPanel, imeBoundaryOnRestore: closingExplorerInput);
     }
 
     private void ToggleRightPanel()
@@ -2601,6 +2903,7 @@ public partial class MainWindow : Window
             FooterFileExpCol.Width = new GridLength(0);
             SetSplitterWidth(FileExpSplitterCol, 0, FooterFileExpSplitterCol);
             FileExplorer.Visibility = Visibility.Collapsed;
+            ClearFileExplorerInputSurface();
             UpdateUsageSidebarBorder();
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
@@ -2697,7 +3000,7 @@ public partial class MainWindow : Window
                == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
         {
             e.Handled = true;
-            _focusedPane.AddSession(activeProject);
+            AddSession(activeProject);
             return;
         }
         // Ctrl+Shift+D 를 짧게 두 번 → Devez Vibe 업데이트 버튼 표시.
@@ -2988,6 +3291,15 @@ public partial class MainWindow : Window
             _ = CheckUpdateAsync();
     }
 
+    protected override void OnDeactivated(EventArgs e)
+    {
+        // 외부 창·소유 모달로 나갈 때 Chromium HWND가 포커스 대상으로 남아 보일 수 있다.
+        // 정상 blur가 누락된 WebView2 조합 상태를 먼저 정리하고, 실제 터미널 복귀가
+        // 성공할 때까지 경계를 sticky 로 유지해 IME 컨텍스트를 다시 붙인다.
+        PrepareForModalInputBoundary();
+        base.OnDeactivated(e);
+    }
+
     // [테스트] Ctrl+Shift+U 로 켜지는 가짜 업데이트 모드. OpenUpdatePopup 에서 소비 후 해제.
     private bool _testUpdateMode;
     private DateTime _lastTestUpdateKeyUtc = DateTime.MinValue; // 더블 Ctrl+Shift+U 감지
@@ -3230,6 +3542,7 @@ public partial class MainWindow : Window
     // ── 프로젝트 ──────────────────────────────────────────────────
     private void AddProject()
     {
+        if (DeferWorkspaceNavigationIfBusy(AddProject)) return;
         var picker = new Microsoft.Win32.OpenFolderDialog { Title = "프로젝트 디렉터리 선택" };
         if (picker.ShowDialog(this) != true) return;
         var path = picker.FolderName;
@@ -3324,6 +3637,14 @@ public partial class MainWindow : Window
         // 보여주는 패널이 최종 폭으로 reattach 하며 리플로우돼 깨진다. 활성 세션은 그 패널이 최종 폭에서 생성하게 둔다.
         pane.IsSessionActiveElsewhere = s => _panes.Any(p => !ReferenceEquals(p, pane) && ReferenceEquals(p.ActiveSession, s));
         pane.FocusRequested += OnPaneFocusRequested;
+        pane.NativeTerminalInteracted += _ => CancelScheduledTerminalFocusRestore();
+        pane.InputIntent += _ =>
+        {
+            RegisterUserInputIntent();
+            MarkWorkspaceInputSurface();
+            SupersedePendingTerminalFocus();
+        };
+        pane.NativeSurfaceFocused += OnPaneNativeSurfaceFocused;
         pane.ActiveChanged += OnPaneActiveChanged;
         pane.SplitToggleRequested += OnPaneSplitToggle;
         pane.SplitViewRequested += OnPaneSplitViewRequested;
@@ -3360,6 +3681,7 @@ public partial class MainWindow : Window
     /// 없으면 그 탭을 보여주는 패널, 그것도 없으면 포커스 패널에서 닫는다.</summary>
     private void OnFileTabCloseRequested(FileTabItem tab)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => OnFileTabCloseRequested(tab))) return;
         var pane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveTab, tab))
                    ?? _panes.FirstOrDefault(p => p.ShowsTab(tab))
                    ?? _focusedPane;
@@ -3369,7 +3691,23 @@ public partial class MainWindow : Window
 
     private void OnPaneFocusRequested(WorkspacePaneView pane)
     {
+        // 같은 패널을 다시 누른 경우도 이전 패널/하단 셸의 지연 포커스보다 최신 사용자 의도가 우선한다.
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => OnPaneFocusRequested(pane))) return;
+        if (!pane.IsVisible) return;
+        RegisterUserInputIntent();
+        SupersedePendingTerminalFocus();
         if (ReferenceEquals(_focusedPane, pane)) return;
+        _focusedPane = pane;
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+    }
+
+    private void OnPaneNativeSurfaceFocused(WorkspacePaneView pane)
+    {
+        MarkWorkspaceInputSurface();
+        SupersedePendingTerminalFocus();
+        if (IsWorkspaceNavigationBlocked || !pane.IsVisible || ReferenceEquals(_focusedPane, pane)) return;
         _focusedPane = pane;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
@@ -3566,9 +3904,10 @@ public partial class MainWindow : Window
         w.PaneBCol.Width = new GridLength((double)e.NewValue, GridUnitType.Star);
     }
 
-    /// <summary>PaneB 컬럼을 from→to(0~1) 로 애니메이션. 완료 시 onComplete 호출.</summary>
-    private void AnimatePaneSplit(double from, double to, Action onComplete)
+    /// <summary>PaneB 컬럼을 from→to(0~1) 로 애니메이션하고 완료까지 비동기로 기다린다.</summary>
+    private Task AnimatePaneSplitAsync(double from, double to)
     {
+        var completed = new TaskCompletionSource<bool>();
         PaneSplitProgress = from;
         var anim = new DoubleAnimation
         {
@@ -3580,9 +3919,10 @@ public partial class MainWindow : Window
         anim.Completed += (_, _) =>
         {
             BeginAnimation(PaneSplitProgressProperty, null);   // 애니메이션 해제 → 이후 스플리터 드래그가 자유롭게 폭을 바꿀 수 있다.
-            onComplete();
+            completed.TrySetResult(true);
         };
         BeginAnimation(PaneSplitProgressProperty, anim);
+        return completed.Task;
     }
 
     /// <summary>탭바 분할 토글 버튼(양쪽 패널에 있음). 분할 중이면 어느 쪽에서 눌러도 분할 자체를 닫고,
@@ -3590,6 +3930,11 @@ public partial class MainWindow : Window
     /// 분할 전이면 이 패널의 활성 프로젝트 기준으로 분할을 켜고 SplitEnabled=true 로 기억한다.</summary>
     private void OnPaneSplitToggle(WorkspacePaneView pane)
     {
+        // Enable/DisableSplit은 애니메이션 호출 전에 레이아웃과 세션을 바꾸므로, 다른 캡처가
+        // gate를 소유한 동안에는 최신 토글 의도를 보관했다가 커버가 완전히 걷힌 뒤 실행한다.
+        if (_shuttingDown || _splitTransitionCount > 0) return;
+        if (DeferWorkspaceNavigationIfBusy(() => OnPaneSplitToggle(pane))) return;
+        if (!pane.IsVisible) return;
         if (_splitActive)
         {
             var keep = LeftPane.ActiveProject; // DisableSplit 이후 유지되는 프로젝트
@@ -3781,6 +4126,11 @@ public partial class MainWindow : Window
 
         if (ReferenceEquals(PaneAtScreen(screen), other))
         {
+            if (IsWorkspaceNavigationBlocked)
+            {
+                other.ClearInsertPreview();
+                return true; // 소스 패널 재정렬 프리뷰도 억제
+            }
             other.ShowInsertPreview(screen, ghostWidth + 3); // 탭 간격(3) 포함
             return true;
         }
@@ -3796,6 +4146,9 @@ public partial class MainWindow : Window
         if (!_splitActive) return false;
         var other = ReferenceEquals(source, LeftPane) ? RightPane : LeftPane;
         if (ReferenceEquals(other, source) || !ReferenceEquals(PaneAtScreen(screen), other)) return false;
+        // 드래그 좌표는 전환 뒤에는 의미가 달라지므로 재생하지 않는다. 다만 true로 소비해야
+        // source ReorderDrag가 cross hover의 끝 인덱스를 로컬 재정렬로 잘못 커밋하지 않는다.
+        if (IsWorkspaceNavigationBlocked) return true;
 
         int idx = other.InsertIndexAtScreenX(screen, tab); // 이동 전 대상 탭들 기준 삽입 위치
         OnPaneSplitViewRequested(source, tab);             // 반대 패널로 이동(격리 재배선 + refresh/persist)
@@ -3820,6 +4173,9 @@ public partial class MainWindow : Window
 
     private void OnPaneSplitViewRequested(WorkspacePaneView pane, TabItemBase tab)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => OnPaneSplitViewRequested(pane, tab))) return;
+        if (!_panes.Contains(pane)
+            || !_projects.Concat(_archivedProjects).Any(project => project.Tabs.Contains(tab))) return;
         if (_splitActive)
         {
             var target = ReferenceEquals(pane, LeftPane) ? RightPane : LeftPane;
@@ -3922,6 +4278,8 @@ public partial class MainWindow : Window
 
     private void MoveSidebarTabAcrossSplit(TabItemBase tab)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => MoveSidebarTabAcrossSplit(tab))) return;
+        if (!_projects.Concat(_archivedProjects).Any(project => project.Tabs.Contains(tab))) return;
         var source = FindLivePaneForSidebarTab(tab);
         bool wasAlreadyVisible = source != null;
 
@@ -3972,12 +4330,16 @@ public partial class MainWindow : Window
     /// 우측이 같은 프로젝트를 보여주면 그대로, 우측이 그 프로젝트를 아직 안 띄웠으면(빈 우측/세션0) 격리
     /// 모드로 프로젝트를 활성화한 뒤 연다(그래서 우측 세션이 없어도 파일이 열린다). 우측이 '다른' 프로젝트를
     /// 보여주는 크로스-프로젝트 분할이면 파일 소속이 어긋나므로 포커스 패널에 연다. 비분할이면 포커스 패널.</summary>
-    private void OpenFileFromExplorer(string path)
+    private void OpenFileFromExplorer(string path, WorkspacePaneView? requestedPane = null)
     {
+        MarkWorkspaceInputSurface();
+        var initiatingPane = requestedPane != null && _panes.Contains(requestedPane)
+            ? requestedPane : _focusedPane;
+        if (DeferWorkspaceNavigationIfBusy(() => OpenFileFromExplorer(path, initiatingPane))) return;
         // 파일이 속한 프로젝트 = 탐색기가 보여주는 프로젝트(포커스 패널 활성, 없으면 좌/우 폴백).
-        var proj = _focusedPane.ActiveProject ?? LeftPane.ActiveProject ?? RightPane.ActiveProject;
+        var proj = initiatingPane.ActiveProject ?? LeftPane.ActiveProject ?? RightPane.ActiveProject;
 
-        var target = _focusedPane;
+        var target = initiatingPane;
         if (_splitActive && proj != null)
         {
             if (ReferenceEquals(RightPane.ActiveProject, proj))
@@ -4078,6 +4440,9 @@ public partial class MainWindow : Window
 
     private void OpenQuickOpenFile(ProjectItem project, string filePath)
     {
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => OpenQuickOpenFile(project, filePath))) return;
+        if (!_projects.Contains(project) && !_archivedProjects.Contains(project)) return;
         var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, project));
         if (existingPane != null)
         {
@@ -4170,20 +4535,47 @@ public partial class MainWindow : Window
     /// PaneB 를 0%→저장된 비율로 펼치고, 완료 시 라이브 터미널로 크로스페이드 복원한다.</summary>
     private async Task AnimateSplitOpenAsync()
     {
-        await Task.WhenAll(
-            PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true, captureSplitWide: true),
-            PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true));
-        PaneB.SetEmptyTextWrapping(false); // 펼침 애니메이션 중 줄바꿈 방지
-        double targetStar = SettingsService.LoadSplitBStar();
-        AnimatePaneSplit(0, targetStar, () =>
+        long focusRequest = SupersedePendingTerminalFocus();
+        bool suspended = false;
+        bool completed = false;
+        _splitTransitionCount++;
+        await _terminalVisualTransitionGate.WaitAsync();
+        try
         {
+            if (!_splitActive) return;
+            double targetStar = SettingsService.LoadSplitBStar();
+            if (_shuttingDown) return;
+            if (_overlaySuspended || _rightOverlayOpen)
+            {
+                PaneBCol.Width = new GridLength(targetStar, GridUnitType.Star);
+                PaneB.SetEmptyTextWrapping(true);
+                UpdatePaneFocusVisual(animate: false);
+                return;
+            }
+            suspended = true;
+            await Task.WhenAll(
+                PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true, captureSplitWide: true),
+                PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true));
+            PaneB.SetEmptyTextWrapping(false); // 펼침 애니메이션 중 줄바꿈 방지
+            await AnimatePaneSplitAsync(0, targetStar);
             PaneBCol.Width = new GridLength(targetStar, GridUnitType.Star);
             if (_splitActive) PaneBCol.MinWidth = SplitPaneMinWidth;
             PaneB.SetEmptyTextWrapping(true); // 완전히 펼쳐진 후에만 줄바꿈
-            PaneA.ResumeTerminalOnly(webCover: true);
-            PaneB.ResumeTerminalOnly(webCover: true);
             UpdatePaneFocusVisual(animate: false);
-        });
+            completed = true;
+        }
+        finally
+        {
+            if (suspended)
+            {
+                PaneA.ResumeTerminalOnly(webCover: true);
+                PaneB.ResumeTerminalOnly(webCover: true);
+            }
+            ReleaseTerminalVisualTransition();
+            _splitTransitionCount--;
+        }
+        if (completed && Views.TerminalHostView.IsGlobalFocusRequestCurrent(focusRequest))
+            ScheduleTerminalFocusRestore();
     }
 
     /// <summary>시작 시 저장된 분할 상태 복원 — 양쪽 패널 프로젝트/세션 + 비율 + 스왑을 복원한다.
@@ -4332,9 +4724,11 @@ public partial class MainWindow : Window
     /// <summary>분할 접힘: 두 패널 터미널을 스냅샷으로 정지한 뒤 PaneB 를 50%→0% 로 접고,
     /// 완료 시 PaneB 숨김·세션 배선 해제·컬럼 정규화 후 PaneA 를 라이브로 복원한다.
     /// animate=false 면 슬라이드 없이 즉시 최종 레이아웃으로 축소한다(다른 프로젝트로 전환 시).</summary>
+    private int _splitTransitionCount;
+
     private async Task AnimateSplitCloseAsync(bool swapped, bool animate = true)
     {
-        void Finish()
+        void FinishLayout()
         {
             // PaneB 를 먼저 숨긴다(커버가 올라온 채로). 순서가 중요: ClearForHide→FadeNow 가 커버를 먼저 걷으면
             // collapse 전 한 프레임 동안 우측 라이브 터미널(전환 시 웹 커버로 덮여 있던 50% 폭)이 번쩍인다
@@ -4348,20 +4742,49 @@ public partial class MainWindow : Window
             // 터미널을 살려두면 다른(비분할) 프로젝트에 갔다 이 분할로 돌아올 때 스피너·리로드·스크롤 튐 없이
             // 즉시 재활성화된다. (스왑은 유지 콘텐츠를 PaneA 로 재부착하므로 더블 배선 방지 위해 위에서 dispose 함.)
             if (!swapped) PaneB.ClearForHide(disposeTerminal: false);
-            PaneB.ResumeTerminalOnly();   // 숨겨진 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록). PaneB 는 hide 되므로 collapse 경로 유지.
-            // 살아남는 claude 화면은 분할 열기 직전 전체폭 셀 스냅샷과 비교해, 최종폭 재렌더가 새로 만든
-            // 큰 내부 공백만 로컬 xterm 버퍼에서 복원한다. clear/입력/세션 재시작은 하지 않는다.
-            PaneA.ResumeTerminalOnly(webCover: true, recoverWiden: true);
             UpdatePaneFocusVisual(animate: false);
             PersistSplitState();
         }
 
-        if (!animate) { Finish(); return; }
+        // 즉시 프로젝트 전환은 이 메서드가 정지 상태를 소유하지 않는다. 다른 전환의 커버를
+        // 실수로 해제하지 않고 레이아웃만 최종 상태로 맞춘다.
+        if (!animate) { FinishLayout(); return; }
 
-        // PaneA: webCover(HWND 유지) — 50%→100% 리사이즈 중 재합성 플래시 없음. PaneB: collapse 경로 유지(어차피 hide/정리 대상, Finish 순서 의존).
-        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
-        PaneB.SetEmptyTextWrapping(false); // 접힘 애니메이션 중 줄바꿈 방지
-        AnimatePaneSplit(1, 0, Finish);
+        long focusRequest = SupersedePendingTerminalFocus();
+        bool suspended = false;
+        bool completed = false;
+        _splitTransitionCount++;
+        await _terminalVisualTransitionGate.WaitAsync();
+        try
+        {
+            if (_splitActive) return;
+            if (_shuttingDown) return;
+            if (_overlaySuspended || _rightOverlayOpen)
+            {
+                FinishLayout();
+                return;
+            }
+            // PaneA: webCover(HWND 유지) — 50%→100% 리사이즈 중 재합성 플래시 없음. PaneB: collapse 경로 유지(어차피 hide/정리 대상, Finish 순서 의존).
+            suspended = true;
+            await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
+            PaneB.SetEmptyTextWrapping(false); // 접힘 애니메이션 중 줄바꿈 방지
+            await AnimatePaneSplitAsync(1, 0);
+            FinishLayout();
+            completed = true;
+        }
+        finally
+        {
+            if (suspended)
+            {
+                // 숨긴 PaneB의 스냅샷을 정리하고, 살아남는 화면은 최종 폭에서만 복구한다.
+                PaneB.ResumeTerminalOnly();
+                PaneA.ResumeTerminalOnly(webCover: true, recoverWiden: true);
+            }
+            ReleaseTerminalVisualTransition();
+            _splitTransitionCount--;
+        }
+        if (completed && Views.TerminalHostView.IsGlobalFocusRequestCurrent(focusRequest))
+            ScheduleTerminalFocusRestore();
     }
 
     /// <summary>분할 중일 때 포커스된 패널을 1px 테마색 프레임으로 표시한다.
@@ -4936,10 +5359,11 @@ public partial class MainWindow : Window
                 SettingsService.SaveSessionHistoryRecords(
                     new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
             }
-            ScheduleTerminalFocusRestore();
+            ScheduleTerminalFocusRestore(null, imeBoundary: true);
             return;
         }
         try { Activate(); OpenSession(s); } catch { /* best effort */ }
+        finally { ScheduleTerminalFocusRestore(null, imeBoundary: true); }
     }
 
     /// <summary>완료기록 카드의 x 버튼 → 해당 기록 한 건만 제거하고 저장. (카드 클릭=세션 열기와 분리)</summary>
@@ -4968,6 +5392,7 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.DataContext is not SessionItem s) return;
         try { Activate(); OpenSession(s); } catch { /* best effort */ }
+        finally { ScheduleTerminalFocusRestore(null, imeBoundary: true); }
     }
 
     private void ClearHistoryBtn_Click(object sender, RoutedEventArgs e)
@@ -5088,6 +5513,7 @@ public partial class MainWindow : Window
         App.ShowNotification(title, body, () =>
         {
             try { Activate(); OpenSession(s); } catch { /* best effort */ }
+            finally { ScheduleTerminalFocusRestore(null, imeBoundary: true); }
         });
     }
 
@@ -5139,6 +5565,7 @@ public partial class MainWindow : Window
         App.ShowNotification(title, body, () =>
         {
             try { Activate(); OpenSession(s); } catch { /* best effort */ }
+            finally { ScheduleTerminalFocusRestore(null, imeBoundary: true); }
         });
     }
 
@@ -5234,6 +5661,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => OpenGitRemote(project, url))) return;
+        if (!_projects.Contains(project) && !_archivedProjects.Contains(project)) return;
         SelectProjectFromSidebar(project);
         var pane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, project)) ?? _focusedPane;
         _focusedPane = pane;
@@ -5246,6 +5676,12 @@ public partial class MainWindow : Window
 
     private void SelectProjectFromSidebar(ProjectItem proj)
     {
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => SelectProjectFromSidebar(proj))) return;
+        if (!_projects.Contains(proj) && !_archivedProjects.Contains(proj)) return;
+        // 포커스를 받지 않는 사이드바 카드에서 같은 Chromium HWND로 바로 돌아와도
+        // WPF 조작→터미널 복귀 경계를 잃지 않게 현재 입력 큐 뒤에 재부착을 예약한다.
+        ScheduleTerminalFocusRestore(null, imeBoundary: true);
         // 이미 어느 패널에 떠 있으면 그 패널로 포커스만(재로딩 없음).
         var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, proj));
         DevezCode.Services.DiagLog.Write($"SelectProjectFromSidebar proj={proj.Name} existingPane={(existingPane == null ? "none" : (ReferenceEquals(existingPane, PaneA) ? "PaneA" : "PaneB"))} PaneA={PaneA.ActiveProject?.Name ?? "null"} PaneB={PaneB.ActiveProject?.Name ?? "null"} _splitActive={_splitActive}");
@@ -5265,8 +5701,11 @@ public partial class MainWindow : Window
     /// 프로젝트를 메인(좌측) 패널에 열고 세션을 활성화한다. 분할 여부는 프로젝트의 SplitEnabled 로 결정.</summary>
     private void OpenSession(SessionItem session)
     {
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => OpenSession(session))) return;
         MarkSessionRead(session.Id);
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
+        if (parent == null) return;
         if (session.IsEffectivelyHidden && parent != null)
         {
             var newlyVisible = parent.UnhideSessionPath(session);
@@ -5294,7 +5733,11 @@ public partial class MainWindow : Window
     /// 들어온다. 그 외엔 기존 OpenSession 라우팅.</summary>
     private void OpenSessionFromSidebar(SessionItem s)
     {
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => OpenSessionFromSidebar(s))) return;
+        ScheduleTerminalFocusRestore(null, imeBoundary: true);
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
+        if (parent == null) return;
         bool reopeningHidden = s.IsEffectivelyHidden;
         if (reopeningHidden && parent != null)
         {
@@ -5354,7 +5797,10 @@ public partial class MainWindow : Window
     /// 어느 패널에도 없으면 그 프로젝트를 띄운 패널, 그것도 없으면 포커스 패널에 연다.</summary>
     private void OpenDocFromSidebar(FileTabItem doc)
     {
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => OpenDocFromSidebar(doc))) return;
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(doc));
+        if (parent == null) return;
         if (parent != null && !_panes.Any(p => ReferenceEquals(p.ActiveProject, parent)))
             // 현재 어느 패널에도 안 뜬 '다른 프로젝트'의 문서 → 그 프로젝트를 메인으로 선택(분할/단일은 그 프로젝트
             // 설정대로 전환). 안 그러면 포커스 패널에 그 프로젝트가 통째로 로드돼 현재 분할이 깨진다.
@@ -5374,6 +5820,8 @@ public partial class MainWindow : Window
     /// <summary>사이드바 카드 문서 우클릭 "문서 닫기" → 그 문서가 보이는 패널에서 닫는다(활성 탭이면 이웃으로 교체).</summary>
     private void CloseDocFromSidebar(FileTabItem doc)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => CloseDocFromSidebar(doc))) return;
+        if (!_projects.Concat(_archivedProjects).Any(project => project.Tabs.Contains(doc))) return;
         var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc)) ?? _focusedPane;
         pane.CloseFileTab(doc);
         RefreshCardGroups();
@@ -5383,6 +5831,7 @@ public partial class MainWindow : Window
     /// 우클릭한 문서는 유지하고 같은 프로젝트의 나머지 파일 에디터에 닫기를 요청한다.</summary>
     private void CloseOtherDocsFromSidebar(FileTabItem doc)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => CloseOtherDocsFromSidebar(doc))) return;
         var parent = _projects.Concat(_archivedProjects)
             .FirstOrDefault(project => project.Tabs.Contains(doc));
         if (parent == null) return;
@@ -5395,6 +5844,7 @@ public partial class MainWindow : Window
 
     private void OnBrowserTabCloseRequested(BrowserTabItem tab)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => OnBrowserTabCloseRequested(tab))) return;
         var pane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveTab, tab))
                    ?? _panes.FirstOrDefault(p => p.ShowsTab(tab))
                    ?? _focusedPane;
@@ -5404,7 +5854,10 @@ public partial class MainWindow : Window
 
     private void OpenBrowserFromSidebar(BrowserTabItem browser)
     {
+        MarkWorkspaceInputSurface();
+        if (DeferWorkspaceNavigationIfBusy(() => OpenBrowserFromSidebar(browser))) return;
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(browser));
+        if (parent == null) return;
         if (parent != null && !_panes.Any(p => ReferenceEquals(p.ActiveProject, parent)))
             SelectProjectFromSidebar(parent);
         else
@@ -5549,6 +6002,7 @@ public partial class MainWindow : Window
 
     private void FocusPaneOnly(WorkspacePaneView pane)
     {
+        MarkWorkspaceInputSurface();
         _focusedPane = pane;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
@@ -5556,13 +6010,23 @@ public partial class MainWindow : Window
 
     private void AddSession(ProjectItem proj)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => AddSession(proj))) return;
+        if (!_projects.Contains(proj) && !_archivedProjects.Contains(proj)) return;
         var session = _focusedPane.AddSession(proj);
         if (session != null) OpenSession(session);
     }
 
-    private void RenameSession(SessionItem session) { PaneFor(session).RenameSession(session); SyncRecordsForSessionRename(session); }
+    private void RenameSession(SessionItem session)
+    {
+        if (DeferWorkspaceNavigationIfBusy(() => RenameSession(session))) return;
+        if (ProjectFor(session) == null) return;
+        PaneFor(session).RenameSession(session);
+        SyncRecordsForSessionRename(session);
+    }
+
     private void DeleteSession(SessionItem session)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => DeleteSession(session))) return;
         var project = ProjectFor(session);
         if (project == null) return;
         if (session.IsExternal)
@@ -5587,7 +6051,9 @@ public partial class MainWindow : Window
 
     private void DeleteSessions(IReadOnlyList<SessionItem> sessions)
     {
-        var targets = sessions.Distinct().Where(session => ProjectFor(session) != null).ToList();
+        var requested = sessions.Distinct().ToList();
+        if (DeferWorkspaceNavigationIfBusy(() => DeleteSessions(requested))) return;
+        var targets = requested.Where(session => ProjectFor(session) != null).ToList();
         if (targets.Count == 0) return;
         if (targets.Any(session => session.IsExternal))
         {
@@ -5632,6 +6098,7 @@ public partial class MainWindow : Window
 
     private void StopTrackingSession(SessionItem session)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => StopTrackingSession(session))) return;
         var project = ProjectFor(session);
         if (project == null) return;
         if (session.IsExternal)
@@ -5656,7 +6123,9 @@ public partial class MainWindow : Window
 
     private void StopTrackingSessions(IReadOnlyList<SessionItem> sessions)
     {
-        var targets = sessions.Distinct().Where(session => ProjectFor(session) != null).ToList();
+        var requested = sessions.Distinct().ToList();
+        if (DeferWorkspaceNavigationIfBusy(() => StopTrackingSessions(requested))) return;
+        var targets = requested.Where(session => ProjectFor(session) != null).ToList();
         if (targets.Count == 0) return;
         if (targets.Any(session => session.IsExternal))
         {
@@ -5690,6 +6159,7 @@ public partial class MainWindow : Window
 
     private void HideSessionFromSidebar(SessionItem session)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => HideSessionFromSidebar(session))) return;
         if (session.Hidden) return;
         var project = ProjectFor(session);
         if (project == null) return;
@@ -5718,7 +6188,9 @@ public partial class MainWindow : Window
 
     private void HideSessionsFromSidebar(IReadOnlyList<SessionItem> sessions)
     {
-        foreach (var session in sessions.Distinct().Where(session => !session.Hidden).ToList())
+        var requested = sessions.Distinct().ToList();
+        if (DeferWorkspaceNavigationIfBusy(() => HideSessionsFromSidebar(requested))) return;
+        foreach (var session in requested.Where(session => !session.Hidden))
             HideSessionFromSidebar(session);
         Sidebar.ClearSessionMultiSelection();
     }
@@ -6092,7 +6564,22 @@ public partial class MainWindow : Window
 
     // ── 공개 API (외부 뷰가 호출) ─────────────────────────────────────
     /// <summary>작업 큐 → 포커스 패널의 활성 세션에 텍스트 전송.</summary>
-    public bool SendTextToActiveSession(string text) => _focusedPane.SendTextToActiveSession(text);
+    public bool SendTextToActiveSession(string text)
+    {
+        var pane = _focusedPane;
+        // 호출자는 true일 때 큐 항목을 즉시 삭제한다. 전환 중 보류 슬롯에 넣으면 이후 교체/폐기 시
+        // 전송되지 않은 작업이 사라지므로 false로 남겨 사용자가 다시 보낼 수 있게 한다.
+        if (IsTerminalVisualTransitionBusy) return false;
+        return SendTextToPane(pane, text);
+    }
+
+    private bool SendTextToPane(WorkspacePaneView pane, string text)
+    {
+        if (!_panes.Contains(pane) || !pane.IsVisible) return false;
+        bool sent = pane.SendTextToActiveSession(text);
+        if (sent) MarkWorkspaceInputSurface();
+        return sent;
+    }
 
     /// <summary>MCP 저장 후 활성 Claude 세션 재시작.</summary>
     public bool TryRestartActiveClaudeSession() => _focusedPane.TryRestartActiveClaudeSession();
@@ -6298,6 +6785,7 @@ public partial class MainWindow : Window
     // ── 프로젝트 ──────────────────────────────────────────────────
     private void DeleteProject(ProjectItem proj)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => DeleteProject(proj))) return;
         bool fromArchive = _archivedProjects.Contains(proj);
 
         var external = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.IsExternal);
@@ -6354,6 +6842,7 @@ public partial class MainWindow : Window
     /// <summary>프로젝트 이름 변경 — 표시 이름만 바꾸고 경로/세션은 그대로. 활성·보관 양쪽 모두 영속 저장.</summary>
     private void RenameProject(ProjectItem proj)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => RenameProject(proj))) return;
         var name = PromptDialog.Show("프로젝트 이름 변경", "새 이름을 입력하세요.",
                                      defaultValue: proj.Name, maxLength: 60);
         if (string.IsNullOrWhiteSpace(name) || name == proj.Name) return;
@@ -6373,6 +6862,7 @@ public partial class MainWindow : Window
     /// <summary>프로젝트 보관 — 활성 목록에서 빼 보관함으로. 세션 프로세스는 정지하되 기록은 보존(devez 정합).</summary>
     private void ArchiveProject(ProjectItem proj)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => ArchiveProject(proj))) return;
         if (!_projects.Contains(proj)) return;
 
         // 열려있는(활성) 프로젝트면 세션 유지·선택 전환 없이 카드만 보관함으로 옮긴다.
@@ -6398,6 +6888,7 @@ public partial class MainWindow : Window
     /// <summary>프로젝트 꺼내기 — 보관함에서 활성 목록으로 복귀(세션은 죽은 상태로 복원, 클릭 시 재기동).</summary>
     private void UnarchiveProject(ProjectItem proj)
     {
+        if (DeferWorkspaceNavigationIfBusy(() => UnarchiveProject(proj))) return;
         if (!_archivedProjects.Contains(proj)) return;
         proj.ArchivedAt = null;
         _archivedProjects.Remove(proj);
@@ -6447,11 +6938,11 @@ public partial class MainWindow : Window
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
         if (_settingsView != null) { _settingsView.Focus(); return; }   // 이미 열려 있음
-        // 터미널·웹 콘텐츠(WebView2 HWND)를 숨긴다 — 같은 창 안의 오버레이는 airspace 때문에
-        // 라이브 HWND 를 가릴 수 없으므로 반드시 선행돼야 한다.
-        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
         try
         {
+            // 터미널·웹 콘텐츠(WebView2 HWND)를 숨긴다 — 같은 창 안의 오버레이는 airspace 때문에
+            // 라이브 HWND 를 가릴 수 없으므로 반드시 선행돼야 한다.
+            if (!await SuspendTerminalWithSnapshotAsync(blankCurtain: true)) return;
             var view = new Views.SettingsDialog();
             view.CloseRequested += (_, _) => CloseSettingsOverlay();
             SettingsHost.Children.Add(view);
@@ -6510,9 +7001,11 @@ public partial class MainWindow : Window
 
     private async void McpBtn_Click(object sender, RoutedEventArgs e)
     {
-        await SuspendTerminalWithSnapshotAsync();
+        bool suspended = false;
         try
         {
+            suspended = await SuspendTerminalWithSnapshotAsync();
+            if (!suspended) return;
             var dlg = new Views.McpManagerWindow { Owner = this };
             dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
             dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
@@ -6520,16 +7013,21 @@ public partial class MainWindow : Window
         }
         finally
         {
-            ResumeTerminal();
-            ScheduleTerminalFocusRestore();
+            if (suspended)
+            {
+                ResumeTerminal();
+                ScheduleTerminalFocusRestore();
+            }
         }
     }
 
     private async void McpControlBtn_Click(object sender, RoutedEventArgs e)
     {
-        await SuspendTerminalWithSnapshotAsync();
+        bool suspended = false;
         try
         {
+            suspended = await SuspendTerminalWithSnapshotAsync();
+            if (!suspended) return;
             var dlg = new Views.McpControlWindow { Owner = this };
             dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
             dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
@@ -6537,8 +7035,11 @@ public partial class MainWindow : Window
         }
         finally
         {
-            ResumeTerminal();
-            ScheduleTerminalFocusRestore();
+            if (suspended)
+            {
+                ResumeTerminal();
+                ScheduleTerminalFocusRestore();
+            }
         }
     }
 
@@ -6771,12 +7272,39 @@ public partial class MainWindow : Window
     private bool _overlaySuspended;
 
     /// <summary>모든 패널 터미널 + 우측 브라우저를 정지(스냅샷/커튼). 설정·MCP 오버레이용.</summary>
-    private async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
+    private async Task<bool> SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
+        if (_shuttingDown || _overlaySuspended) return false;
+        // 같은 창 안의 설정 오버레이는 MainWindow.Deactivated가 오지 않는다. WebView HWND를 숨기는
+        // 것 자체가 IME 경계이므로, 재개 뒤 첫 터미널 포커스에서 한 번만 재부착한다.
+        _terminalImeReattachPending = true;
+        // FileExplorer 캡처를 먼저 기다리는 동안에도 60ms 예약이 실행될 수 있으므로 모든 호스트를
+        // await 전에 동기 취소한다. 각 호스트의 suspend도 자체 취소해 단독 호출 경로를 방어한다.
+        CancelAllPendingTerminalFocusTransfers();
         _overlaySuspended = true;
-        await FileExplorer.SuspendBrowserAsync();
-        foreach (var pane in _panes) await pane.SuspendTerminalWithSnapshotAsync(blankCurtain);
-        await SuspendShellPanelAsync();
+        bool gateHeld = false;
+        try
+        {
+            // 좁은 창 드로어가 터미널-only 정지를 소유한 경우 먼저 완전히 해제한 뒤
+            // 전체 오버레이 스냅샷을 잡아 숨겨진 WebView 캡처 대기를 피한다.
+            if (_rightOverlayOpen || _rightOverlayTransitionBusy)
+                await CloseRightOverlayAsync(restoreFocus: false);
+            await _terminalVisualTransitionGate.WaitAsync();
+            gateHeld = true;
+            await FileExplorer.SuspendBrowserAsync();
+            foreach (var pane in _panes) await pane.SuspendTerminalWithSnapshotAsync(blankCurtain);
+            await SuspendShellPanelAsync();
+            return true;
+        }
+        catch
+        {
+            ResumeTerminal();
+            throw;
+        }
+        finally
+        {
+            if (gateHeld) ReleaseTerminalVisualTransition();
+        }
     }
 
     private void ResumeTerminal()
@@ -6785,27 +7313,128 @@ public partial class MainWindow : Window
         FileExplorer.ResumeBrowser();
         foreach (var pane in _panes) pane.ResumeTerminal();
         ResumeShellPanel();
+        SchedulePendingWorkspaceNavigationDrain();
     }
 
     /// <summary>터미널 밖 WPF 조작·모달 종료 뒤 활성 세션으로 포커스를 되돌린다.
     /// 텍스트/선택 입력 중이거나 오버레이가 남아 있으면 사용자의 현재 입력을 보존한다.</summary>
     private int _terminalFocusRestoreGeneration;
+    private bool _terminalImeReattachPending;
+    private bool _shellWasLastInputSurface;
+    private bool _fileExplorerWasLastInputSurface;
     private readonly HashSet<ContextMenu> _openContextMenus = [];
-    private void ScheduleTerminalFocusRestore() => ScheduleTerminalFocusRestore(null);
+    private void ScheduleTerminalFocusRestore() => ScheduleTerminalFocusRestore(null, imeBoundary: false);
 
-    internal void ScheduleTerminalFocusRestore(ComboBox? releasedCombo)
+    private void MarkWorkspaceInputSurface()
     {
+        _shellWasLastInputSurface = false;
+        _fileExplorerWasLastInputSurface = false;
+    }
+
+    private void MarkShellInputSurface()
+    {
+        _shellWasLastInputSurface = true;
+        _fileExplorerWasLastInputSurface = false;
+    }
+
+    private void MarkFileExplorerInputSurface()
+    {
+        RegisterUserInputIntent();
+        _shellWasLastInputSurface = false;
+        _fileExplorerWasLastInputSurface = true;
+        SupersedePendingTerminalFocus();
+    }
+
+    private void MarkFileExplorerNativeSurface()
+    {
+        _shellWasLastInputSurface = false;
+        _fileExplorerWasLastInputSurface = true;
+        SupersedePendingTerminalFocus();
+    }
+
+    private int RegisterUserInputIntent() => ++_workspaceInputGeneration;
+
+    /// <summary>새 사용자 입력이 이미 큐에 든 창 복귀와 모든 호스트의 지연 포커스보다 우선하게 한다.
+    /// 창 비활성화에서 생긴 sticky IME 경계는 실제 입력 표면 복귀 때까지 보존한다.</summary>
+    private long SupersedePendingTerminalFocus()
+    {
+        ++_terminalFocusRestoreGeneration;
+        return Views.TerminalHostView.InvalidateGlobalFocusRequests();
+    }
+
+    private void ClearFileExplorerInputSurface()
+    {
+        if (_fileExplorerWasLastInputSurface) MarkWorkspaceInputSurface();
+    }
+
+    private void CancelScheduledTerminalFocusRestore()
+    {
+        _terminalImeReattachPending = false;
+        ++_terminalFocusRestoreGeneration;
+    }
+
+    /// <summary>소유 모달·외부 창으로 나가기 전 WebView2의 미완료 조합과 늦은 포커스를 정리한다.</summary>
+    internal void PrepareForModalInputBoundary()
+    {
+        RegisterUserInputIntent();
+        foreach (var pane in _panes) pane.Terminal.AbortIme();
+        ShellTerminal.AbortIme();
+        _terminalImeReattachPending = true;
+        CancelAllPendingTerminalFocusTransfers();
+    }
+
+    private long CancelAllPendingTerminalFocusTransfers()
+    {
+        ++_terminalFocusRestoreGeneration;
+        foreach (var pane in _panes) pane.Terminal.CancelPendingFocusTransfer();
+        ShellTerminal.CancelPendingFocusTransfer();
+        return Views.TerminalHostView.InvalidateGlobalFocusRequests();
+    }
+
+    internal void ScheduleTerminalFocusRestore(ComboBox? releasedCombo, bool imeBoundary = false)
+    {
+        if (_shuttingDown) return;
+        _terminalImeReattachPending |= imeBoundary;
         var generation = ++_terminalFocusRestoreGeneration;
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            if (generation != _terminalFocusRestoreGeneration || !IsActive
+            if (_shuttingDown || generation != _terminalFocusRestoreGeneration || !IsActive
                 || _settingsView != null || _overlaySuspended || _rightOverlayOpen
                 || _openContextMenus.Count > 0)
                 return;
-            if (Keyboard.FocusedElement is TextBoxBase) return;
-            if (Keyboard.FocusedElement is ComboBox combo && !ReferenceEquals(combo, releasedCombo)) return;
-            _focusedPane?.FocusActiveSessionTerminal();
+            if (_terminalVisualTransitionGate.CurrentCount == 0)
+            {
+                _ = RetryTerminalFocusRestoreAfterTransitionAsync(generation, releasedCombo);
+                return;
+            }
+            if (_fileExplorerWasLastInputSurface && FileExplorer.IsVisible) return;
+            var focusedElement = Keyboard.FocusedElement;
+            bool terminalFocused = ShellTerminal.IsKeyboardFocusWithin
+                || _panes.Any(pane => pane.Terminal.IsKeyboardFocusWithin);
+            if (focusedElement != null && !ReferenceEquals(focusedElement, this)
+                && !ReferenceEquals(focusedElement, releasedCombo) && !terminalFocused) return;
+            bool forceImeReattach = _terminalImeReattachPending;
+            bool restored = ShellTerminalPanel.IsVisible && _shellWasLastInputSurface
+                ? FocusShellTerminal(forceImeReattach)
+                : _focusedPane?.FocusActiveSessionTerminal(forceImeReattach) == true;
+            if (restored)
+                _terminalImeReattachPending = false;
         }), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private async Task RetryTerminalFocusRestoreAfterTransitionAsync(int generation, ComboBox? releasedCombo)
+    {
+        await _terminalVisualTransitionGate.WaitAsync();
+        ReleaseTerminalVisualTransition();
+        if (_shuttingDown || generation != _terminalFocusRestoreGeneration) return;
+        ScheduleTerminalFocusRestore(releasedCombo);
+    }
+
+    private bool FocusShellTerminal(bool forceImeReattach)
+    {
+        if (!ShellTerminalPanel.IsVisible || !ShellTerminal.IsVisible) return false;
+        ShellTerminal.FocusTerminal(forceImeReattach);
+        return true;
     }
 
     /// <summary>하단 셸 터미널 패널(WebView2)도 스냅샷으로 대체하고 HWND 를 숨긴다.
@@ -6813,6 +7442,7 @@ public partial class MainWindow : Window
     private async Task SuspendShellPanelAsync()
     {
         if (ShellTerminalPanel.Visibility != Visibility.Visible) return;
+        ShellTerminal.CancelPendingFocusTransfer();
         try
         {
             var snap = await ShellTerminal.CaptureSnapshotAsync();
@@ -6835,14 +7465,26 @@ public partial class MainWindow : Window
     }
 
     /// <summary>우측 오버레이 드로어용 — 터미널만 스냅샷 정지(브라우저는 오버레이 본문이라 제외).</summary>
+    private bool _rightOverlayShellSuspended;
+
     private async Task SuspendTerminalOnlyAsync()
     {
         foreach (var pane in _panes) await pane.SuspendTerminalOnlyAsync();
+        if (ShellTerminalPanel.Visibility == Visibility.Visible)
+        {
+            _rightOverlayShellSuspended = true;
+            await SuspendShellPanelAsync();
+        }
     }
 
     private void ResumeTerminalOnly()
     {
         foreach (var pane in _panes) pane.ResumeTerminalOnly();
+        if (_rightOverlayShellSuspended)
+        {
+            ResumeShellPanel();
+            _rightOverlayShellSuspended = false;
+        }
     }
 
     // ── 타이틀바 ──────────────────────────────────────────────────
@@ -7085,15 +7727,27 @@ public partial class MainWindow : Window
     /// bounds 를 Background 에서 한 번 더 적용하므로, 그 뒤에 reveal 해야 expectWidth 가 최종값이 된다.</summary>
     private async void RunFullScreenTransitionCovered(Action change, bool solidCover = false)
     {
-        // 설정 화면 등 전체 오버레이가 떠 있으면 터미널이 이미 정지·숨김이고 화면에도 안 보인다 —
-        // 커버를 씌울 필요가 없다. 커버를 시도하면 숨겨진 WebView2 캡처를 기다리다 매달려
-        // 최대화/창모드 전환 자체가 먹지 않는다(_fsCoverBusy 고착).
-        if (_overlaySuspended) { change(); return; }
         if (_fsCoverBusy) return; // 전환 중 연타 무시(커버/리빌 상태 꼬임 방지)
         _fsCoverBusy = true;
+        long focusRequest = SupersedePendingTerminalFocus();
+        bool gateHeld = false;
+        bool terminalFrozen = false;
+        bool solidCovered = false;
+        bool restoreFocus = false;
+        List<WorkspacePaneView>? covered = null;
         try
         {
-            var covered = _panes.Where(p => p.Visibility == Visibility.Visible).ToList();
+            await _terminalVisualTransitionGate.WaitAsync();
+            gateHeld = true;
+            // 전체/우측 오버레이가 이미 WebView를 숨긴 상태면 캡처하지 않고 창 상태만 바꾼다.
+            // 해당 오버레이의 최종 close 경로가 터미널 복귀를 소유한다.
+            if (_shuttingDown) return;
+            if (_overlaySuspended || _rightOverlayOpen)
+            {
+                change();
+                return;
+            }
+            covered = _panes.Where(p => p.Visibility == Visibility.Visible).ToList();
             if (solidCover)
             {
                 // 리사이즈가 이미 일어난 뒤 통지되는 경로(OS 주도 최대화/복원 — 드래그 스냅·Win+화살표 등):
@@ -7105,24 +7759,40 @@ public partial class MainWindow : Window
                     p.CoverForTransition();
                     if (p.ActiveSession != null) p.Terminal.PinBottom(1500);
                 }
+                solidCovered = true;
             }
             else
             {
                 // stretch: 창 전체가 한 번에 크게 변하므로 커버를 뷰포트에 맞춰 늘린다(OS 최대화 애니메이션 인상).
                 // 좌상단 px 고정을 쓰면 커지는 쪽(오른쪽·아래)이 배경색만 남아 '비어' 보인다.
-                await FreezeWorkspaceTerminalsAsync(stretchCover: true);
+                terminalFrozen = true;
+                await FreezeWorkspaceTerminalsAsync(covered, stretchCover: true);
             }
             change();
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
             // bounce: post-hoc 경로는 리사이즈·재방출이 커버 '전'에 무방비로 일어났다 — reveal fit 이
             // 무변화면 재방출이 없어 tear 가 고착될 수 있으므로 커버 아래서 rows 바운스로 재방출을 강제.
-            if (solidCover) foreach (var p in covered) p.RevealAfterTransition(kick: true, bounce: true);
-            else UnfreezeWorkspaceTerminals();
+            if (solidCover)
+            {
+                foreach (var p in covered) p.RevealAfterTransition(kick: true, bounce: true);
+                solidCovered = false;
+            }
+            else
+            {
+                UnfreezeWorkspaceTerminals(covered);
+                terminalFrozen = false;
+            }
+            restoreFocus = true;
         }
         finally
         {
+            if (terminalFrozen && covered != null) UnfreezeWorkspaceTerminals(covered);
+            if (solidCovered && covered != null)
+                foreach (var p in covered) p.RevealAfterTransition(kick: true, bounce: true);
+            if (gateHeld) ReleaseTerminalVisualTransition();
             _fsCoverBusy = false;
-            ScheduleTerminalFocusRestore();
+            if (restoreFocus && Views.TerminalHostView.IsGlobalFocusRequestCurrent(focusRequest))
+                ScheduleTerminalFocusRestore();
         }
     }
 
@@ -7524,6 +8194,7 @@ public partial class MainWindow : Window
             RightOverlayHost.Visibility = Visibility.Collapsed;
             DockFileExplorer();
             FileExplorer.Visibility = Visibility.Collapsed;
+            ClearFileExplorerInputSurface();
             UpdatePanelToggleVisual();
         }
     }
@@ -7531,9 +8202,9 @@ public partial class MainWindow : Window
     /// <summary>좁은 창 → 도킹: 오버레이를 걷고 우측 컬럼으로 되돌리며 표시 상태를 이어받는다.</summary>
     private void EnterWideMode(bool shown)
     {
+        bool hadOverlaySuspension = _rightOverlayOpen || _rightOverlayTransitionBusy;
         _rightOverlayOpen = false;
         RightOverlayHost.Visibility = Visibility.Collapsed;
-        ResumeTerminalOnly();   // 오버레이가 열린 채 넓어졌다면 터미널 복원
         _rightT.X = 0;
         DockFileExplorer();
         // SharedSizeGroup 복원(상태바 컬럼과 정렬).
@@ -7541,42 +8212,137 @@ public partial class MainWindow : Window
         FileExpCol.SharedSizeGroup = "MainFileExp";
         _rightCollapsed = !shown;   // 표시 상태 보존
         FileExplorer.Visibility = _rightCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        if (!shown) ClearFileExplorerInputSurface();
         FileExpSplitterCol.Width = new GridLength(_rightCollapsed ? 0 : 4);
         SetMinWidth(_rightCollapsed ? 0 : _fileExpMinWidth, FileExpCol, FooterFileExpCol);
         FileExpCol.Width = new GridLength(_rightCollapsed ? 0 : _fileExpWidth);
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
+        if (hadOverlaySuspension)
+        {
+            long focusRequest = SupersedePendingTerminalFocus();
+            _ = ResumeRightOverlayTerminalsAsync(focusRequest, restoreFocus: true);
+        }
     }
 
     /// <summary>좁은 창에서 우측 패널 오버레이와 스크림을 즉시 연다.
     /// 중앙 터미널 WebView2 는 native HWND 라 WPF 오버레이를 뚫고 올라오므로 스냅샷으로 정지한다.</summary>
     private async Task OpenRightOverlay()
     {
-        await SuspendTerminalOnlyAsync();   // airspace 우회: 터미널을 스냅샷으로 정지
-        RightOverlayPanel.Width = OverlayWidth();
-        ReparentToOverlay();
-        _rightT.X = 0;
-        RightOverlayHost.Visibility = Visibility.Visible;
+        if (_shuttingDown || _overlaySuspended) return;
+        // 폭이 빠르게 좁음→넓음→좁음으로 바뀌어 이전 open 연속 동작이 아직 끝나지 않았어도
+        // 최신 표시 의도는 먼저 게시한다. 기존 작업이 이 상태를 보고 그대로 마무리할 수 있다.
         _rightOverlayOpen = true;
-        UpdatePanelToggleVisual();
-        UpdateUsageSidebarBorder();
+        _rightOverlayOpenFocusRequest = CancelAllPendingTerminalFocusTransfers();
+        if (_rightOverlayTransitionBusy) return;
+        _rightOverlayTransitionBusy = true;
+        bool suspended = false;
+        bool restoreAfterFailure = false;
+        await _terminalVisualTransitionGate.WaitAsync();
+        try
+        {
+            if (!_rightOverlayOpen || _narrow != true || _overlaySuspended || _shuttingDown) return;
+            if (!_rightOverlayTerminalSuspended)
+            {
+                suspended = true;
+                await SuspendTerminalOnlyAsync();   // airspace 우회: 터미널을 스냅샷으로 정지
+                _rightOverlayTerminalSuspended = true;
+                suspended = false;
+            }
+            // 캡처 중 창이 넓어져 도킹 모드로 복귀했다면 오래된 open 연속 동작을 폐기한다.
+            // EnterWideMode/CloseRightOverlayAsync가 gate 직후 정지 상태를 최종 해제한다.
+            if (!_rightOverlayOpen || _narrow != true || _overlaySuspended || _shuttingDown) return;
+            if (!Views.TerminalHostView.IsGlobalFocusRequestCurrent(_rightOverlayOpenFocusRequest))
+            {
+                // 캡처 중 사용자가 다른 WPF/WebView 입력 표면을 선택했다면 드로어 표시를 취소한다.
+                _rightOverlayOpen = false;
+                RightOverlayHost.Visibility = Visibility.Collapsed;
+                DockFileExplorer();
+                FileExplorer.Visibility = Visibility.Collapsed;
+                ClearFileExplorerInputSurface();
+                ResumeTerminalOnly();
+                _rightOverlayTerminalSuspended = false;
+                UpdatePanelToggleVisual();
+                return;
+            }
+            RightOverlayPanel.Width = OverlayWidth();
+            ReparentToOverlay();
+            _rightT.X = 0;
+            RightOverlayHost.Visibility = Visibility.Visible;
+            UpdatePanelToggleVisual();
+            UpdateUsageSidebarBorder();
+        }
+        catch (Exception ex)
+        {
+            _rightOverlayOpen = false;
+            RightOverlayHost.Visibility = Visibility.Collapsed;
+            _rightT.X = 0;
+            DockFileExplorer();
+            FileExplorer.Visibility = _narrow == true || _rightCollapsed
+                ? Visibility.Collapsed : Visibility.Visible;
+            if (FileExplorer.Visibility != Visibility.Visible) ClearFileExplorerInputSurface();
+            if (suspended || _rightOverlayTerminalSuspended)
+            {
+                ResumeTerminalOnly();
+                _rightOverlayTerminalSuspended = false;
+                suspended = false;
+            }
+            restoreAfterFailure = true;
+            DevezCode.Services.DiagLog.Write($"OpenRightOverlay failed: {ex.Message}");
+            UpdatePanelToggleVisual();
+            UpdateUsageSidebarBorder();
+        }
+        finally
+        {
+            ReleaseTerminalVisualTransition();
+            _rightOverlayTransitionBusy = false;
+            if (_pendingWorkspaceNavigation != null) CloseRightOverlayForPendingWork();
+            if (restoreAfterFailure
+                && Views.TerminalHostView.IsGlobalFocusRequestCurrent(_rightOverlayOpenFocusRequest))
+                ScheduleTerminalFocusRestore(null, imeBoundary: true);
+        }
     }
 
     /// <summary>오버레이를 즉시 닫고 도킹 위치로 복귀한다.</summary>
-    private void CloseRightOverlay()
+    private async Task CloseRightOverlayAsync(bool restoreFocus = true)
     {
+        if (!_rightOverlayOpen && !_rightOverlayTransitionBusy) return;
+        long focusRequest = SupersedePendingTerminalFocus();
         _rightOverlayOpen = false;
         RightOverlayHost.Visibility = Visibility.Collapsed;
         _rightT.X = 0;
         DockFileExplorer();
         FileExplorer.Visibility = Visibility.Collapsed; // 좁은 창에서는 닫힘=숨김
-        ResumeTerminalOnly();                            // 터미널 복원
-        ScheduleTerminalFocusRestore();
+        ClearFileExplorerInputSurface();
         UpdateUsageSidebarBorder();
         UpdatePanelToggleVisual();
+        await ResumeRightOverlayTerminalsAsync(focusRequest, restoreFocus);
     }
 
-    private void RightScrim_Click(object sender, MouseButtonEventArgs e) => CloseRightOverlay();
+    private async Task ResumeRightOverlayTerminalsAsync(long focusRequest, bool restoreFocus)
+    {
+        bool resumed = false;
+        await _terminalVisualTransitionGate.WaitAsync();
+        try
+        {
+            // 닫기 대기 중 다시 열기가 최신 의도가 됐다면 기존 suspension을 그대로 넘긴다.
+            if (_rightOverlayOpen) return;
+            if (_rightOverlayTerminalSuspended)
+            {
+                ResumeTerminalOnly();
+                _rightOverlayTerminalSuspended = false;
+                resumed = true;
+            }
+        }
+        finally { ReleaseTerminalVisualTransition(); }
+        if (resumed && restoreFocus && Views.TerminalHostView.IsGlobalFocusRequestCurrent(focusRequest))
+            ScheduleTerminalFocusRestore(null, imeBoundary: true);
+    }
+
+    private void RightScrim_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (!_rightOverlayTransitionBusy) _ = CloseRightOverlayAsync();
+    }
 
     private void MaxBtn_Click(object sender, RoutedEventArgs e) => ToggleMaximizeOrFullScreen();
 

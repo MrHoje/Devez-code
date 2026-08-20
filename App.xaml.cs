@@ -430,7 +430,11 @@ public partial class App : Application
             {
                 var win = new Views.AgentUpdateResultWindow(results);
                 var owner = app.MainWindow;
-                if (owner != null && owner.IsVisible) win.Owner = owner;
+                if (owner != null && owner.IsVisible)
+                {
+                    if (owner is MainWindow mainWindow) mainWindow.PrepareForModalInputBoundary();
+                    win.Owner = owner;
+                }
                 win.ShowDialog();
             }
             catch { /* best effort — 결과 표시 실패가 앱을 막지 않도록 */ }
