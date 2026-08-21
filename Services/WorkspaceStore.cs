@@ -73,20 +73,25 @@ public static class WorkspaceStore
     /// <summary>활성 프로젝트의 세션 목록을 sessions-index.json 에 내보낸다.
     /// 플러그인 /send-to 가 대상 이름을 roomId 로 해석(같은 프로젝트 우선)하는 데 쓴다.
     /// 저장(추가/삭제/이름변경)마다 갱신되며, 시작 시 1회도 호출해 최신화한다.</summary>
+    private static string SerializeSessionsIndex(IEnumerable<ProjectItem> active)
+    {
+        var entries = active
+            .SelectMany(p => p.Tabs.OfType<SessionItem>().Select(s => new SessionIndexEntryDto
+            {
+                roomId = s.Id,
+                name = s.Name,
+                projectPath = p.Path,
+                projectName = p.Name,
+            }))
+            .ToList();
+        return JsonSerializer.Serialize(entries);
+    }
+
     public static void ExportSessionsIndex(IEnumerable<ProjectItem> active)
     {
         try
         {
-            var entries = active
-                .SelectMany(p => p.Tabs.OfType<SessionItem>().Select(s => new SessionIndexEntryDto
-                {
-                    roomId = s.Id,
-                    name = s.Name,
-                    projectPath = p.Path,
-                    projectName = p.Name,
-                }))
-                .ToList();
-            AtomicFile.WriteAllText(SessionsIndexPath, JsonSerializer.Serialize(entries));
+            AtomicFile.WriteAllText(SessionsIndexPath, SerializeSessionsIndex(active));
         }
         catch { /* non-critical — 릴레이 인덱스만 갱신 실패 */ }
     }
@@ -103,6 +108,9 @@ public static class WorkspaceStore
     // Load/Save 직렬화 — 현재는 UI 스레드 전용이나, tmp/bak 고정 파일명을 쓰므로
     // 동시 진입 시 쓰기 충돌을 막기 위한 방어적 잠금.
     private static readonly object _lock = new();
+    private sealed record SaveSnapshot(string WorkspaceJson, string SessionsIndexJson);
+    private static readonly JsonSerializerOptions SaveJsonOptions = new() { WriteIndented = true };
+    private static readonly CoalescingSaveQueue<SaveSnapshot> SaveQueue = new(WriteSnapshot);
 
     // 보관 프로젝트 컬렉션의 살아있는 참조. Load 가 채워 두면, 이후 활성만 받는
     // Save(active) 호출도 이 참조를 함께 직렬화해 보관 항목이 유실되지 않는다.
@@ -111,13 +119,15 @@ public static class WorkspaceStore
     public static ObservableCollection<ProjectFolderItem> ProjectFolders { get; } = new();
 
     /// <summary>보관 프로젝트 소스 등록 — 이후 모든 Save 가 이 항목들을 함께 기록한다.</summary>
-    public static void SetArchivedSource(IEnumerable<ProjectItem> archived) => _archivedRef = archived;
+    public static void SetArchivedSource(IEnumerable<ProjectItem> archived)
+    { lock (_lock) _archivedRef = archived; }
 
     public static ObservableCollection<ProjectItem> Load() => Load(out _);
 
     /// <summary>활성 프로젝트를 반환하고, 보관(archived_at 있음) 프로젝트는 out 으로 분리해 돌려준다.</summary>
     public static ObservableCollection<ProjectItem> Load(out ObservableCollection<ProjectItem> archived)
     {
+        SaveQueue.FlushAll();
         lock (_lock) return LoadCore(out archived);
     }
 
@@ -210,7 +220,16 @@ public static class WorkspaceStore
     {
         // 순회 전에 스냅샷 — lock 구간 밖에서 컬렉션이 바뀌어도 안전(UI 스레드 전용이라 사실상 불변이나 방어적).
         var list = projects as ICollection<ProjectItem> ?? projects.ToList();
-        lock (_lock) SaveCore(list);
+        long? version;
+        lock (_lock) version = QueueSaveCore(list);
+        if (version is long queuedVersion) SaveQueue.Flush(queuedVersion);
+    }
+
+    /// <summary>세션 전환 중에는 스냅샷만 큐에 넣고 디스크 반영은 직렬 백그라운드 작업에 맡긴다.</summary>
+    public static void SaveDeferred(IEnumerable<ProjectItem> projects)
+    {
+        var list = projects as ICollection<ProjectItem> ?? projects.ToList();
+        lock (_lock) QueueSaveCore(list);
     }
 
     /// <summary>활성 + 보관 프로젝트를 함께 저장. 보관 소스도 갱신한다.</summary>
@@ -219,6 +238,9 @@ public static class WorkspaceStore
         SetArchivedSource(archived as ICollection<ProjectItem> ?? archived.ToList());
         Save(active);
     }
+
+    /// <summary>정상 종료 전에 큐에 남은 최신 작업공간과 세션 인덱스를 디스크까지 반영한다.</summary>
+    public static bool FlushPendingSaves() => SaveQueue.FlushAll();
 
     private static ProjectDto ToDto(ProjectItem p) => new ProjectDto
     {
@@ -271,9 +293,9 @@ public static class WorkspaceStore
         SplitRightActiveRef = p.SplitRightActiveRef,
     };
 
-    private static void SaveCore(ICollection<ProjectItem> list)
+    private static long? QueueSaveCore(ICollection<ProjectItem> list)
     {
-        if (System.Diagnostics.Debugger.IsAttached) return;
+        if (System.Diagnostics.Debugger.IsAttached) return null;
 
         try
         {
@@ -281,7 +303,7 @@ public static class WorkspaceStore
             int archivedCount = archived?.Count ?? 0;
             // 손상 로드로 빈 시작한 상태에서 빈 트리 저장은 격리 원본까지 묻어버린다 — 스킵.
             // (사용자가 프로젝트를 추가하면 비어있지 않게 되어 정상 저장·재생성된다.)
-            if (_loadDegraded && list.Count == 0 && archivedCount == 0) return;
+            if (_loadDegraded && list.Count == 0 && archivedCount == 0) return null;
 
             var projects = list.Select(ToDto).ToList();
             if (archived != null) projects.AddRange(archived.Select(ToDto));
@@ -301,11 +323,26 @@ public static class WorkspaceStore
                     Column = folder.Column,
                 }).ToList(),
             };
-            AtomicFile.WriteAllText(WorkspacePath,
-                JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true }));
-            _loadDegraded = false; // 정상 저장됨 — 이후 빈 가드 해제
-            ExportSessionsIndex(list); // 세션 릴레이용 인덱스도 함께 갱신(추가/삭제/이름변경 반영)
+            return SaveQueue.Enqueue(new SaveSnapshot(
+                JsonSerializer.Serialize(dto, SaveJsonOptions),
+                SerializeSessionsIndex(list)));
         }
-        catch { /* non-critical */ }
+        catch { return null; /* non-critical */ }
+    }
+
+    private static bool WriteSnapshot(SaveSnapshot snapshot)
+    {
+        try
+        {
+            AtomicFile.WriteAllText(WorkspacePath, snapshot.WorkspaceJson);
+            AtomicFile.WriteAllText(SessionsIndexPath, snapshot.SessionsIndexJson);
+            lock (_lock) _loadDegraded = false; // 정상 저장됨 — 이후 빈 가드 해제
+            return true;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"Workspace save failed: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
     }
 }

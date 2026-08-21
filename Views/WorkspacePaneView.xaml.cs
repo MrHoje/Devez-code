@@ -1122,19 +1122,25 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>프로젝트의 "마지막 활성 탭" 참조를 갱신하고, 바뀐 경우에만 workspace.json 에 영속.
     /// 분할 중 우측 패널은 좌측과 별도 필드(SplitRightActiveRef)에 기록한다 — 안 그러면 우측 활성 탭이
     /// 좌측의 LastActiveTabRef 를 덮어써, 돌아왔을 때 좌측이 직전 탭이 아닌 엉뚱한(첫) 탭을 복원한다.</summary>
-    private void RecordActiveTab(ProjectItem proj, string tabRef)
+    private bool SetActiveTabRef(ProjectItem proj, string tabRef)
     {
         if (_split && IsRightPane)
         {
-            if (proj.SplitRightActiveRef == tabRef) return;
+            if (proj.SplitRightActiveRef == tabRef) return false;
             proj.SplitRightActiveRef = tabRef;
         }
         else
         {
-            if (proj.LastActiveTabRef == tabRef) return;
+            if (proj.LastActiveTabRef == tabRef) return false;
             proj.LastActiveTabRef = tabRef;
         }
-        WorkspaceStore.Save(Projects);
+        return true;
+    }
+
+    private void RecordActiveTab(ProjectItem proj, string tabRef)
+    {
+        if (!SetActiveTabRef(proj, tabRef)) return;
+        WorkspaceStore.SaveDeferred(Projects);
     }
 
     private void PreloadProjectSessions(ProjectItem proj, SessionItem? except)
@@ -1325,9 +1331,9 @@ public partial class WorkspacePaneView : UserControl
         var session = new SessionItem { Name = sessionName, AgentId = agentId };
         proj.Tabs.Add(session);
         proj.IsExpanded = true;
-        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
-        SettingsService.SaveAgentForRoom(session.Id, agentId);
-        WorkspaceStore.Save(Projects);
+        SettingsService.SaveRoomRegistration(session.Id, proj.Path, agentId);
+        SetActiveTabRef(proj, "S:" + session.Id);
+        WorkspaceStore.SaveDeferred(Projects);
         if (ReferenceEquals(_activeProject, proj))
         {
             // 이 패널이 격리(분할 파트너) 중이면 새 세션도 먼저 화이트리스트에 넣어 활성화가 격리를 풀지 않게
@@ -1410,8 +1416,7 @@ public partial class WorkspacePaneView : UserControl
 
         proj.Tabs.Add(session);
         proj.IsExpanded = true;
-        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path); // RoomDir 은 에이전트 공통 저장소
-        SettingsService.SaveAgentForRoom(session.Id, agentId);
+        SettingsService.SaveRoomRegistration(session.Id, proj.Path, agentId); // RoomDir 은 에이전트 공통 저장소
         if (agentId == "gajae")
             SettingsService.SaveGajaeRoomSession(session.Id, forkedId!);   // 미리 확정 추적(마커 불필요)
         else if (agentId == "claude")
@@ -1424,7 +1429,8 @@ public partial class WorkspacePaneView : UserControl
             SettingsService.SaveDevezVibeRoomSession(session.Id, forkedId!); // 복사한 rollout id 로 바로 -r
         else
             SettingsService.SaveRoomForkSource(session.Id, srcSid!);        // opencode/grok: 첫 실행에 --fork 소비
-        WorkspaceStore.Save(Projects);
+        SetActiveTabRef(proj, "S:" + session.Id);
+        WorkspaceStore.SaveDeferred(Projects);
 
         // 포크는 "새 세션이 열리게" 하는 게 목적 → 항상 연다(다른 프로젝트면 OpenSession 이 전환).
         bool isolatedSameProj = _isolatedTabs != null && ReferenceEquals(_activeProject, proj);

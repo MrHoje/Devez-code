@@ -954,6 +954,9 @@ public partial class MainWindow : Window
             TerminalSessionManager.Instance.DisposeRoom(ShellRoomId, purgeTracking: false);
             foreach (var roomId in _wakeRoomIds)
                 TerminalSessionManager.Instance.DisposeRoom(roomId, purgeTracking: false);
+            // 창이 사라진 뒤 최신 스냅샷을 끝까지 반영한다. 평상시 UI 전환은 디스크 flush 를 기다리지 않는다.
+            WorkspaceStore.FlushPendingSaves();
+            SettingsService.FlushPendingSaves();
         };
     }
 

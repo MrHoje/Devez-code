@@ -2,18 +2,18 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$terminalSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\TerminalHostView.cs') -Raw
-$terminalHtml = Get-Content -LiteralPath (Join-Path $repoRoot 'Resources\Terminal\web\terminal.html') -Raw
-$paneSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\WorkspacePaneView.xaml.cs') -Raw
-$paneXaml = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\WorkspacePaneView.xaml') -Raw
-$browserSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\BrowserHostView.xaml.cs') -Raw
-$fileExplorerSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\FileExplorerView.xaml.cs') -Raw
-$pdfSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\PdfFileEditorView.cs') -Raw
-$monacoSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\MonacoHost.cs') -Raw
-$monacoDiffSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\MonacoDiffHostView.xaml.cs') -Raw
-$windowSource = Get-Content -LiteralPath (Join-Path $repoRoot 'MainWindow.xaml.cs') -Raw
-$appSource = Get-Content -LiteralPath (Join-Path $repoRoot 'App.xaml.cs') -Raw
-$notificationSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\NotificationPopup.xaml') -Raw
+$terminalSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\TerminalHostView.cs') -Raw -Encoding UTF8
+$terminalHtml = Get-Content -LiteralPath (Join-Path $repoRoot 'Resources\Terminal\web\terminal.html') -Raw -Encoding UTF8
+$paneSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\WorkspacePaneView.xaml.cs') -Raw -Encoding UTF8
+$paneXaml = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\WorkspacePaneView.xaml') -Raw -Encoding UTF8
+$browserSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\BrowserHostView.xaml.cs') -Raw -Encoding UTF8
+$fileExplorerSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\FileExplorerView.xaml.cs') -Raw -Encoding UTF8
+$pdfSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\PdfFileEditorView.cs') -Raw -Encoding UTF8
+$monacoSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\MonacoHost.cs') -Raw -Encoding UTF8
+$monacoDiffSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\MonacoDiffHostView.xaml.cs') -Raw -Encoding UTF8
+$windowSource = Get-Content -LiteralPath (Join-Path $repoRoot 'MainWindow.xaml.cs') -Raw -Encoding UTF8
+$appSource = Get-Content -LiteralPath (Join-Path $repoRoot 'App.xaml.cs') -Raw -Encoding UTF8
+$notificationSource = Get-Content -LiteralPath (Join-Path $repoRoot 'Views\NotificationPopup.xaml') -Raw -Encoding UTF8
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Assert-Match([string]$source, [string]$pattern, [string]$message) {
@@ -54,11 +54,11 @@ $acceptNativeSource = Get-SourceSlice $terminalSource 'private void AcceptNative
 $applyFocusSource = Get-SourceSlice $terminalSource 'private void ApplyTerminalFocus(' 'private async Task InitWebViewAsync()' 'Could not isolate terminal focus application.'
 $pageReadySource = Get-SourceSlice $terminalSource 'private void OnPageReady()' 'private void ApplyTerminalFontFamily()' 'Could not isolate page-ready replay.'
 $showFileDropSource = Get-SourceSlice $paneSource 'public void ShowFileDropOverlay()' 'private void HideFileDropOverlay(' 'Could not isolate file-drop overlay.'
-$suspendOnlySource = Get-SourceSlice $paneSource 'public async Task SuspendTerminalOnlyAsync(' '// ── 종료 오버레이용 2단계 suspend' 'Could not isolate terminal-only suspension.'
+$suspendOnlySource = Get-SourceSlice $paneSource 'public async Task SuspendTerminalOnlyAsync(' 'public async Task PrepareShutdownSnapshotAsync()' 'Could not isolate terminal-only suspension.'
 $resumeOnlySource = Get-SourceSlice $paneSource 'public void ResumeTerminalOnly(' 'public void DisposeTerminal()' 'Could not isolate terminal-only resume.'
 $tabClickSource = Get-SourceSlice $paneSource 'private void Tab_Click(' 'private void Tab_RightClick(' 'Could not isolate tab click routing.'
 $coordinatorSource = Get-SourceSlice $windowSource 'private bool IsWorkspaceNavigationBlocked =>' 'private async void RunPanelToggleCovered(' 'Could not isolate transition navigation coordinator.'
-$runPanelToggleSource = Get-SourceSlice $windowSource 'private async void RunPanelToggleCovered(Action change, bool imeBoundaryOnRestore = false)' '// ── 하단 터미널 패널' 'Could not isolate panel transition.'
+$runPanelToggleSource = Get-SourceSlice $windowSource 'private async void RunPanelToggleCovered(Action change, bool imeBoundaryOnRestore = false)' 'private async void ShellTerminalBtn_Click(' 'Could not isolate panel transition.'
 $toggleShellSource = Get-SourceSlice $windowSource 'private async Task ToggleShellPanelAsync(bool open)' 'private void UpdateShellToggleVisual()' 'Could not isolate shell transition.'
 $onPaneFocusSource = Get-SourceSlice $windowSource 'private void OnPaneFocusRequested(WorkspacePaneView pane)' 'private bool _inOwnershipRouting;' 'Could not isolate pane focus routing.'
 $splitOpenSource = Get-SourceSlice $windowSource 'private async Task AnimateSplitOpenAsync()' 'private void RestoreSplitState()' 'Could not isolate split-open transition.'

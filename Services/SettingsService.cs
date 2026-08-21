@@ -232,6 +232,8 @@ public static class SettingsService
 
     private static readonly object _lock = new();
     private static SettingsData? _current;
+    private static readonly JsonSerializerOptions SaveJsonOptions = new() { WriteIndented = true };
+    private static readonly CoalescingSaveQueue<string> SaveQueue = new(WriteSnapshot);
 
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "settings.json");
@@ -328,21 +330,46 @@ public static class SettingsService
         catch { return false; }
     }
 
-    private static bool TrySave()
+    private static string SerializeCurrent()
+        => JsonSerializer.Serialize(_current, SaveJsonOptions);
+
+    private static bool WriteSnapshot(string json)
     {
-        lock (_lock)
+        try
         {
-            try
-            {
-                AtomicFile.WriteAllText(SettingsPath,
-                    JsonSerializer.Serialize(_current, new JsonSerializerOptions { WriteIndented = true }));
-                return true;
-            }
-            catch { return false; }
+            AtomicFile.WriteAllText(SettingsPath, json);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"Settings save failed: {ex.GetType().Name}: {ex.Message}");
+            return false;
         }
     }
 
-    private static void Save() => _ = TrySave();
+    private static bool TrySave()
+    {
+        long version;
+        lock (_lock) version = SaveQueue.Enqueue(SerializeCurrent());
+        return SaveQueue.Flush(version);
+    }
+
+    private static void Save()
+    {
+        _ = TrySave();
+    }
+
+    private static void SaveDeferred()
+    {
+        try
+        {
+            lock (_lock) SaveQueue.Enqueue(SerializeCurrent());
+        }
+        catch { /* 전환 중 비핵심 영속 실패는 호출자 동작을 막지 않는다 */ }
+    }
+
+    /// <summary>정상 종료 전에 큐에 남은 최신 설정을 디스크까지 반영한다.</summary>
+    public static bool FlushPendingSaves() => SaveQueue.FlushAll();
     // ── 터미널 글꼴 ───────────────────────────────────────────────
     /// <summary>실행 중인 WebView2 터미널에 글꼴 변경을 즉시 전달한다. 빈 값은 Windows Terminal 기본값이다.</summary>
     public static event Action<string>? TerminalFontFamilyChanged;
@@ -558,6 +585,31 @@ public static class SettingsService
                 return;
             Current.ClaudeCodeRoomDirs[roomId] = dir;
             Save();
+        }
+    }
+
+    /// <summary>새 방의 경로와 에이전트를 한 스냅샷으로 저장해 중복 원자 쓰기를 피한다.</summary>
+    public static void SaveRoomRegistration(string roomId, string dir, string agentId)
+    {
+        lock (_lock)
+        {
+            bool changed = false;
+            if (!Current.ClaudeCodeRoomDirs.TryGetValue(roomId, out var currentDir)
+                || !string.Equals(currentDir, dir, StringComparison.Ordinal))
+            {
+                Current.ClaudeCodeRoomDirs[roomId] = dir;
+                changed = true;
+            }
+
+            var normalizedAgent = AgentRegistry.NormalizeId(agentId);
+            if (!Current.RoomAgents.TryGetValue(roomId, out var currentAgent)
+                || !string.Equals(currentAgent, normalizedAgent, StringComparison.Ordinal))
+            {
+                Current.RoomAgents[roomId] = normalizedAgent;
+                changed = true;
+            }
+
+            if (changed) SaveDeferred();
         }
     }
 
@@ -900,9 +952,15 @@ public static class SettingsService
 
     public static void SaveLastActive(string? projectPath, string? sessionId)
     {
-        Current.LastActiveProjectPath = projectPath;
-        Current.LastActiveSessionId = sessionId;
-        Save();
+        lock (_lock)
+        {
+            if (string.Equals(Current.LastActiveProjectPath, projectPath, StringComparison.Ordinal)
+                && string.Equals(Current.LastActiveSessionId, sessionId, StringComparison.Ordinal))
+                return;
+            Current.LastActiveProjectPath = projectPath;
+            Current.LastActiveSessionId = sessionId;
+            SaveDeferred();
+        }
     }
 
     // ── 중앙 패널 분할 상태 ──────────────────────────────────────
