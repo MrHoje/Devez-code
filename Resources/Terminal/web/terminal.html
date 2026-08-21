@@ -2988,6 +2988,25 @@
     }, 40);
   }
 
+  // display:none 이던 xterm/WebGL 캔버스를 다시 보일 때 버퍼는 정상이어도 마지막 페인트 타일이
+  // 남을 수 있다. 즉시 + 실제 표시 프레임 2회에 전체 행을 다시 그려 이전 세션의 우측 셀 잔상을
+  // 제거한다. 크기나 ConPTY 는 건드리지 않아 입력 상태·스크롤·TUI 컴포저는 그대로 보존한다.
+  function refreshShownTerminal(entry, roomId) {
+    const gen = (entry._showPaintGen || 0) + 1;
+    entry._showPaintGen = gen;
+    const repaint = function () {
+      if (entry._showPaintGen !== gen || terms[roomId] !== entry || activeRoomId !== roomId
+          || !entry.el.classList.contains('active')) return false;
+      try { entry.term.refresh(0, Math.max(0, entry.term.rows - 1)); } catch (e) {}
+      return true;
+    };
+    repaint();
+    requestAnimationFrame(function () {
+      if (!repaint()) return;
+      requestAnimationFrame(repaint);
+    });
+  }
+
   function show(roomId, agent, fontSizeOverride, reemit) {
     let entry = terms[roomId];
     const isNew = !entry;
@@ -3008,6 +3027,9 @@
     if (!_fitSuppressed) entry.fit.fit(); // 전환(커버) 중이면 중간 폭 fit 억제 → reveal 이 최종 폭에서 fit
     if (!_fitSuppressed) dlog('show afterFit room=' + roomId + ' now=' + entry.term.cols + 'x' + entry.term.rows
       + ' client=' + entry.el.clientWidth + 'x' + entry.el.clientHeight);
+    // 일반 세션↔세션 복귀는 크기가 같아 fit/onResize 가 no-op 이므로 별도 전체 재도색이 필요하다.
+    // 커버 전환은 xferReveal 이 동일한 전체 재도색을 담당하고, 새 방은 낡은 캔버스가 없어 제외한다.
+    if (!isNew && plainShow) refreshShownTerminal(entry, roomId);
     if (typeof entry.el._prepareImeCaret === 'function') entry.el._prepareImeCaret();
     entry.term.focus();
     if (isNew && typeof entry.el._resetImeOnInitialFocus === 'function')
