@@ -76,6 +76,9 @@
   let pendingQueuedMark = 0;
   let interruptRequested = false;
   let interruptWatchdog = 0;
+  // 턴 종료(result) 후에도 busy 가 안 꺼지는 stuck-ON 안전망: result 마다 무장, 새 이벤트마다 해제.
+  let busyWatchdog = 0;
+  const BUSY_WATCHDOG_MS = 15000;
   let sessionEvents = [];
   let historyStartIndex = 0;
   const historyBatchTurns = 60;
@@ -2532,6 +2535,9 @@
 
   function renderEvent(event, live = true) {
     if (!event || !event.type) return;
+    // 새 이벤트가 도착하면 stuck 감시를 리셋한다 — 실제 진행 중인 턴은 이벤트가 계속 오므로
+    // 워치독이 발동하지 않고, 아래 result 처리에서 busy 가 남을 때만 다시 무장한다.
+    if (live) clearBusyWatchdog();
     switch (event.type) {
       case "ready": setStatus("SDK 브리지 준비됨"); break;
       case "starting": setStatus("Claude에 연결하는 중…", "busy"); break;
@@ -2695,6 +2701,9 @@
         setStatus("Claude SDK 연결 종료");
         break;
     }
+    // result 를 처리했는데도 busy 가 남아 있으면(startsQueued 래칭 또는 pendingResult 미완결)
+    // 뒤이을 이벤트가 없어 영영 안 꺼질 수 있다 — 상한을 두고 강제 idle 로 되돌린다.
+    if (live && event.type === "result" && busy) armBusyWatchdog();
     if (!live) nearBottom = true;
   }
 
@@ -2734,6 +2743,7 @@
     resetConversationView();
     interruptRequested = false;
     clearInterruptWatchdog();
+    clearBusyWatchdog();
     setStatus("Claude SDK를 준비하는 중…");
     sessionEvents = Array.isArray(message.events) ? message.events : [];
     const saved = scrollPositions.get(roomId);
@@ -2868,6 +2878,32 @@
   function clearInterruptWatchdog() {
     clearTimeout(interruptWatchdog);
     interruptWatchdog = 0;
+  }
+
+  function clearBusyWatchdog() {
+    clearTimeout(busyWatchdog);
+    busyWatchdog = 0;
+  }
+
+  function armBusyWatchdog() {
+    clearBusyWatchdog();
+    busyWatchdog = setTimeout(forceIdleFromWatchdog, BUSY_WATCHDOG_MS);
+  }
+
+  function forceIdleFromWatchdog() {
+    busyWatchdog = 0;
+    if (!busy) return;
+    // 스트림이 안 끝나 pendingResult 가 막혀 있으면 즉시 flush 해서 완결시킨다.
+    for (const streamId of [...assistantStreams.keys()]) endAssistantStream(streamId, true);
+    for (const streamId of [...thinkingStreams.keys()]) endThinkingStream(streamId);
+    if (pendingResult) finishPendingResult();
+    if (!busy) return;
+    // result 자체가 안 왔거나 startsQueued 래칭으로 고착된 경우: 보수적으로 idle 로 되돌린다.
+    finalizeRunningTools(false);
+    setCompactRunning(false);
+    setBusy(false);
+    finishWorkingTimer(false);
+    setStatus("대화 준비됨", "ready");
   }
 
   function recoverInterruptedRequest(message, keepBusy = false) {

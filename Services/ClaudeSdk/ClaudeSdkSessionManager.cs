@@ -47,13 +47,20 @@ public sealed class ClaudeSdkSessionManager
         public StringBuilder? BufferedDeltaText { get; set; }
         public bool StoppedPublished { get; set; }
         public long WorkingStartedAtUnixMs { get; set; }
+        public long LastEventAtUnixMs { get; set; }
+        public bool BusyWatchdogArmed { get; set; }
     }
 
     public static ClaudeSdkSessionManager Instance { get; } = new();
 
+    // 턴 종료(result) 후에도 busy 가 안 꺼지는 stuck-ON 안전망: startsQueued 래칭·결과 유실로
+    // IsBusy 가 고착됐을 때, 마지막 이벤트 이후 이 시간만큼 조용하면 idle 로 재수렴한다.
+    private const long BusyWatchdogGraceMs = 15000;
+
     private readonly Dictionary<string, ManagedSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<ClaudeSdkEvent>> _retainedEvents = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private System.Windows.Threading.DispatcherTimer? _busyWatchdog;
 
     public event Action<string, ClaudeSdkEvent>? EventReceived;
 
@@ -212,7 +219,10 @@ public sealed class ClaudeSdkSessionManager
                     size = value.Size,
                 }).ToArray(),
             });
-            session.WorkingStartedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            session.WorkingStartedAtUnixMs = nowMs;
+            session.LastEventAtUnixMs = nowMs;
+            session.BusyWatchdogArmed = false;
             item.IsAlive = true;
             item.IsBusy = true;
             item.IsWaitingChoice = false;
@@ -273,6 +283,7 @@ public sealed class ClaudeSdkSessionManager
             await session.Bridge.SendAsync(new { type = "interrupt" });
             session.Item.IsBusy = false;
             session.Item.IsWaitingChoice = false;
+            session.BusyWatchdogArmed = false;
             Publish(roomId, new ClaudeSdkEvent("interrupting"), session);
             return true;
         }
@@ -330,6 +341,7 @@ public sealed class ClaudeSdkSessionManager
         }
         await session.Bridge.DisposeAsync();
         session.WorkingStartedAtUnixMs = 0;
+        session.BusyWatchdogArmed = false;
         session.Item.IsAlive = false;
         session.Item.IsBusy = false;
         session.Item.IsWaitingChoice = false;
@@ -360,6 +372,8 @@ public sealed class ClaudeSdkSessionManager
 
     private void OnBridgeEvent(ManagedSession session, ClaudeSdkEvent evt)
     {
+        // 어떤 이벤트든 도착 = 턴이 살아 있다는 신호. 워치독 무발동 근거로 최신 시각을 갱신한다.
+        session.LastEventAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (evt.Type is "assistant_delta" or "thinking_delta")
         {
             Publish(session.Item.Id, evt, session);
@@ -393,6 +407,7 @@ public sealed class ClaudeSdkSessionManager
                 item.IsWaitingChoice = false;
                 item.LastMessage = "";
                 session.WorkingStartedAtUnixMs = 0;
+                session.BusyWatchdogArmed = false;
                 break;
             case "config_changed" when evt.Input is { } input
                                                && input.ValueKind == JsonValueKind.Object
@@ -441,23 +456,30 @@ public sealed class ClaudeSdkSessionManager
                 {
                     item.IsBusy = true;
                     session.WorkingStartedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    // 이어질 큐 턴이 실제로 시작되지 않으면(브리지 카운트 오탐) 여기서 busy 가 고착된다.
+                    // 워치독을 무장해 조용하면 idle 로 되돌린다. 실제 턴이 시작되면 이벤트가 갱신한다.
+                    session.BusyWatchdogArmed = true;
+                    EnsureBusyWatchdog();
                 }
                 else
                 {
                     item.IsBusy = false;
                     session.WorkingStartedAtUnixMs = 0;
+                    session.BusyWatchdogArmed = false;
                 }
                 break;
             case "error":
                 item.IsBusy = false;
                 item.IsWaitingChoice = false;
                 session.WorkingStartedAtUnixMs = 0;
+                session.BusyWatchdogArmed = false;
                 break;
             case "stopped":
                 item.IsAlive = false;
                 item.IsBusy = false;
                 item.IsWaitingChoice = false;
                 session.WorkingStartedAtUnixMs = 0;
+                session.BusyWatchdogArmed = false;
                 session.StoppedPublished = true;
                 break;
         }
@@ -468,6 +490,44 @@ public sealed class ClaudeSdkSessionManager
         evt.Input is { ValueKind: JsonValueKind.Object } input
         && input.TryGetProperty("startsQueuedPrompt", out var starts)
         && starts.ValueKind == JsonValueKind.True;
+
+    // OnBridgeEvent 가 이미 UI 스레드에서 돌므로 여기서 DispatcherTimer 를 안전하게 만든다.
+    private void EnsureBusyWatchdog()
+    {
+        if (_busyWatchdog != null) return;
+        _busyWatchdog = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(3),
+        };
+        _busyWatchdog.Tick += (_, _) => ReconcileStuckBusy();
+        _busyWatchdog.Start();
+    }
+
+    private void ReconcileStuckBusy()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        ManagedSession[] snapshot;
+        lock (_sessions) snapshot = _sessions.Values.ToArray();
+        var anyArmed = false;
+        foreach (var session in snapshot)
+        {
+            if (!session.BusyWatchdogArmed) continue;
+            anyArmed = true;
+            var item = session.Item;
+            // 사용자 확인 대기는 정상적으로 busy 를 유지하므로 건드리지 않는다.
+            if (!item.IsBusy || item.IsWaitingChoice || !session.Bridge.IsRunning) continue;
+            if (now - session.LastEventAtUnixMs < BusyWatchdogGraceMs) continue;
+            session.BusyWatchdogArmed = false;
+            item.IsBusy = false;
+            session.WorkingStartedAtUnixMs = 0;
+            DiagLog.Write($"ClaudeSdk busy 워치독 idle 재수렴 room={item.Id}");
+        }
+        if (!anyArmed)
+        {
+            _busyWatchdog?.Stop();
+            _busyWatchdog = null;
+        }
+    }
 
     private void OnBridgeExited(ManagedSession session)
     {
@@ -481,6 +541,7 @@ public sealed class ClaudeSdkSessionManager
         session.Item.IsBusy = false;
         session.Item.IsWaitingChoice = false;
         session.WorkingStartedAtUnixMs = 0;
+        session.BusyWatchdogArmed = false;
         PublishStopped(session);
     }
 

@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.24.10", "2026-08-21", true, new[]
+          ("v1.24.11", "2026-08-21", true, new[]
+          {
+              "Claude Code GUI 모드에서 작업이 끝난 뒤에도 작업 중 표시가 계속 도는 문제를 수정했습니다.",
+          }),
+          ("v1.24.10", "2026-08-21", false, new[]
           {
               "세션을 전환하거나 새로 만들 때 간헐적으로 화면이 1~2초 멈추던 문제를 수정했습니다.",
           }),
