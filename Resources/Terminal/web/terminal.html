@@ -386,6 +386,45 @@
   }, true);
   window.addEventListener('blur', _hintCancel);
   function dlog(msg) { try { post({ type: 'diag', msg: '[dbg] ' + msg }); } catch (e) {} }
+
+  // xterm 6.0/addon-webgl 0.19는 같은 설정의 터미널끼리 글리프 아틀라스를 공유한다.
+  // 한 렌더러가 아틀라스를 비우면 다른 렌더러의 모델은 무효화되지 않아, 바뀐 셀만 보이고
+  // 나머지 글자가 사라질 수 있다(#6014). 업스트림 수정 전까지 clear 직후 같은 엔진의 WebGL
+  // 터미널을 한 프레임에 한 번 전체 재도색한다. 새 addon 연결 중 발생한 clear도 아래 attach 호출로 복구한다.
+  // BEGIN shared-webgl-atlas-guard
+  let _sharedAtlasRefresh5 = false;
+  let _sharedAtlasRefresh6 = false;
+  function scheduleSharedWebglRefresh(engine6, sourceRoomId, reason) {
+    if (engine6 ? _sharedAtlasRefresh6 : _sharedAtlasRefresh5) return;
+    if (engine6) _sharedAtlasRefresh6 = true;
+    else _sharedAtlasRefresh5 = true;
+    requestAnimationFrame(function () {
+      if (engine6) _sharedAtlasRefresh6 = false;
+      else _sharedAtlasRefresh5 = false;
+      let refreshed = 0;
+      for (const id in terms) {
+        const entry = terms[id];
+        if (!entry || entry.dead || !entry.webgl || entry.engine6 !== engine6) continue;
+        try {
+          entry.term.refresh(0, Math.max(0, entry.term.rows - 1));
+          refreshed++;
+        } catch (e) {}
+      }
+      dlog('webgl atlas refresh source=' + sourceRoomId + ' engine=' + (engine6 ? 'xterm6' : 'xterm5')
+        + ' reason=' + reason + ' rooms=' + refreshed);
+    });
+  }
+  function guardSharedWebglAtlas(entry, webgl, roomId) {
+    const renderer = webgl && webgl._renderer;
+    if (!renderer || typeof renderer.clearTextureAtlas !== 'function' || renderer._devezAtlasGuard) return;
+    const nativeClearTextureAtlas = renderer.clearTextureAtlas.bind(renderer);
+    renderer.clearTextureAtlas = function () {
+      nativeClearTextureAtlas();
+      scheduleSharedWebglRefresh(entry.engine6, roomId, 'clear');
+    };
+    renderer._devezAtlasGuard = true;
+  }
+  // END shared-webgl-atlas-guard
   function dumpBuf(roomId, tag) {
     try {
       const t = terms[roomId]; if (!t) return;
@@ -2620,7 +2659,7 @@
 
     term.open(el);
 
-    const entry = { term, fit, el, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
+    const entry = { term, fit, el, webgl: null, engine6: !!use6, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
     terms[roomId] = entry;
     // Claude 2.1.22x 는 시작 시 XTVERSION(CSI > 0 q) 응답 여부로 입력 증분 렌더와
     // 동기화 출력(?2026)을 결정한다. xterm 5/6 은 이 응답이 없어 Backspace 연타와 응답 출력이
@@ -2704,6 +2743,8 @@
         });
         term.loadAddon(webgl);
         entry.webgl = webgl;
+        guardSharedWebglAtlas(entry, webgl, roomId);
+        scheduleSharedWebglRefresh(entry.engine6, roomId, 'attach');
       } catch (e) { /* WebGL 미지원 환경 → DOM 렌더러 유지 */ }
     }
     // 렌더러 결정 결과를 남긴다(DevTools 비활성이라 diag.log 가 유일한 관측 창구).
