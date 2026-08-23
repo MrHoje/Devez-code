@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.24.12", "2026-08-22", true, new[]
+          ("v1.24.13", "2026-08-23", true, new[]
+          {
+              "codex와 Devez Vibe 터미널에서 간헐적으로 글자가 깨져 보이던 문제를 수정했습니다.",
+          }),
+          ("v1.24.12", "2026-08-22", false, new[]
           {
               "여러 터미널을 동시에 사용할 때 상태줄과 기존 글자가 간헐적으로 사라지는 문제를 수정했습니다.",
           }),

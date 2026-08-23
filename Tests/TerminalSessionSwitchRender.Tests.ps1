@@ -18,7 +18,7 @@ function Assert-Order([string]$text, [string[]]$needles, [string]$message) {
 
 $helper = [regex]::Match(
     $source,
-    '(?s)function refreshShownTerminal\(entry, roomId\) \{(.*?)\n  \}\n\n  function show'
+    '(?s)function refreshShownTerminal\(entry, roomId\) \{(.*?)\r?\n  \}\r?\n\r?\n  function show'
 ).Groups[1].Value
 if (-not $helper) { throw 'The session-return repaint helper was not found.' }
 
