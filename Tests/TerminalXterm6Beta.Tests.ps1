@@ -1,6 +1,17 @@
 $ErrorActionPreference = 'Stop'
 
 $webRoot = Join-Path $PSScriptRoot '..\Resources\Terminal\web'
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$terminalSource = [System.IO.File]::ReadAllText((Join-Path $webRoot 'terminal.html'), $utf8)
+$scrollbarStartMarker = '/* BEGIN xterm6-scrollbar-hide */'
+$scrollbarEndMarker = '/* END xterm6-scrollbar-hide */'
+$scrollbarStart = $terminalSource.IndexOf($scrollbarStartMarker)
+$scrollbarEnd = $terminalSource.IndexOf($scrollbarEndMarker)
+if ($scrollbarStart -lt 0 -or $scrollbarEnd -le $scrollbarStart) { throw 'The xterm6 scrollbar hiding CSS was not found.' }
+$scrollbarCss = $terminalSource.Substring(
+    $scrollbarStart,
+    $scrollbarEnd + $scrollbarEndMarker.Length - $scrollbarStart
+)
 $browser = @(
     "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
     "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
@@ -15,18 +26,20 @@ try {
     foreach ($name in @('xterm6.min.js', 'addon-fit6.min.js', 'addon-webgl6.min.js', 'xterm.min.css')) {
         Copy-Item -LiteralPath (Join-Path $webRoot $name) -Destination (Join-Path $tempDir $name)
     }
+    [System.IO.File]::WriteAllText((Join-Path $tempDir 'terminal-scrollbar.css'), $scrollbarCss, $utf8)
 
     $fixturePath = Join-Path $tempDir 'fixture.html'
     @'
 <!doctype html>
 <meta charset="utf-8">
 <link rel="stylesheet" href="xterm.min.css">
+<link rel="stylesheet" href="terminal-scrollbar.css">
 <style>
   body { margin: 0; background: #111; }
   .term { display: inline-block; width: 640px; height: 280px; }
 </style>
 <body data-result="pending">
-<div id="a" class="term"></div><div id="b" class="term"></div>
+<div id="a" class="term term-container agent-codex"></div><div id="b" class="term term-container agent-devezvibe"></div>
 <script>
 window.addEventListener('error', function (event) {
   document.body.dataset.result = 'load-error|' + String(event.message || event.error || 'unknown')
@@ -59,9 +72,25 @@ window.addEventListener('error', function (event) {
       setTimeout(finish, 100);
       requestAnimationFrame(() => requestAnimationFrame(finish));
     });
+    const refreshAndWait = term => new Promise(resolve => {
+      let done = false;
+      let subscription;
+      let timer;
+      const finish = rendered => {
+        if (done) return;
+        done = true;
+        if (subscription) subscription.dispose();
+        if (timer) clearTimeout(timer);
+        resolve(rendered);
+      };
+      subscription = term.onRender(() => finish(true));
+      timer = setTimeout(() => finish(false), 1000);
+      term.refresh(0, term.rows - 1);
+    });
     const content = Array.from({ length: 900 }, (_, i) => String.fromCodePoint(0x400 + i)).join('');
-    await write(termA, content);
-    await write(termB, 'shared atlas regression\r\n' + content);
+    const overflow = Array.from({ length: 80 }, (_, i) => 'scrollback-' + i + '\r\n').join('');
+    await write(termA, content + '\r\n' + overflow);
+    await write(termB, 'shared atlas regression\r\n' + content + '\r\n' + overflow);
     await paint();
 
     const atlasA = webglA._renderer && webglA._renderer._charAtlas;
@@ -76,20 +105,32 @@ window.addEventListener('error', function (event) {
     await write(termB, '\x1b[1;1Hcheck');
     const after = atlasA && atlasA.pageLayoutVersion;
     let seen;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      termB.refresh(0, termB.rows - 1);
-      await paint();
+    let rendered = false;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      rendered = await refreshAndWait(termB);
       const glyphB = webglB._renderer && webglB._renderer._glyphRenderer
         && webglB._renderer._glyphRenderer.value;
       seen = glyphB && glyphB._lastSeenPageLayoutVersion;
-      if (seen === after) break;
+      if (rendered && seen === after) break;
     }
     const canvases = document.querySelectorAll('.xterm-screen canvas');
+    const scrollbars = Array.from(document.querySelectorAll('.xterm-scrollbar'));
+    const verticalScrollbars = scrollbars.filter(element => element.classList.contains('xterm-vertical'));
+    verticalScrollbars.forEach(element => element.classList.remove('xterm-invisible'));
+    const scrollbarHostStyle = document.querySelector('link[href="terminal-scrollbar.css"]');
+    const scrollbarsHidden = verticalScrollbars.length === 2
+      && verticalScrollbars.every(element => getComputedStyle(element).display === 'none');
+    scrollbarHostStyle.disabled = true;
+    void document.body.offsetWidth;
+    const visibleWithoutHost = verticalScrollbars.length === 2
+      && verticalScrollbars.every(element => getComputedStyle(element).display !== 'none');
     const ok = atlasA && atlasA === atlasB && mouseCompat && Number.isFinite(before) && after > before
-      && (!Number.isFinite(seen) || seen === after) && canvases.length >= 2 && contextLosses === 0;
+      && rendered && seen === after && canvases.length >= 2
+      && visibleWithoutHost && scrollbarsHidden && contextLosses === 0;
     document.body.dataset.result = ok
       ? 'ok|' + before + '|' + after + '|' + canvases.length
-      : 'fail|' + [!!atlasA, atlasA === atlasB, !!mouseCompat, before, after, seen, canvases.length, contextLosses].join('|');
+      : 'fail|' + [!!atlasA, atlasA === atlasB, !!mouseCompat, before, after, seen, rendered, canvases.length,
+          scrollbars.length, verticalScrollbars.length, visibleWithoutHost, scrollbarsHidden, contextLosses].join('|');
     termA.dispose(); termB.dispose();
   } catch (error) {
     document.body.dataset.result = 'error|' + String(error && error.stack || error).replace(/[\r\n]+/g, ' ');
@@ -124,4 +165,4 @@ finally {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output 'PASS: xterm6 beta core, fit, and WebGL load together and propagate a shared atlas clear.'
+Write-Output 'PASS: xterm6 beta core, fit, WebGL, shared atlas propagation, and host scrollbar hiding work together.'

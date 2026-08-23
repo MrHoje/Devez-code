@@ -27,12 +27,16 @@
   /* 스크롤바 숨김 (휠 스크롤은 동작) */
   .xterm .xterm-viewport { scrollbar-width: none; }
   .xterm .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
-  /* codex·devezvibe(xterm 6.x)는 VS Code 식 오버레이 스크롤바(.xterm-scrollable-element>.scrollbar>.slider)와
-     그림자(.shadow)를 쓴다. 위 네이티브 스크롤바 숨김 규칙에 안 걸리므로 별도로 숨긴다. */
+  /* codex·devezvibe(xterm 6.x)는 별도 오버레이 스크롤바를 쓴다. 6.1의 .xterm-scrollbar와
+     이전 .scrollbar/.shadow 모두 위 네이티브 스크롤바 숨김 규칙에 안 걸리므로 별도로 숨긴다. */
+  /* BEGIN xterm6-scrollbar-hide */
+  .term-container.agent-codex .xterm-scrollable-element > .xterm-scrollbar,
   .term-container.agent-codex .xterm-scrollable-element > .scrollbar,
   .term-container.agent-codex .xterm-scrollable-element > .shadow,
+  .term-container.agent-devezvibe .xterm-scrollable-element > .xterm-scrollbar,
   .term-container.agent-devezvibe .xterm-scrollable-element > .scrollbar,
   .term-container.agent-devezvibe .xterm-scrollable-element > .shadow { display: none !important; }
+  /* END xterm6-scrollbar-hide */
   /* 하단 검정 줄 = 6.x 뷰포트의 background-color:#000 이 콘텐츠(테마 배경) 아래로 노출된 것.
      codex 뷰포트/스크롤영역 배경을 투명으로 눌러 터미널 테마 배경만 보이게 한다. */
   .term-container.agent-codex .xterm .xterm-viewport,
