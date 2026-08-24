@@ -28,7 +28,7 @@ public partial class MiniBrowserWindow : Window
     private const string StateKey = SettingsService.MiniBrowserStateKey;
 
     /// <summary>GPU 렌더에서 쓰는 라운드 반경. 소프트웨어 렌더는 DWM 고정 반경(8)을 따른다.</summary>
-    private const double GpuCornerRadius = 16;
+    private const double GpuCornerRadius = 20;
     private const double DwmCornerRadius = 8;
 
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
