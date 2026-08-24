@@ -105,7 +105,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.24.14", "2026-08-23", true, new[]
+          ("v1.25.0", "2026-08-24", true, new[]
+          {
+              "타이틀바 버튼으로 여닫는 미니 웹 브라우저를 추가했습니다.",
+              "미니 브라우저 시작 주소를 설정 > 브라우저에서 지정할 수 있습니다.",
+          }),
+          ("v1.24.14", "2026-08-23", false, new[]
           {
               "codex와 Devez Vibe 터미널 오른쪽에 동작하지 않는 스크롤바가 표시되던 문제를 수정했습니다.",
           }),
