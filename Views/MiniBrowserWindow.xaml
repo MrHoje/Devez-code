@@ -21,15 +21,14 @@
             BorderThickness="1"
             SnapsToDevicePixels="False">
         <Grid x:Name="Root">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="26"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+            <!-- 웹 화면이 창 전체를 채운다(상단에 별도 헤더 영역을 두지 않는다). -->
+            <Grid x:Name="BrowserHost"/>
 
-            <!-- 헤더: 창 이동용 띠. 닫기 버튼은 마우스를 올릴 때만 보인다. -->
-            <Border x:Name="Header" Grid.Row="0"
+            <!-- 창 이동·닫기용 오버레이 띠. 평소에는 아무것도 보이지 않고, 마우스를 올리면 닫기 버튼만 나타난다. -->
+            <Border x:Name="Header"
+                    VerticalAlignment="Top" Height="26"
                     Background="Transparent"
-                    Padding="0,0,4,0"
+                    Padding="0,0,6,0"
                     MouseLeftButtonDown="Header_MouseLeftButtonDown">
                 <Button x:Name="CloseBtn"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -50,9 +49,6 @@
                                Foreground="{DynamicResource TextMutedBrush}"/>
                 </Button>
             </Border>
-
-            <!-- 브라우저 본문 -->
-            <Grid x:Name="BrowserHost" Grid.Row="1"/>
         </Grid>
     </Border>
 </Window>
