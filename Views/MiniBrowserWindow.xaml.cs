@@ -272,8 +272,8 @@ public partial class MiniBrowserWindow : Window
             // 새 창 요청은 같은 뷰에서 열기(팝업 창 대신 인라인 이동)
             core.NewWindowRequested += (_, args) => { args.Handled = true; NavigateCore(args.Uri); };
             // 페이지가 그려진 뒤 배경색을 읽어 여백을 같은 색으로 칠한다.
-            core.DOMContentLoaded += (_, _) => _ = UpdateBackgroundFromPageAsync();
-            core.NavigationCompleted += (_, _) => _ = UpdateBackgroundFromPageAsync();
+            core.DOMContentLoaded += (_, _) => RefreshPageBackground();
+            core.NavigationCompleted += (_, _) => RefreshPageBackground();
 
             NavigateCore(_pendingUrl ?? SettingsService.LoadMiniBrowserHomeUrl());
             _pendingUrl = null;
@@ -289,6 +289,23 @@ public partial class MiniBrowserWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(24),
             });
+        }
+    }
+
+    private int _bgSampleToken;
+
+    /// <summary>페이지 배경색을 로드 직후부터 잠시 동안 여러 번 다시 읽는다.
+    /// claude.ai 같은 SPA 는 NavigationCompleted 뒤에도 한동안 실제 배경을 그리므로, 한 번만 읽으면
+    /// 이른(placeholder) 색을 잡는다. 마지막 값이 이기게 하고, 더 최근 요청이 오면 이전 루프는 멈춘다.</summary>
+    private async void RefreshPageBackground()
+    {
+        int token = ++_bgSampleToken;
+        int[] delays = { 0, 200, 500, 1000, 1800 };
+        foreach (var d in delays)
+        {
+            if (d > 0) await Task.Delay(d);
+            if (token != _bgSampleToken) return;
+            await UpdateBackgroundFromPageAsync();
         }
     }
 
@@ -415,7 +432,7 @@ public partial class MiniBrowserWindow : Window
             if (_view.CoreWebView2 is { } core)
             {
                 core.Profile.PreferredColorScheme = PreferredScheme;
-                _ = UpdateBackgroundFromPageAsync();   // 테마가 바뀌면 배경색도 다시 읽는다
+                RefreshPageBackground();   // 테마가 바뀌면 배경색도 다시 읽는다
             }
         }
         catch { /* 해제 중 등 */ }
