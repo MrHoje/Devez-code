@@ -8,7 +8,7 @@
         Background="{DynamicResource BgBrush}"
         FontFamily="{StaticResource PretendardFont}">
     <shell:WindowChrome.WindowChrome>
-        <!-- 리사이즈 적중 판정은 코드(WM_NCHITTEST)에서 직접 한다 — 변/모서리를 더 넉넉하게 잡기 위해. -->
+        <!-- 리사이즈는 아래 네 변 팝업이 담당한다(웹 화면이 HWND 라 창 테두리 판정이 오지 않음). -->
         <shell:WindowChrome CaptionHeight="0"
                             ResizeBorderThickness="0"
                             CornerRadius="0"
@@ -25,7 +25,7 @@
             <Grid x:Name="BrowserHost"/>
 
             <!-- 컨트롤박스: 웹 화면은 별도 HWND 라 WPF 요소로는 그 위를 덮을 수 없다.
-                 팝업은 자체 HWND 라 웹 화면 위에 뜬다. 창 이동 전용(드래그). -->
+                 팝업은 자체 HWND 라 웹 화면 위에 뜬다. 창 이동(드래그) + 닫기. -->
             <Popup x:Name="HeaderPopup"
                    Placement="Relative"
                    PlacementTarget="{Binding ElementName=Root}"
@@ -40,26 +40,43 @@
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="0,0,0,1"
                         CornerRadius="7,7,0,0"
+                        Padding="0,0,6,0"
                         ClipToBounds="True"
-                        MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown"
-                        MouseMove="HeaderBar_MouseMove"
-                        MouseLeftButtonUp="HeaderBar_MouseLeftButtonUp"/>
+                        MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown">
+                    <Button x:Name="CloseBtn"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Width="20" Height="20"
+                            Style="{StaticResource IconButton}"
+                            Cursor="Arrow" ToolTip="닫기"
+                            Click="CloseBtn_Click">
+                        <TextBlock Text="&#x2715;" FontSize="11"
+                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                </Border>
             </Popup>
-            <!-- 리사이즈 그립: 웹 화면은 별도 HWND 라 그 위에서는 창 테두리 판정이 오지 않는다.
-                 팝업은 자체 HWND 라 웹 화면 위에 올라가므로 우하단 모서리 그립으로 크기를 조절한다. -->
-            <Popup x:Name="GripPopup"
-                   Placement="Relative"
-                   PlacementTarget="{Binding ElementName=Root}"
-                   AllowsTransparency="True"
-                   StaysOpen="True"
-                   IsOpen="False">
-                <Border x:Name="Grip"
-                        Width="18" Height="18"
-                        Background="Transparent"
-                        Cursor="SizeNWSE"
-                        MouseLeftButtonDown="Grip_MouseLeftButtonDown"
-                        MouseMove="Grip_MouseMove"
-                        MouseLeftButtonUp="Grip_MouseLeftButtonUp"/>
+
+            <!-- 리사이즈 영역: 웹 화면은 별도 HWND 라 그 위에서는 창 테두리 판정이 오지 않는다.
+                 팝업은 자체 HWND 라 웹 화면 위에 올라가므로 네 변에 투명 띠를 겹쳐 리사이즈를 받는다.
+                 각 띠의 양 끝은 모서리(대각선) 리사이즈로 처리한다. -->
+            <Popup x:Name="EdgeLeftPopup" Placement="Relative" PlacementTarget="{Binding ElementName=Root}"
+                   AllowsTransparency="True" StaysOpen="True" IsOpen="False">
+                <Border x:Name="EdgeLeft" Background="Transparent" Cursor="SizeWE"
+                        MouseMove="Edge_MouseMove" MouseLeftButtonDown="Edge_MouseLeftButtonDown"/>
+            </Popup>
+            <Popup x:Name="EdgeRightPopup" Placement="Relative" PlacementTarget="{Binding ElementName=Root}"
+                   AllowsTransparency="True" StaysOpen="True" IsOpen="False">
+                <Border x:Name="EdgeRight" Background="Transparent" Cursor="SizeWE"
+                        MouseMove="Edge_MouseMove" MouseLeftButtonDown="Edge_MouseLeftButtonDown"/>
+            </Popup>
+            <Popup x:Name="EdgeTopPopup" Placement="Relative" PlacementTarget="{Binding ElementName=Root}"
+                   AllowsTransparency="True" StaysOpen="True" IsOpen="False">
+                <Border x:Name="EdgeTop" Background="Transparent" Cursor="SizeNS"
+                        MouseMove="Edge_MouseMove" MouseLeftButtonDown="Edge_MouseLeftButtonDown"/>
+            </Popup>
+            <Popup x:Name="EdgeBottomPopup" Placement="Relative" PlacementTarget="{Binding ElementName=Root}"
+                   AllowsTransparency="True" StaysOpen="True" IsOpen="False">
+                <Border x:Name="EdgeBottom" Background="Transparent" Cursor="SizeNS"
+                        MouseMove="Edge_MouseMove" MouseLeftButtonDown="Edge_MouseLeftButtonDown"/>
             </Popup>
         </Grid>
     </Border>

@@ -153,16 +153,16 @@ public partial class MiniBrowserWindow : Window
         _browserThemeChangedHandler = ApplyColorScheme;
         SettingsService.BrowserThemeChanged += _browserThemeChangedHandler;
 
-        Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); SyncGrip(); };
-        LocationChanged += (_, _) => { SyncHeaderBar(); SyncGrip(); };
+        Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); SyncEdges(); };
+        LocationChanged += (_, _) => { SyncHeaderBar(); SyncEdges(); };
         Deactivated += (_, _) => SetHeaderShown(false);   // 팝업은 별도 창이라 창이 뒤로 가면 직접 내린다
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
         IsVisibleChanged += (_, _) =>
         {
             if (_hiddenByUser && IsVisible) { Hide(); return; }
-            if (IsVisible) { StartHoverWatch(); SyncGrip(); }
-            else { StopHoverWatch(); GripPopup.IsOpen = false; }
+            if (IsVisible) { StartHoverWatch(); SyncEdges(); }
+            else { StopHoverWatch(); SyncEdges(); }
         };
     }
 
@@ -170,7 +170,7 @@ public partial class MiniBrowserWindow : Window
     {
         Loaded -= OnLoadedFirst;
         ApplyRoundedClip();
-        SyncGrip();
+        SyncEdges();
         _ = StartBrowserAsync();
     }
 
@@ -189,7 +189,6 @@ public partial class MiniBrowserWindow : Window
         base.OnSourceInitialized(e);
         RestorePlacement();
         DisableEdgeSnap();
-        HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(ResizeHitTestHook);
 
         // DWM 이 창 자체를 라운드로 깎아 자식 HWND(웹 화면)까지 매끄럽게 잘린다.
         try
@@ -199,49 +198,6 @@ public partial class MiniBrowserWindow : Window
                 DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
         }
         catch { }
-    }
-
-    // ── 리사이즈 적중 판정 ────────────────────────────────────────────
-    // WindowChrome 의 ResizeBorderThickness 는 변과 모서리를 같은 두께로 잡아 모서리를 집기가 어렵다.
-    // 직접 판정해 변은 조금, 모서리는 넉넉하게 준다.
-    private const int WM_NCHITTEST = 0x0084;
-    // 웹 화면이 창을 꽉 채우므로 이 판정은 창 테두리(1px)와 컨트롤박스 영역에서만 실제로 온다.
-    // 넓은 리사이즈는 우하단 그립 팝업이 담당한다.
-    private const double EdgeGrip = 8;
-    private const double CornerGrip = 24;
-
-    private const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
-                      HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
-
-    private IntPtr ResizeHitTestHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        if (msg != WM_NCHITTEST || WindowState != WindowState.Normal) return IntPtr.Zero;
-        if (!GetCursorPos(out var cur)) return IntPtr.Zero;
-
-        Point p;
-        try { p = PointFromScreen(new Point(cur.X, cur.Y)); }
-        catch { return IntPtr.Zero; }
-
-        double w = ActualWidth, h = ActualHeight;
-        if (w <= 0 || h <= 0) return IntPtr.Zero;
-        if (p.X < 0 || p.Y < 0 || p.X > w || p.Y > h) return IntPtr.Zero;
-
-        bool left = p.X <= CornerGrip, right = p.X >= w - CornerGrip;
-        bool top = p.Y <= CornerGrip, bottom = p.Y >= h - CornerGrip;
-
-        int hit = 0;
-        if (left && top) hit = HTTOPLEFT;
-        else if (right && top) hit = HTTOPRIGHT;
-        else if (left && bottom) hit = HTBOTTOMLEFT;
-        else if (right && bottom) hit = HTBOTTOMRIGHT;
-        else if (p.X <= EdgeGrip) hit = HTLEFT;
-        else if (p.X >= w - EdgeGrip) hit = HTRIGHT;
-        else if (p.Y <= EdgeGrip) hit = HTTOP;
-        else if (p.Y >= h - EdgeGrip) hit = HTBOTTOM;
-
-        if (hit == 0) return IntPtr.Zero;
-        handled = true;
-        return new IntPtr(hit);
     }
 
     /// <summary>가장자리 스냅 차단. 리사이즈(WS_THICKFRAME)는 그대로 두고 최대화 비트만 뗀다.</summary>
@@ -440,85 +396,108 @@ public partial class MiniBrowserWindow : Window
         HeaderPopup.HorizontalOffset -= 1;
     }
 
-    // ── 우하단 리사이즈 그립 ───────────────────────────────────────────
-    private const double GripSize = 18;
+    // ── 리사이즈 영역(네 변 팝업) ──────────────────────────────────────
+    // 웹 화면이 HWND 라 창 테두리 판정이 오지 않는다. 팝업은 자체 HWND 라 그 위에 올라가므로
+    // 창 "바깥" 으로 8px 띠를 두 개씩 붙여 웹 화면을 전혀 가리지 않고 리사이즈를 받는다.
+    private const double EdgeThickness = 8;
 
-    private NativePoint? _resizeOrigin;
-    private Size _sizeOrigin;
+    /// <summary>변 띠의 양 끝 이 길이만큼은 모서리(대각선) 리사이즈로 다룬다.</summary>
+    private const double CornerZone = 26;
 
-    /// <summary>그립을 창 우하단에 붙인다. 창이 움직이거나 크기가 바뀔 때마다 다시 계산한다.</summary>
-    private void SyncGrip()
+    private const int WM_NCLBUTTONDOWN = 0x00A1;
+    private const int HTCAPTION = 2;
+
+    // 비클라이언트 적중 코드 — 시스템에 리사이즈를 맡길 때 방향으로 넘긴다.
+    private const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
+                      HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    /// <summary>네 변 띠를 창 바깥에 붙인다. 창이 움직이거나 크기가 바뀔 때마다 다시 계산한다.</summary>
+    private void SyncEdges()
     {
-        if (!IsVisible) { GripPopup.IsOpen = false; return; }
-        if (Root.ActualWidth <= 0 || Root.ActualHeight <= 0) return;
+        if (!IsVisible)
+        {
+            EdgeLeftPopup.IsOpen = EdgeRightPopup.IsOpen = EdgeTopPopup.IsOpen = EdgeBottomPopup.IsOpen = false;
+            return;
+        }
+        double w = Root.ActualWidth, h = Root.ActualHeight, t = EdgeThickness;
+        if (w <= 0 || h <= 0) return;
 
-        GripPopup.HorizontalOffset = Root.ActualWidth - GripSize;
-        GripPopup.VerticalOffset = Root.ActualHeight - GripSize;
-        if (!GripPopup.IsOpen) GripPopup.IsOpen = true;
+        Place(EdgeLeftPopup, EdgeLeft, -t, -t, t, h + t * 2);
+        Place(EdgeRightPopup, EdgeRight, w, -t, t, h + t * 2);
+        Place(EdgeTopPopup, EdgeTop, 0, -t, w, t);
+        Place(EdgeBottomPopup, EdgeBottom, 0, h, w, t);
+
+        static void Place(System.Windows.Controls.Primitives.Popup popup, FrameworkElement band,
+                          double x, double y, double width, double height)
+        {
+            band.Width = width;
+            band.Height = height;
+            popup.HorizontalOffset = x;
+            popup.VerticalOffset = y;
+            if (!popup.IsOpen) popup.IsOpen = true;
+        }
     }
 
-    private void Grip_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    /// <summary>커서가 띠의 어느 위치에 있는지로 방향을 정한다(양 끝은 모서리).</summary>
+    private int ResolveEdgeHit(FrameworkElement band, Point p)
     {
-        if (e.ChangedButton != MouseButton.Left) return;
-        if (!GetCursorPos(out var cur)) return;
-        _resizeOrigin = cur;
-        _sizeOrigin = new Size(Width, Height);
-        Grip.CaptureMouse();
+        bool vertical = ReferenceEquals(band, EdgeLeft) || ReferenceEquals(band, EdgeRight);
+        bool left = ReferenceEquals(band, EdgeLeft);
+        bool top = ReferenceEquals(band, EdgeTop);
+
+        if (vertical)
+        {
+            if (p.Y <= CornerZone) return left ? HTTOPLEFT : HTTOPRIGHT;
+            if (p.Y >= band.ActualHeight - CornerZone) return left ? HTBOTTOMLEFT : HTBOTTOMRIGHT;
+            return left ? HTLEFT : HTRIGHT;
+        }
+
+        if (p.X <= CornerZone) return top ? HTTOPLEFT : HTBOTTOMLEFT;
+        if (p.X >= band.ActualWidth - CornerZone) return top ? HTTOPRIGHT : HTBOTTOMRIGHT;
+        return top ? HTTOP : HTBOTTOM;
     }
 
-    private void Grip_MouseMove(object sender, MouseEventArgs e)
+    private void Edge_MouseMove(object sender, MouseEventArgs e)
     {
-        if (_resizeOrigin is not { } origin || e.LeftButton != MouseButtonState.Pressed) return;
-        if (!GetCursorPos(out var cur)) return;
-
-        var delta = new Vector(cur.X - origin.X, cur.Y - origin.Y);
-        if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
-            delta = target.TransformFromDevice.Transform(delta);   // 화면 픽셀 → DIP
-
-        Width = Math.Max(MinWidth, _sizeOrigin.Width + delta.X);
-        Height = Math.Max(MinHeight, _sizeOrigin.Height + delta.Y);
+        if (sender is not FrameworkElement band) return;
+        band.Cursor = ResolveEdgeHit(band, e.GetPosition(band)) switch
+        {
+            HTTOPLEFT or HTBOTTOMRIGHT => Cursors.SizeNWSE,
+            HTTOPRIGHT or HTBOTTOMLEFT => Cursors.SizeNESW,
+            HTLEFT or HTRIGHT          => Cursors.SizeWE,
+            _                          => Cursors.SizeNS,
+        };
     }
 
-    private void Grip_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    /// <summary>리사이즈는 시스템에 맡긴다 — 창에 비클라이언트 클릭을 보내면 표준 크기 조절이 시작된다.</summary>
+    private void Edge_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (_resizeOrigin == null) return;
-        _resizeOrigin = null;
-        Grip.ReleaseMouseCapture();
-        SavePlacement();
+        if (sender is not FrameworkElement band) return;
+        e.Handled = true;
+        BeginSystemDrag(ResolveEdgeHit(band, e.GetPosition(band)));
     }
 
-    // ── 컨트롤박스 드래그로 창 이동 ────────────────────────────────────
-    // 팝업은 별도 HWND 라 Window.DragMove() 가 통하지 않는다. 커서 이동량을 직접 창 위치에 반영한다.
-    private NativePoint? _dragOrigin;
-    private Point _windowOrigin;
-
+    /// <summary>컨트롤박스 드래그로 창 이동 — 이동도 같은 방식으로 시스템에 맡긴다.
+    /// (팝업은 별도 HWND 라 Window.DragMove() 가 통하지 않는다.)</summary>
     private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
-        if (!GetCursorPos(out var cur)) return;
-        _dragOrigin = cur;
-        _windowOrigin = new Point(Left, Top);
-        HeaderBar.CaptureMouse();
+        e.Handled = true;
+        BeginSystemDrag(HTCAPTION);
     }
 
-    private void HeaderBar_MouseMove(object sender, MouseEventArgs e)
+    private void BeginSystemDrag(int hit)
     {
-        if (_dragOrigin is not { } origin || e.LeftButton != MouseButtonState.Pressed) return;
-        if (!GetCursorPos(out var cur)) return;
-
-        var delta = new Vector(cur.X - origin.X, cur.Y - origin.Y);
-        if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
-            delta = target.TransformFromDevice.Transform(delta);   // 화면 픽셀 → DIP
-
-        Left = _windowOrigin.X + delta.X;
-        Top = _windowOrigin.Y + delta.Y;
-    }
-
-    private void HeaderBar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        if (_dragOrigin == null) return;
-        _dragOrigin = null;
-        HeaderBar.ReleaseMouseCapture();
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        ReleaseCapture();
+        SendMessage(hwnd, WM_NCLBUTTONDOWN, new IntPtr(hit), IntPtr.Zero);
         SavePlacement();
     }
 
@@ -575,6 +554,8 @@ public partial class MiniBrowserWindow : Window
         OpenStateChanged?.Invoke();
     }
 
+    private void CloseBtn_Click(object sender, RoutedEventArgs e) => HideForLater();
+
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         base.OnClosing(e);
@@ -589,7 +570,7 @@ public partial class MiniBrowserWindow : Window
         try { SettingsService.BrowserThemeChanged -= _browserThemeChangedHandler; } catch { }
         _hoverTimer?.Stop();
         HeaderPopup.IsOpen = false;
-        GripPopup.IsOpen = false;
+        EdgeLeftPopup.IsOpen = EdgeRightPopup.IsOpen = EdgeTopPopup.IsOpen = EdgeBottomPopup.IsOpen = false;
         try { _view.Dispose(); } catch { }
         OpenStateChanged?.Invoke();
     }

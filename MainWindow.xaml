@@ -118,7 +118,7 @@
                     <!-- ── 미니 브라우저 창 (메인 창 위에 겹쳐 띄우는 작은 브라우저) ──── -->
                     <Button x:Name="MiniBrowserBtn" Click="MiniBrowserBtn_Click"
                             Style="{StaticResource TitleBarChipButton}"
-                            ToolTip="미니 브라우저 열기/닫기 (창에서 F5 = 새로고침)"
+                            ToolTip="미니 브라우저 열기/닫기 (F5)"
                             ToolTipService.InitialShowDelay="350"
                             ToolTipService.ShowDuration="8000"
                             ToolTipService.BetweenShowDelay="0">
