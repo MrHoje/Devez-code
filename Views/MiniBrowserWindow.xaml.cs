@@ -17,7 +17,7 @@ namespace DevezCode.Views;
 /// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
 ///
 /// 리사이즈: 웹 화면(별도 HWND)이 창 테두리를 가려 표준 리사이즈 판정이 오지 않으므로, 웹 화면을
-/// 4px 안으로 들여 창 테두리 여백을 노출한다. 그 여백에서 WindowChrome 표준 리사이즈가 동작하고,
+/// 6px 안으로 들여 창 테두리 여백을 노출한다. 그 여백에서 WindowChrome 표준 리사이즈가 동작하고,
 /// 여백은 현재 페이지 배경색으로 칠해 이음새가 보이지 않게 한다(이동/로드마다 갱신).
 ///
 /// 닫기는 창을 없애지 않고 숨기기다 — 앱이 살아 있는 동안 인스턴스를 유지해 다시 열 때 페이지를
@@ -76,6 +76,10 @@ public partial class MiniBrowserWindow : Window
     private readonly Action<string> _themeChangedHandler;
     private readonly Action _browserThemeChangedHandler;
     private readonly SolidColorBrush _chromeBrush = new(Colors.White);
+    // 컨트롤박스 팔레트 — 앱 테마가 아니라 '지금 열린 페이지 색' 기준(ApplyHeaderPalette).
+    private readonly SolidColorBrush _headerBgBrush = new(Colors.White);
+    private readonly SolidColorBrush _headerLineBrush = new(Colors.Gray);
+    private readonly SolidColorBrush _headerGlyphBrush = new(Colors.Gray);
     private bool _coreReady;
     private string? _pendingUrl;
 
@@ -156,10 +160,14 @@ public partial class MiniBrowserWindow : Window
         InitializeComponent();
 
         Chrome.CornerRadius = new CornerRadius(CornerRadiusDip);
-        // 여백(4px) 배경 = 페이지 배경색. 초기값은 앱 배경색.
+        // 여백(6px) 배경 = 페이지 배경색. 초기값은 앱 배경색.
         if (Application.Current.TryFindResource("BgBrush") is SolidColorBrush bg)
             _chromeBrush.Color = bg.Color;
         Chrome.Background = _chromeBrush;
+        HeaderBar.Background = _headerBgBrush;
+        HeaderBar.BorderBrush = _headerLineBrush;
+        CloseGlyph.Foreground = _headerGlyphBrush;
+        ApplyHeaderPalette(_chromeBrush.Color);
         _view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(
             0xFF, _chromeBrush.Color.R, _chromeBrush.Color.G, _chromeBrush.Color.B);
         BrowserHost.Children.Add(_view);
@@ -282,7 +290,7 @@ public partial class MiniBrowserWindow : Window
         }
     }
 
-    /// <summary>현재 페이지 body/html 배경색을 읽어 4px 여백(Chrome 배경)에 칠한다.</summary>
+    /// <summary>현재 페이지 body/html 배경색을 읽어 6px 여백(Chrome 배경)에 칠한다.</summary>
     private async Task UpdateBackgroundFromPageAsync()
     {
         var core = _view.CoreWebView2;
@@ -320,8 +328,41 @@ public partial class MiniBrowserWindow : Window
     private void ApplyChromeColor(Color color)
     {
         _chromeBrush.Color = color;
+        ApplyHeaderPalette(color);
         try { _view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, color.R, color.G, color.B); }
         catch { }
+    }
+
+    /// <summary>컨트롤박스 색을 페이지 배경색에 맞춘다. 앱 테마를 그대로 쓰면 다크 테마에서 흰 페이지를
+    /// 볼 때 검은 띠가 튄다. 띠는 페이지색을 살짝만 밀어 경계만 보이게 하고, 보더·글자·버튼 hover 는
+    /// 페이지가 밝으면 검정을, 어두우면 흰색을 옅게 얹어 대비를 만든다.
+    /// (hover/pressed 배경은 IconButton 스타일이 참조하는 리소스를 창 로컬로 덮어 함께 맞춘다.)</summary>
+    private void ApplyHeaderPalette(Color pageColor)
+    {
+        double luma = (0.299 * pageColor.R + 0.587 * pageColor.G + 0.114 * pageColor.B) / 255.0;
+        bool light = luma > 0.5;
+
+        _headerBgBrush.Color = Shade(pageColor, light ? -0.06 : 0.10);
+        _headerLineBrush.Color = Contrast(light, light ? 0.14 : 0.20);
+        _headerGlyphBrush.Color = Contrast(light, light ? 0.55 : 0.65);
+        Resources["PanelSoftBrush"] = new SolidColorBrush(Contrast(light, light ? 0.08 : 0.14));
+        Resources["LineBrush"] = new SolidColorBrush(Contrast(light, light ? 0.16 : 0.22));
+        Resources["TextBrush"] = new SolidColorBrush(Contrast(light, light ? 0.85 : 0.95));
+    }
+
+    /// <summary>색을 밝게(양수)/어둡게(음수) 민다.</summary>
+    private static Color Shade(Color c, double amount)
+    {
+        static byte Mix(byte v, double t) =>
+            (byte)Math.Clamp(t >= 0 ? v + (255 - v) * t : v * (1 + t), 0, 255);
+        return Color.FromRgb(Mix(c.R, amount), Mix(c.G, amount), Mix(c.B, amount));
+    }
+
+    /// <summary>밝은 바탕 위에는 검정을, 어두운 바탕 위에는 흰색을 지정 불투명도로 얹은 색.</summary>
+    private static Color Contrast(bool lightBackground, double opacity)
+    {
+        var a = (byte)Math.Clamp(opacity * 255, 0, 255);
+        return lightBackground ? Color.FromArgb(a, 0, 0, 0) : Color.FromArgb(a, 255, 255, 255);
     }
 
     /// <summary>외부 요청 주소로 이동. 코어 준비 전이면 준비 후 열도록 보류한다.</summary>
@@ -383,8 +424,8 @@ public partial class MiniBrowserWindow : Window
     /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다(컨트롤박스 높이와 같게).</summary>
     private const double HoverEnterZone = HeaderHeight;
 
-    /// <summary>펼친 뒤에는 이 범위를 벗어나야 접는다(경계에서 깜빡이는 것 방지).</summary>
-    private const double HoverExitZone = HeaderHeight + 13;
+    /// <summary>접히는 기준. 컨트롤박스 밖으로 나가는 즉시 접도록 펼침 범위와 같게 둔다.</summary>
+    private const double HoverExitZone = HeaderHeight;
 
     private DispatcherTimer? _hoverTimer;
     private bool _headerShown;
@@ -392,7 +433,8 @@ public partial class MiniBrowserWindow : Window
     private void StartHoverWatch()
     {
         if (_hoverTimer != null) { _hoverTimer.Start(); return; }
-        _hoverTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(120) };
+        // 벗어나는 즉시 접히는 느낌이 나도록 촘촘히 본다(커서 좌표 조회뿐이라 비용은 거의 없다).
+        _hoverTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(30) };
         _hoverTimer.Tick += (_, _) => UpdateHeaderByCursor();
         _hoverTimer.Start();
     }
@@ -407,6 +449,7 @@ public partial class MiniBrowserWindow : Window
     private void UpdateHeaderByCursor()
     {
         if (!IsVisible) { SetHeaderShown(false); return; }
+        if (_dragOrigin != null) return;   // 컨트롤박스를 끌어 창을 옮기는 중 — 접으면 드래그가 끊긴다
         if (!GetCursorPos(out var cur)) return;
 
         Point p;
