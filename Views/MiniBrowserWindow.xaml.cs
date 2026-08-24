@@ -95,6 +95,14 @@ public partial class MiniBrowserWindow : Window
     private bool _coreReady;
     private string? _pendingUrl;
 
+    /// <summary>앱 종료 시작 시 — 미니 창을 실제로 닫는다(종료 오버레이 위를 덮지 않도록 가장 먼저).</summary>
+    public static void CloseForShutdown()
+    {
+        var win = _instance;
+        _instance = null;
+        try { win?.Close(); } catch { }
+    }
+
     /// <summary>타이틀바 버튼용 — 떠 있으면 숨기고, 아니면 보여준다.</summary>
     public static void Toggle(Window? owner)
     {
@@ -398,7 +406,7 @@ public partial class MiniBrowserWindow : Window
 
     // ── 리사이즈 영역(네 변 팝업) ──────────────────────────────────────
     // 웹 화면이 HWND 라 창 테두리 판정이 오지 않는다. 팝업은 자체 HWND 라 그 위에 올라가므로
-    // 창 "바깥" 으로 8px 띠를 두 개씩 붙여 웹 화면을 전혀 가리지 않고 리사이즈를 받는다.
+    // 창 "안쪽" 가장자리에 8px 띠를 겹쳐 리사이즈를 받는다(밖에 두면 화면 밖으로 나가 못 맞힌다).
     private const double EdgeThickness = 8;
 
     /// <summary>변 띠의 양 끝 이 길이만큼은 모서리(대각선) 리사이즈로 다룬다.</summary>
@@ -420,19 +428,22 @@ public partial class MiniBrowserWindow : Window
         double w = Root.ActualWidth, h = Root.ActualHeight, t = EdgeThickness;
         if (w <= 0 || h <= 0) return;
 
-        Place(EdgeLeftPopup, EdgeLeft, -t, -t, t, h + t * 2);
-        Place(EdgeRightPopup, EdgeRight, w, -t, t, h + t * 2);
-        Place(EdgeTopPopup, EdgeTop, 0, -t, w, t);
-        Place(EdgeBottomPopup, EdgeBottom, 0, h, w, t);
+        // 창 안쪽 가장자리에 붙인다(좌우는 세로 전체, 상하는 가로 전체 — 모서리는 좌우 띠가 담당).
+        Place(EdgeLeftPopup, EdgeLeft, 0, 0, t, h);
+        Place(EdgeRightPopup, EdgeRight, w - t, 0, t, h);
+        Place(EdgeTopPopup, EdgeTop, t, 0, w - t * 2, t);
+        Place(EdgeBottomPopup, EdgeBottom, t, h - t, w - t * 2, t);
 
         static void Place(System.Windows.Controls.Primitives.Popup popup, FrameworkElement band,
                           double x, double y, double width, double height)
         {
-            band.Width = width;
-            band.Height = height;
+            band.Width = Math.Max(0, width);
+            band.Height = Math.Max(0, height);
             popup.HorizontalOffset = x;
             popup.VerticalOffset = y;
             if (!popup.IsOpen) popup.IsOpen = true;
+            // 이미 열린 Popup 은 오프셋 변경만으로는 재배치되지 않는다 — 미세 변화로 강제 갱신.
+            else { popup.HorizontalOffset = x + 0.1; popup.HorizontalOffset = x; }
         }
     }
 

@@ -1114,6 +1114,8 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
+        // 미니 브라우저는 별도 창이라 종료 오버레이 위로 떠 남는다 — 안전 종료 안내 전에 먼저 닫는다.
+        Views.MiniBrowserWindow.CloseForShutdown();
         CancelAllPendingTerminalFocusTransfers();
         if (_rightOverlayOpen || _rightOverlayTransitionBusy)
             await CloseRightOverlayAsync(restoreFocus: false);
