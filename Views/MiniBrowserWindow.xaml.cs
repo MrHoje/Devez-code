@@ -1,41 +1,37 @@
-using System.Runtime.InteropServices;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
 
 /// <summary>
-/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 본문은 우측 패널과 같은 BrowserHostView 를 재사용한다.
-/// Owner 를 메인 창으로 두어 "메인 창 위에만" 항상 표시되고(다른 앱 위로는 올라가지 않음),
-/// 위치·크기·마지막 주소는 저장해 다시 열 때 복원한다.
+/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 주소창·네비게이션 없이 웹 화면만 보여준다.
+/// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시되고(다른 앱 위로는 올라가지 않음),
+/// 위치·크기·마지막 주소를 저장해 다시 열 때 복원한다.
+///
+/// 본문 브라우저는 WebView2CompositionControl 을 쓴다. 일반 WebView2 는 별도 HWND(HwndHost)라
+/// 투명 창에서 렌더되지 않고 WPF 클립도 못 먹어 라운드 코너 밖으로 사각 화면이 삐져나온다
+/// (창 리전으로 깎으면 모서리에 계단이 생김). 합성 컨트롤은 WPF 렌더 경로라 라운드 코너가
+/// 안티앨리어싱된 상태로 매끄럽게 잘린다.
 /// </summary>
 public partial class MiniBrowserWindow : Window
 {
     /// <summary>미니 브라우저 전용 방문 기록 키(프로젝트별 브라우저 탭 기록과 분리).</summary>
     private const string StateKey = SettingsService.MiniBrowserStateKey;
 
-    /// <summary>창 모서리 라운드 반경(DIP). DWM 기본 라운드(약 8)보다 크게 보이도록 창 리전으로 직접 깎는다.</summary>
-    private const double CornerRadiusDip = 14;
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteObject(IntPtr hObject);
-
-    [DllImport("user32.dll")]
-    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeRect { public int Left, Top, Right, Bottom; }
+    /// <summary>Chrome 의 CornerRadius(16) - BorderThickness(1). 본문 클립 반경.</summary>
+    private const double ContentCornerRadius = 15;
 
     private static MiniBrowserWindow? _instance;
+
+    private readonly WebView2CompositionControl _view = new();
+    private readonly Action<string> _themeChangedHandler;
+    private bool _coreReady;
+    private string? _pendingUrl;
 
     /// <summary>이미 열려 있으면 활성화만, 아니면 새로 띄운다. url 이 있으면 그 주소로 이동.</summary>
     public static void ShowOrActivate(Window? owner, string? url = null)
@@ -44,85 +40,146 @@ public partial class MiniBrowserWindow : Window
         {
             if (win.WindowState == WindowState.Minimized) win.WindowState = WindowState.Normal;
             win.Activate();
-            if (!string.IsNullOrWhiteSpace(url)) win.Browser.NavigateToUrl(url!);
+            win.Navigate(url);
             return;
         }
 
         var created = new MiniBrowserWindow { Owner = owner };
         _instance = created;
         created.Show();
-        if (!string.IsNullOrWhiteSpace(url)) created.Browser.NavigateToUrl(url!);
+        created.Navigate(url);
     }
 
     /// <summary>설정에서 시작 주소를 바꿨을 때 — 열려 있는 미니 창을 새 주소로 즉시 이동시킨다.</summary>
     public static void ApplyHomeUrlToOpenWindow()
     {
-        if (_instance is not { IsLoaded: true } win) return;
-        var url = SettingsService.LoadMiniBrowserHomeUrl();
-        win.Browser.HomeUrlOverride = url;
-        win.Browser.NavigateToUrl(url);
+        if (_instance is { IsLoaded: true } win)
+            win.Navigate(SettingsService.LoadMiniBrowserHomeUrl());
     }
 
     public MiniBrowserWindow()
     {
         InitializeComponent();
-        Browser.ShowToolbar = false;   // 미니 창은 웹 화면만 — 주소창·네비게이션 버튼 없음
-        Browser.HomeUrlOverride = SettingsService.LoadMiniBrowserHomeUrl();
-        Browser.StateKey = StateKey;
-        Browser.DocumentTitleChanged += OnDocumentTitleChanged;
-        Loaded += OnLoadedFirst;
+
+        _view.DefaultBackgroundColor = Application.Current.TryFindResource("BgBrush") is SolidColorBrush bg
+            ? System.Drawing.Color.FromArgb(0xFF, bg.Color.R, bg.Color.G, bg.Color.B)
+            : System.Drawing.Color.White;
+        BrowserHost.Children.Add(_view);
+
+        _themeChangedHandler = _ => ApplyColorScheme();
+        App.ThemeChanged += _themeChangedHandler;
+
         Root.SizeChanged += (_, _) => ApplyRoundedClip();
-        SizeChanged += (_, _) => ApplyWindowRegion();
-        DpiChanged += (_, _) => ApplyWindowRegion();
+        Loaded += OnLoadedFirst;
     }
 
     private void OnLoadedFirst(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoadedFirst;
         ApplyRoundedClip();
-        Browser.EnsureStarted();
-        SyncTitle();
+        _ = StartBrowserAsync();
     }
 
-    /// <summary>라운드 코너 밖으로 자식 사각 모서리가 삐져나오지 않게 내용 Grid 를 둥글게 클립.
-    /// 반경 = Chrome.CornerRadius - BorderThickness(1).</summary>
+    /// <summary>라운드 코너 밖으로 자식 사각 모서리(헤더·웹 화면)가 삐져나오지 않게 내용 Grid 를 둥글게 클립.
+    /// 합성 컨트롤은 WPF 비주얼이라 이 클립이 안티앨리어싱된 상태로 적용된다.</summary>
     private void ApplyRoundedClip()
     {
         double w = Root.ActualWidth, h = Root.ActualHeight;
         if (w <= 0 || h <= 0) return;
-        double r = CornerRadiusDip - 1;
-        Root.Clip = new RectangleGeometry(new Rect(0, 0, w, h), r, r);
-    }
-
-    /// <summary>창 자체를 둥근 리전으로 클립. WebView2 는 별도 HWND 라 WPF 클립으로는 안 깎이므로
-    /// 창 리전으로 잘라야 라운드 코너 밖으로 웹 화면이 삐져나오지 않는다.
-    /// (DWM 코너 지정은 반경이 8px 로 고정이라 더 둥근 모서리를 만들 수 없다.)</summary>
-    private void ApplyWindowRegion()
-    {
-        var hwnd = new WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero) return;
-        if (!GetWindowRect(hwnd, out var wr)) return;
-
-        int w = wr.Right - wr.Left, h = wr.Bottom - wr.Top;
-        if (w <= 0 || h <= 0) return;
-
-        double scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        int d = (int)Math.Round(CornerRadiusDip * 2 * (scale <= 0 ? 1 : scale));
-
-        // CreateRoundRectRgn 은 우/하단 경계를 배타적으로 다뤄 +1 이 필요하다.
-        var rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, d, d);
-        if (rgn == IntPtr.Zero) return;
-        if (SetWindowRgn(hwnd, rgn, true) == 0) DeleteObject(rgn); // 실패 시에만 해제(성공 시 소유권 이전)
+        Root.Clip = new RectangleGeometry(new Rect(0, 0, w, h), ContentCornerRadius, ContentCornerRadius);
     }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         RestorePlacement();
-        ApplyWindowRegion();
     }
 
-    /// <summary>저장된 위치·크기 복원. 화면 작업영역과 겹치지 않으면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
+    private async Task StartBrowserAsync()
+    {
+        try
+        {
+            var userDataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DevezCode", "WebView2");
+            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
+            await _view.EnsureCoreWebView2Async(env);
+
+            var core = _view.CoreWebView2;
+            _coreReady = true;
+            ApplyColorScheme();
+
+            core.DocumentTitleChanged += (_, _) => SyncTitle(core.DocumentTitle);
+            core.SourceChanged += (_, _) => PersistCurrentUrl(core.Source);
+            // 새 창 요청은 같은 뷰에서 열기(팝업 창 대신 인라인 이동)
+            core.NewWindowRequested += (_, args) => { args.Handled = true; NavigateCore(args.Uri); };
+
+            NavigateCore(_pendingUrl ?? LoadStartUrl());
+            _pendingUrl = null;
+        }
+        catch (Exception ex)
+        {
+            BrowserHost.Children.Clear();
+            BrowserHost.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "브라우저를 시작할 수 없습니다.\nWebView2 런타임이 필요합니다.\n\n" + ex.Message,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(24),
+            });
+        }
+    }
+
+    /// <summary>마지막으로 보던 주소, 없으면 설정의 미니 브라우저 시작 주소.</summary>
+    private static string LoadStartUrl()
+    {
+        var saved = SettingsService.LoadBrowserHistory(StateKey);
+        if (saved is { } h && h.Urls.Count > 0)
+        {
+            var idx = Math.Clamp(h.Index, 0, h.Urls.Count - 1);
+            if (!string.IsNullOrWhiteSpace(h.Urls[idx])) return h.Urls[idx];
+        }
+        return SettingsService.LoadMiniBrowserHomeUrl();
+    }
+
+    /// <summary>다시 열 때 이어보도록 현재 주소만 저장한다(미니 창은 히스토리 UI 가 없다).</summary>
+    private static void PersistCurrentUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || url == "about:blank") return;
+        try { SettingsService.SaveBrowserHistory(StateKey, new[] { url }, 0); } catch { }
+    }
+
+    /// <summary>외부 요청 주소로 이동. 코어 준비 전이면 준비 후 열도록 보류한다.</summary>
+    public void Navigate(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        if (!_coreReady) { _pendingUrl = url; return; }
+        NavigateCore(url);
+    }
+
+    private void NavigateCore(string url)
+    {
+        try { _view.CoreWebView2?.Navigate(url); } catch { }
+    }
+
+    private void ApplyColorScheme()
+    {
+        try
+        {
+            if (_view.CoreWebView2 is { } core)
+                core.Profile.PreferredColorScheme = App.IsDarkTheme(App.CurrentTheme)
+                    ? CoreWebView2PreferredColorScheme.Dark
+                    : CoreWebView2PreferredColorScheme.Light;
+        }
+        catch { /* 해제 중 등 */ }
+    }
+
+    /// <summary>헤더 제목 — 페이지 제목이 없으면 기본 문구.</summary>
+    private void SyncTitle(string? documentTitle)
+        => TitleText.Text = string.IsNullOrWhiteSpace(documentTitle) ? "미니 브라우저" : documentTitle!.Trim();
+
+    /// <summary>저장된 위치·크기 복원. 화면 밖이면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
     private void RestorePlacement()
     {
         var (left, top, width, height) = SettingsService.LoadMiniBrowserPlacement();
@@ -160,20 +217,6 @@ public partial class MiniBrowserWindow : Window
         return !hit.IsEmpty && hit.Width >= 100 && hit.Height >= 60;
     }
 
-    /// <summary>헤더 제목 — 페이지 제목이 없으면 주소의 호스트명, 그것도 없으면 기본 문구.</summary>
-    private void SyncTitle(string? documentTitle = null)
-    {
-        if (!string.IsNullOrWhiteSpace(documentTitle))
-        {
-            TitleText.Text = documentTitle!.Trim();
-            return;
-        }
-        var url = Browser.GetCurrentUrl(StateKey);
-        TitleText.Text = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "미니 브라우저";
-    }
-
-    private void OnDocumentTitleChanged(string title) => SyncTitle(title);
-
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
@@ -195,7 +238,7 @@ public partial class MiniBrowserWindow : Window
     {
         base.OnClosed(e);
         if (ReferenceEquals(_instance, this)) _instance = null;
-        Browser.DocumentTitleChanged -= OnDocumentTitleChanged;
-        try { Browser.DisposeAll(); } catch { }
+        App.ThemeChanged -= _themeChangedHandler;
+        try { _view.Dispose(); } catch { }
     }
 }

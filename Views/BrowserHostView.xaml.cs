@@ -19,24 +19,6 @@ public partial class BrowserHostView : UserControl
     /// <summary>브라우저 WebView가 실제 키보드 포커스를 받음. HwndHost라 부모 WPF 마우스 이벤트로는 관측할 수 없다.</summary>
     public event Action? NativeSurfaceFocused;
 
-    /// <summary>현재 문서 제목이 바뀜(미니 브라우저 창 헤더 표시용).</summary>
-    public event Action<string>? DocumentTitleChanged;
-
-    /// <summary>방문 기록이 없을 때 열 주소. null 이면 설정의 브라우저 시작 주소를 쓴다
-    /// (미니 브라우저 창은 자기 전용 시작 주소를 지정한다).</summary>
-    public string? HomeUrlOverride { get; set; }
-
-    /// <summary>툴바(뒤로·앞으로·새로고침·주소창) 표시 여부. 미니 브라우저 창은 웹 화면만 보여주려고 숨긴다.</summary>
-    public bool ShowToolbar
-    {
-        get => Toolbar.Visibility == Visibility.Visible;
-        set
-        {
-            Toolbar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
-            ToolbarRow.Height = value ? new GridLength(35) : new GridLength(0);
-        }
-    }
-
     private WebView2? _view;
     private bool _initStarted;
     private string? _pendingOpenUrl;
@@ -103,7 +85,7 @@ public partial class BrowserHostView : UserControl
         if (CurrentHistoryUrl is { } cur)
             NavigateInternal(cur, NavCause.Restore);
         else
-            NavigateInternal(HomeUrlOverride ?? SettingsService.LoadBrowserHomeUrl(), NavCause.User);
+            NavigateInternal(SettingsService.LoadBrowserHomeUrl(), NavCause.User);
     }
 
     /// <summary>현재 _index 가 가리키는 URL. 스택이 비었으면 null.</summary>
@@ -299,10 +281,6 @@ public partial class BrowserHostView : UserControl
             };
             // 새 창 요청은 같은 뷰에서 열기(팝업 차단 대신 인라인 이동) — 자발적 탐색으로 기록
             core.NewWindowRequested += (_, e) => { e.Handled = true; NavigateInternal(e.Uri, NavCause.User); };
-            core.DocumentTitleChanged += (_, _) =>
-            {
-                try { DocumentTitleChanged?.Invoke(core.DocumentTitle ?? string.Empty); } catch { }
-            };
 
             LoadHistoryForCurrentProject();
             if (_pendingOpenUrl is { } pending)

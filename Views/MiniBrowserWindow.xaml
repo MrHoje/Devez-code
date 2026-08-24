@@ -2,55 +2,59 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        xmlns:views="clr-namespace:DevezCode.Views"
         Title="미니 브라우저"
         Width="520" Height="700" MinWidth="320" MinHeight="240"
         WindowStyle="None" ResizeMode="CanResize" ShowInTaskbar="False"
-        Background="{DynamicResource BgBrush}"
+        AllowsTransparency="True" Background="Transparent"
         FontFamily="{StaticResource PretendardFont}">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
-                            ResizeBorderThickness="6"
+                            ResizeBorderThickness="7"
                             CornerRadius="0"
                             GlassFrameThickness="0"
                             UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
+    <!-- AllowsTransparency 창이므로 라운드 코너가 WPF 안티앨리어싱으로 매끄럽게 그려진다.
+         본문 브라우저도 WPF 렌더 경로(WebView2CompositionControl)라 같은 클립을 그대로 탄다. -->
     <Border x:Name="Chrome"
             Background="{DynamicResource BgBrush}"
             BorderBrush="{DynamicResource LineBrush}"
             BorderThickness="1"
-            CornerRadius="14">
+            CornerRadius="16"
+            SnapsToDevicePixels="False">
         <Grid x:Name="Root">
             <Grid.RowDefinitions>
-                <RowDefinition Height="30"/>
+                <RowDefinition Height="34"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 헤더: 드래그 이동 + 제목 + 외부 열기/닫기 -->
+            <!-- 헤더: 드래그 이동 + 제목 + 닫기 -->
             <Border x:Name="Header" Grid.Row="0"
-                    Background="{DynamicResource PanelBrush}"
-                    BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="0,0,0,1"
-                    Padding="10,0,4,0"
+                    Background="Transparent"
+                    Padding="14,0,6,0"
                     MouseLeftButtonDown="Header_MouseLeftButtonDown">
                 <DockPanel LastChildFill="True">
                     <Button x:Name="CloseBtn" DockPanel.Dock="Right"
-                            Style="{StaticResource WinCloseBtn}"
+                            Width="28" Height="24" Margin="0,0,0,0"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource IconButton}"
                             Cursor="Arrow" ToolTip="닫기"
                             Click="CloseBtn_Click">
-                        <TextBlock Text="&#x2715;" FontSize="12"/>
+                        <TextBlock Text="&#x2715;" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}"/>
                     </Button>
                     <TextBlock x:Name="TitleText"
                                Text="미니 브라우저"
                                FontSize="{DynamicResource Fs12}"
-                               Foreground="{DynamicResource TextBrush}"
+                               Foreground="{DynamicResource TextMutedBrush}"
                                VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
             </Border>
 
-            <views:BrowserHostView x:Name="Browser" Grid.Row="1"/>
+            <!-- 브라우저 본문 -->
+            <Grid x:Name="BrowserHost" Grid.Row="1"/>
         </Grid>
     </Border>
 </Window>
