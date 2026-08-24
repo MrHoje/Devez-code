@@ -473,10 +473,10 @@ public partial class MiniBrowserWindow : Window
         try { p = PointFromScreen(new Point(cur.X, cur.Y)); }
         catch { return; }   // 핸들 정리 중
 
-        // 여백 위(리사이즈 영역)에 있으면 펼치지 않는다 — 모서리에서 리사이즈가 먼저다.
-        bool insideX = p.X >= EdgeInset && p.X <= ActualWidth - EdgeInset;
-        double limit = EdgeInset + (_headerShown ? HoverExitZone : HoverEnterZone);
-        SetHeaderShown(insideX && p.Y >= EdgeInset && p.Y <= limit);
+        // 헤더는 창 최상단 전체 폭을 덮으므로 좌우 여백까지 포함해 감지한다(상단 리사이즈는 헤더가 처리).
+        bool insideX = p.X >= 0 && p.X <= ActualWidth;
+        double limit = _headerShown ? HoverExitZone : HoverEnterZone;
+        SetHeaderShown(insideX && p.Y >= 0 && p.Y <= limit);
     }
 
     private void SetHeaderShown(bool show)
@@ -522,37 +522,88 @@ public partial class MiniBrowserWindow : Window
         HeaderPopup.HorizontalOffset -= 1;
     }
 
-    // ── 컨트롤박스 드래그로 창 이동 ────────────────────────────────────
-    // 팝업은 별도 HWND 라 Window.DragMove() 가 통하지 않는다. 커서 이동량을 창 위치에 직접 반영한다.
+    // ── 컨트롤박스 드래그: 이동 + 상단 가장자리 리사이즈 ───────────────
+    // 헤더가 창 최상단 전체 폭을 덮어 그 자리의 표준 리사이즈가 사라지므로, 헤더 위쪽 가장자리
+    // (EdgeInset 안)에서 커서 이동량으로 세로·모서리 리사이즈를 직접 처리한다. 나머지는 창 이동.
+    // 팝업은 별도 HWND 라 Window.DragMove() 나 시스템 위임이 통하지 않는다.
+    private const int HTCAPTION = 2, HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
+    private const double HeaderCornerZone = 26;
+
     private NativePoint? _dragOrigin;
-    private Point _windowOrigin;
+    private Rect _dragWindowOrigin;
+    private int _dragHit;
+
+    /// <summary>헤더 안 커서 위치로 동작을 정한다 — 위쪽 EdgeInset 안이면 리사이즈, 아니면 이동.</summary>
+    private int HeaderHitTest(Point p)
+    {
+        if (p.Y > EdgeInset) return HTCAPTION;
+        double w = HeaderBar.ActualWidth;
+        if (p.X <= HeaderCornerZone) return HTTOPLEFT;
+        if (p.X >= w - HeaderCornerZone) return HTTOPRIGHT;
+        return HTTOP;
+    }
 
     private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
         if (!GetCursorPos(out var cur)) return;
+        _dragHit = HeaderHitTest(e.GetPosition(HeaderBar));
         _dragOrigin = cur;
-        _windowOrigin = new Point(Left, Top);
+        _dragWindowOrigin = new Rect(Left, Top, Width, Height);
         HeaderBar.CaptureMouse();
     }
 
     private void HeaderBar_MouseMove(object sender, MouseEventArgs e)
     {
-        if (_dragOrigin is not { } origin || e.LeftButton != MouseButtonState.Pressed) return;
+        if (_dragOrigin is not { } origin || e.LeftButton != MouseButtonState.Pressed)
+        {
+            // 드래그 전 — 위쪽 가장자리에서는 리사이즈 커서를 보여 준다.
+            HeaderBar.Cursor = HeaderHitTest(e.GetPosition(HeaderBar)) switch
+            {
+                HTTOPLEFT  => Cursors.SizeNWSE,
+                HTTOPRIGHT => Cursors.SizeNESW,
+                HTTOP      => Cursors.SizeNS,
+                _          => Cursors.Arrow,
+            };
+            return;
+        }
         if (!GetCursorPos(out var cur)) return;
 
         var delta = new Vector(cur.X - origin.X, cur.Y - origin.Y);
         if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
             delta = target.TransformFromDevice.Transform(delta);   // 화면 픽셀 → DIP
 
-        Left = _windowOrigin.X + delta.X;
-        Top = _windowOrigin.Y + delta.Y;
+        if (_dragHit == HTCAPTION)
+        {
+            Left = _dragWindowOrigin.X + delta.X;
+            Top = _dragWindowOrigin.Y + delta.Y;
+            return;
+        }
+
+        double left = _dragWindowOrigin.X, top = _dragWindowOrigin.Y;
+        double width = _dragWindowOrigin.Width, height = _dragWindowOrigin.Height;
+
+        // 상단: 위로 끌면 위쪽 변이 올라가고(위치+높이 동시), 아래로 끌면 내려온다.
+        double h = Math.Max(MinHeight, height - delta.Y);
+        top += height - h;
+        height = h;
+
+        if (_dragHit == HTTOPLEFT)
+        {
+            double w = Math.Max(MinWidth, width - delta.X);
+            left += width - w;
+            width = w;
+        }
+        else if (_dragHit == HTTOPRIGHT) width = Math.Max(MinWidth, width + delta.X);
+
+        Left = left; Top = top; Width = width; Height = height;
     }
 
     private void HeaderBar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (_dragOrigin == null) return;
         _dragOrigin = null;
+        _dragHit = 0;
         HeaderBar.ReleaseMouseCapture();
         SavePlacement();
     }

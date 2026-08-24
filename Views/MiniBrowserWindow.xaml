@@ -25,13 +25,12 @@
             <!-- 웹 화면은 6px 안으로 들여 창 테두리 리사이즈 영역을 노출한다. -->
             <Grid x:Name="BrowserHost" Margin="6"/>
 
-            <!-- 컨트롤박스: 웹 화면 위에 뜨는 팝업(자체 HWND). 창 이동(드래그) + 닫기.
-                 웹 화면과 같은 안쪽 영역(BrowserHost)에 맞춘다 — 창 테두리 여백까지 덮으면
-                 팝업이 별도 HWND 라 그 자리의 표준 리사이즈 판정이 사라진다(상단 모서리 1px 증상). -->
+            <!-- 컨트롤박스: 웹 화면 위에 뜨는 팝업(자체 HWND). 창 최상단 전체 폭을 덮는다(창 테두리 여백 포함).
+                 그 자리의 표준 리사이즈는 사라지므로, 헤더 위쪽 가장자리에서 코드가 직접 리사이즈를 처리한다. -->
             <Popup x:Name="HeaderPopup"
                    Placement="Relative"
-                   PlacementTarget="{Binding ElementName=BrowserHost}"
-                   Width="{Binding ActualWidth, ElementName=BrowserHost}"
+                   PlacementTarget="{Binding ElementName=Root}"
+                   Width="{Binding ActualWidth, ElementName=Root}"
                    AllowsTransparency="True"
                    StaysOpen="True"
                    IsOpen="False">
