@@ -40,20 +40,41 @@
                         HorizontalAlignment="Stretch"
                         BorderThickness="0,0,0,1"
                         CornerRadius="7,7,0,0"
-                        Padding="0,0,6,0"
+                        Padding="6,0,6,0"
                         ClipToBounds="True"
                         MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown"
                         MouseMove="HeaderBar_MouseMove"
                         MouseLeftButtonUp="HeaderBar_MouseLeftButtonUp">
-                    <Button x:Name="CloseBtn"
-                            HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Width="18" Height="18"
-                            Style="{StaticResource IconButton}"
-                            Cursor="Arrow" ToolTip="닫기"
-                            Click="CloseBtn_Click">
-                        <!-- 글리프가 시각적으로 아래로 치우쳐 보여 아이콘만 1px 올린다. -->
-                        <TextBlock x:Name="CloseGlyph" Text="&#x2715;" FontSize="11" Margin="0,-1,0,0"/>
-                    </Button>
+                    <DockPanel LastChildFill="True" VerticalAlignment="Center">
+                        <Button x:Name="BackBtn" DockPanel.Dock="Left"
+                                Width="22" Height="22"
+                                Style="{StaticResource IconButton}"
+                                Cursor="Arrow" ToolTip="뒤로"
+                                Click="BackBtn_Click">
+                            <TextBlock x:Name="BackGlyph" Text="&#x2039;" FontSize="17" Margin="0,-2,0,0"/>
+                        </Button>
+                        <Button x:Name="ForwardBtn" DockPanel.Dock="Left"
+                                Width="22" Height="22"
+                                Style="{StaticResource IconButton}"
+                                Cursor="Arrow" ToolTip="앞으로"
+                                Click="ForwardBtn_Click">
+                            <TextBlock x:Name="ForwardGlyph" Text="&#x203A;" FontSize="17" Margin="0,-2,0,0"/>
+                        </Button>
+                        <Button x:Name="CloseBtn" DockPanel.Dock="Right"
+                                Width="18" Height="18"
+                                Style="{StaticResource IconButton}"
+                                Cursor="Arrow" ToolTip="닫기"
+                                Click="CloseBtn_Click">
+                            <!-- 글리프가 시각적으로 아래로 치우쳐 보여 아이콘만 1px 올린다. -->
+                            <TextBlock x:Name="CloseGlyph" Text="&#x2715;" FontSize="11" Margin="0,-1,0,0"/>
+                        </Button>
+                        <TextBox x:Name="AddressBox"
+                                 Margin="4,0,4,0" Height="22"
+                                 VerticalContentAlignment="Center"
+                                 BorderThickness="1" Padding="8,0"
+                                 FontSize="12"
+                                 KeyDown="AddressBox_KeyDown"/>
+                    </DockPanel>
                 </Border>
             </Popup>
         </Grid>

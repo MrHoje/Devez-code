@@ -81,6 +81,8 @@ public partial class MiniBrowserWindow : Window
     private readonly SolidColorBrush _headerLineBrush = new(Colors.Gray);
     private readonly SolidColorBrush _headerGlyphBrush = new(Colors.Gray);
     private readonly SolidColorBrush _chromeBorderBrush = new(Colors.Gray);   // 바깥 테두리 = 페이지색을 살짝 민 색
+    private readonly SolidColorBrush _addressFgBrush = new(Colors.Black);     // 주소창 글자색
+    private readonly SolidColorBrush _addressBgBrush = new(Colors.White);     // 주소창 배경색
     private bool _coreReady;
     private string? _pendingUrl;
 
@@ -169,6 +171,11 @@ public partial class MiniBrowserWindow : Window
         HeaderBar.Background = _headerBgBrush;
         HeaderBar.BorderBrush = _headerLineBrush;
         CloseGlyph.Foreground = _headerGlyphBrush;
+        BackGlyph.Foreground = _headerGlyphBrush;
+        ForwardGlyph.Foreground = _headerGlyphBrush;
+        AddressBox.Foreground = _addressFgBrush;
+        AddressBox.Background = _addressBgBrush;
+        AddressBox.BorderBrush = _headerLineBrush;
         ApplyHeaderPalette(_chromeBrush.Color);
         _view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(
             0xFF, _chromeBrush.Color.R, _chromeBrush.Color.G, _chromeBrush.Color.B);
@@ -182,6 +189,7 @@ public partial class MiniBrowserWindow : Window
         Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); };
         LocationChanged += (_, _) => SyncHeaderBar();
         Deactivated += (_, _) => SetHeaderShown(false);   // 팝업은 별도 창이라 창이 뒤로 가면 직접 내린다
+        Activated += (_, _) => { if (_coreReady) RefreshPageBackground(); };   // 창 전환으로 다시 앞에 오면 색 재확인
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
         IsVisibleChanged += (_, _) =>
@@ -274,6 +282,11 @@ public partial class MiniBrowserWindow : Window
             // 페이지가 그려진 뒤 배경색을 읽어 여백을 같은 색으로 칠한다.
             core.DOMContentLoaded += (_, _) => RefreshPageBackground();
             core.NavigationCompleted += (_, _) => RefreshPageBackground();
+
+            // 주소창·뒤로/앞으로 상태를 실제 이동에 맞춰 갱신한다.
+            core.SourceChanged += (_, _) => UpdateNavState();
+            core.HistoryChanged += (_, _) => UpdateNavState();
+            UpdateNavState();
 
             NavigateCore(_pendingUrl ?? SettingsService.LoadMiniBrowserHomeUrl());
             _pendingUrl = null;
@@ -376,6 +389,8 @@ public partial class MiniBrowserWindow : Window
         _headerBgBrush.Color = Shade(pageColor, light ? -0.06 : 0.10);
         _headerLineBrush.Color = Contrast(light, light ? 0.14 : 0.20);
         _headerGlyphBrush.Color = Contrast(light, light ? 0.55 : 0.65);
+        _addressBgBrush.Color = Shade(pageColor, light ? -0.04 : 0.16);
+        _addressFgBrush.Color = light ? Color.FromRgb(0x20, 0x20, 0x20) : Color.FromRgb(0xE6, 0xE6, 0xE6);
         Resources["PanelSoftBrush"] = new SolidColorBrush(Contrast(light, light ? 0.08 : 0.14));
         Resources["LineBrush"] = new SolidColorBrush(Contrast(light, light ? 0.16 : 0.22));
         Resources["TextBrush"] = new SolidColorBrush(Contrast(light, light ? 0.85 : 0.95));
@@ -449,8 +464,8 @@ public partial class MiniBrowserWindow : Window
     }
 
     // ── 컨트롤박스 펼침/접힘 ──────────────────────────────────────────
-    /// <summary>펼쳤을 때 컨트롤박스 높이.</summary>
-    private const double HeaderHeight = 22;
+    /// <summary>펼쳤을 때 컨트롤박스 높이(주소창·뒤로/앞으로 버튼이 들어가 조금 높다).</summary>
+    private const double HeaderHeight = 32;
 
     /// <summary>창 테두리 리사이즈 여백(XAML 의 BrowserHost Margin·ResizeBorderThickness 와 같은 값).
     /// 컨트롤박스도 이 안쪽에만 뜨므로 커서 판정도 같은 기준을 쓴다.</summary>
@@ -681,6 +696,41 @@ public partial class MiniBrowserWindow : Window
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => HideForLater();
+
+    private void BackBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try { if (_view.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); } catch { }
+    }
+
+    private void ForwardBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try { if (_view.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); } catch { }
+    }
+
+    /// <summary>주소창에서 Enter — 스킴 없는 입력은 https 로 보정해 이동한다.</summary>
+    private void AddressBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        var text = AddressBox.Text?.Trim() ?? "";
+        if (text.Length == 0) return;
+        if (!text.Contains("://", StringComparison.Ordinal)) text = "https://" + text;
+        if (Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            NavigateCore(uri.AbsoluteUri);
+    }
+
+    /// <summary>주소 텍스트와 뒤로/앞으로 버튼 활성 상태를 현재 이동 위치에 맞춘다.
+    /// 사용자가 주소창을 편집 중이면 입력을 덮지 않는다.</summary>
+    private void UpdateNavState()
+    {
+        var core = _view.CoreWebView2;
+        if (core == null) return;
+        BackBtn.IsEnabled = core.CanGoBack;
+        ForwardBtn.IsEnabled = core.CanGoForward;
+        if (!AddressBox.IsKeyboardFocusWithin)
+            AddressBox.Text = core.Source ?? "";
+    }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
