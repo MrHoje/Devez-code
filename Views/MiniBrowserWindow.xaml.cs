@@ -131,12 +131,6 @@ public partial class MiniBrowserWindow : Window
         }
     }
 
-    /// <summary>미니 창 밖(메인 창 등)에서 누른 F5 — 떠 있는 미니 창의 페이지를 새로고침한다.</summary>
-    public static void ReloadOpenWindow()
-    {
-        if (_instance is { IsVisible: true } win) win.ReloadPage();
-    }
-
     /// <summary>설정에서 시작 주소를 바꿨을 때 — 열려 있는 미니 창을 새 주소로 즉시 이동시킨다.</summary>
     public static void ApplyHomeUrlToOpenWindow()
     {
@@ -159,15 +153,16 @@ public partial class MiniBrowserWindow : Window
         _browserThemeChangedHandler = ApplyColorScheme;
         SettingsService.BrowserThemeChanged += _browserThemeChangedHandler;
 
-        Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); };
-        LocationChanged += (_, _) => SyncHeaderBar();
+        Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); SyncGrip(); };
+        LocationChanged += (_, _) => { SyncHeaderBar(); SyncGrip(); };
         Deactivated += (_, _) => SetHeaderShown(false);   // 팝업은 별도 창이라 창이 뒤로 가면 직접 내린다
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
         IsVisibleChanged += (_, _) =>
         {
             if (_hiddenByUser && IsVisible) { Hide(); return; }
-            if (IsVisible) StartHoverWatch(); else StopHoverWatch();
+            if (IsVisible) { StartHoverWatch(); SyncGrip(); }
+            else { StopHoverWatch(); GripPopup.IsOpen = false; }
         };
     }
 
@@ -175,6 +170,7 @@ public partial class MiniBrowserWindow : Window
     {
         Loaded -= OnLoadedFirst;
         ApplyRoundedClip();
+        SyncGrip();
         _ = StartBrowserAsync();
     }
 
@@ -209,10 +205,9 @@ public partial class MiniBrowserWindow : Window
     // WindowChrome 의 ResizeBorderThickness 는 변과 모서리를 같은 두께로 잡아 모서리를 집기가 어렵다.
     // 직접 판정해 변은 조금, 모서리는 넉넉하게 준다.
     private const int WM_NCHITTEST = 0x0084;
-    /// <summary>변 두께 — XAML 의 BrowserHost Margin 과 같아야 한다(웹 화면 밖에서만 판정이 온다).</summary>
+    // 웹 화면이 창을 꽉 채우므로 이 판정은 창 테두리(1px)와 컨트롤박스 영역에서만 실제로 온다.
+    // 넓은 리사이즈는 우하단 그립 팝업이 담당한다.
     private const double EdgeGrip = 8;
-
-    /// <summary>모서리 한 변 길이. 여백 띠 안에서만 잡히지만 대각선 리사이즈를 쉽게 한다.</summary>
     private const double CornerGrip = 24;
 
     private const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
@@ -353,12 +348,13 @@ public partial class MiniBrowserWindow : Window
         catch { /* 해제 중 등 */ }
     }
 
-    /// <summary>WPF 쪽(컨트롤박스 등)에 포커스가 있을 때의 F5. 웹 화면 포커스 시엔 주입 스크립트가 처리한다.</summary>
+    /// <summary>WPF 쪽(컨트롤박스 등)에 포커스가 있을 때의 F5 는 창 닫기(숨기기).
+    /// 웹 화면에 포커스가 있으면 주입 스크립트가 먼저 잡아 페이지 새로고침으로 처리한다.</summary>
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
         if (e.Key != Key.F5) return;
-        ReloadPage();
+        HideForLater();
         e.Handled = true;
     }
 
@@ -442,6 +438,53 @@ public partial class MiniBrowserWindow : Window
         if (!HeaderPopup.IsOpen) return;
         HeaderPopup.HorizontalOffset += 1;
         HeaderPopup.HorizontalOffset -= 1;
+    }
+
+    // ── 우하단 리사이즈 그립 ───────────────────────────────────────────
+    private const double GripSize = 18;
+
+    private NativePoint? _resizeOrigin;
+    private Size _sizeOrigin;
+
+    /// <summary>그립을 창 우하단에 붙인다. 창이 움직이거나 크기가 바뀔 때마다 다시 계산한다.</summary>
+    private void SyncGrip()
+    {
+        if (!IsVisible) { GripPopup.IsOpen = false; return; }
+        if (Root.ActualWidth <= 0 || Root.ActualHeight <= 0) return;
+
+        GripPopup.HorizontalOffset = Root.ActualWidth - GripSize;
+        GripPopup.VerticalOffset = Root.ActualHeight - GripSize;
+        if (!GripPopup.IsOpen) GripPopup.IsOpen = true;
+    }
+
+    private void Grip_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left) return;
+        if (!GetCursorPos(out var cur)) return;
+        _resizeOrigin = cur;
+        _sizeOrigin = new Size(Width, Height);
+        Grip.CaptureMouse();
+    }
+
+    private void Grip_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_resizeOrigin is not { } origin || e.LeftButton != MouseButtonState.Pressed) return;
+        if (!GetCursorPos(out var cur)) return;
+
+        var delta = new Vector(cur.X - origin.X, cur.Y - origin.Y);
+        if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
+            delta = target.TransformFromDevice.Transform(delta);   // 화면 픽셀 → DIP
+
+        Width = Math.Max(MinWidth, _sizeOrigin.Width + delta.X);
+        Height = Math.Max(MinHeight, _sizeOrigin.Height + delta.Y);
+    }
+
+    private void Grip_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_resizeOrigin == null) return;
+        _resizeOrigin = null;
+        Grip.ReleaseMouseCapture();
+        SavePlacement();
     }
 
     // ── 컨트롤박스 드래그로 창 이동 ────────────────────────────────────
@@ -546,6 +589,7 @@ public partial class MiniBrowserWindow : Window
         try { SettingsService.BrowserThemeChanged -= _browserThemeChangedHandler; } catch { }
         _hoverTimer?.Stop();
         HeaderPopup.IsOpen = false;
+        GripPopup.IsOpen = false;
         try { _view.Dispose(); } catch { }
         OpenStateChanged?.Invoke();
     }

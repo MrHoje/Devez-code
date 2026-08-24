@@ -2996,11 +2996,11 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        // F5 — 미니 브라우저가 떠 있으면 그 페이지를 새로고침한다. 미니 창 안에서는 그쪽이 직접 처리하고,
-        // 여기서는 메인 창 등 미니 창 밖에서 누른 F5 를 받는다.
-        if (e.Key == System.Windows.Input.Key.F5 && Views.MiniBrowserWindow.IsOpen)
+        // F5 — 미니 브라우저 열기/닫기. 미니 창의 웹 화면에 포커스가 있을 때의 F5 는 그쪽에서
+        // 페이지 새로고침으로 처리하고, 여기서는 미니 창 밖에서 누른 F5 만 받는다.
+        if (e.Key == System.Windows.Input.Key.F5)
         {
-            Views.MiniBrowserWindow.ReloadOpenWindow();
+            Views.MiniBrowserWindow.Toggle(this);
             e.Handled = true;
             return;
         }

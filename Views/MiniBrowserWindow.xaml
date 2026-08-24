@@ -21,9 +21,8 @@
             BorderBrush="{DynamicResource LineBrush}"
             BorderThickness="1">
         <Grid x:Name="Root">
-            <!-- 웹 화면은 별도 HWND 라 그 위에서는 창 테두리 적중 판정이 오지 않는다(리사이즈 불가).
-                 가장자리에 여백을 두어 그 띠에서 크기를 조절할 수 있게 한다. Margin = EdgeGrip 과 같은 값. -->
-            <Grid x:Name="BrowserHost" Margin="8"/>
+            <!-- 웹 화면이 창을 꽉 채운다. -->
+            <Grid x:Name="BrowserHost"/>
 
             <!-- 컨트롤박스: 웹 화면은 별도 HWND 라 WPF 요소로는 그 위를 덮을 수 없다.
                  팝업은 자체 HWND 라 웹 화면 위에 뜬다. 창 이동 전용(드래그). -->
@@ -45,6 +44,22 @@
                         MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown"
                         MouseMove="HeaderBar_MouseMove"
                         MouseLeftButtonUp="HeaderBar_MouseLeftButtonUp"/>
+            </Popup>
+            <!-- 리사이즈 그립: 웹 화면은 별도 HWND 라 그 위에서는 창 테두리 판정이 오지 않는다.
+                 팝업은 자체 HWND 라 웹 화면 위에 올라가므로 우하단 모서리 그립으로 크기를 조절한다. -->
+            <Popup x:Name="GripPopup"
+                   Placement="Relative"
+                   PlacementTarget="{Binding ElementName=Root}"
+                   AllowsTransparency="True"
+                   StaysOpen="True"
+                   IsOpen="False">
+                <Border x:Name="Grip"
+                        Width="18" Height="18"
+                        Background="Transparent"
+                        Cursor="SizeNWSE"
+                        MouseLeftButtonDown="Grip_MouseLeftButtonDown"
+                        MouseMove="Grip_MouseMove"
+                        MouseLeftButtonUp="Grip_MouseLeftButtonUp"/>
             </Popup>
         </Grid>
     </Border>
