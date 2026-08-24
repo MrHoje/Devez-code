@@ -21,33 +21,33 @@
             BorderThickness="1"
             SnapsToDevicePixels="False">
         <Grid x:Name="Root">
-            <!-- 웹 화면이 창 전체를 채운다(상단에 별도 컨트롤 영역을 두지 않는다). -->
-            <Grid x:Name="BrowserHost"/>
+            <Grid.RowDefinitions>
+                <!-- 컨트롤박스 행 — 기본 높이 0(안 보임). 커서가 창 위쪽에 오면 코드가 펼친다. -->
+                <RowDefinition x:Name="HeaderRow" Height="0"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <!-- 감지 영역: 평소엔 완전히 비어 보이고, 마우스가 들어오면 컨트롤박스가 나타난다. -->
-            <Border x:Name="Header"
-                    VerticalAlignment="Top" Height="28"
-                    Background="Transparent"
-                    MouseEnter="Header_MouseEnter"
-                    MouseLeave="Header_MouseLeave"
+            <!-- 컨트롤박스: 창 이동(드래그) + 닫기 -->
+            <Border x:Name="Header" Grid.Row="0"
+                    Background="{DynamicResource BgBrush}"
+                    BorderBrush="{DynamicResource LineBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="0,0,6,0"
+                    ClipToBounds="True"
                     MouseLeftButtonDown="Header_MouseLeftButtonDown">
-                <Border x:Name="HeaderBar"
-                        Opacity="0"
-                        Background="{DynamicResource BgBrush}"
-                        BorderBrush="{DynamicResource LineBrush}"
-                        BorderThickness="0,0,0,1"
-                        Padding="0,0,6,0">
-                    <Button x:Name="CloseBtn"
-                            HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Width="20" Height="20"
-                            Style="{StaticResource IconButton}"
-                            Cursor="Arrow" ToolTip="닫기"
-                            Click="CloseBtn_Click">
-                        <TextBlock Text="&#x2715;" FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                    </Button>
-                </Border>
+                <Button x:Name="CloseBtn"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Width="20" Height="20"
+                        Style="{StaticResource IconButton}"
+                        Cursor="Arrow" ToolTip="닫기"
+                        Click="CloseBtn_Click">
+                    <TextBlock Text="&#x2715;" FontSize="11"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                </Button>
             </Border>
+
+            <!-- 브라우저 본문 -->
+            <Grid x:Name="BrowserHost" Grid.Row="1"/>
         </Grid>
     </Border>
 </Window>

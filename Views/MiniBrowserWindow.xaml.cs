@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using DevezCode.Services;
@@ -11,9 +12,11 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>
-/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 웹 화면이 창 전체를 채우고, 상단 28px 은 감지 영역이다
-/// — 평소엔 아무것도 보이지 않고 그 영역에 마우스가 들어오면 컨트롤박스(배경 띠 + 닫기 버튼)가 뜬다.
-/// 그 띠를 끌면 창이 이동한다. (감지 영역이 웹 화면 위에 겹치므로 최상단 28px 클릭은 창 쪽으로 간다.)
+/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 컨트롤박스(창 이동 띠 + 닫기)는 평소 높이 0 으로 접혀
+/// 보이지 않고, 커서가 창 위쪽에 들어오면 펼쳐진다. 그 띠를 끌면 창이 이동한다.
+///
+/// 감지는 커서 좌표 폴링으로 한다 — 소프트웨어 렌더에서 웹 화면은 별도 HWND 라 WPF 오버레이가
+/// 그 뒤로 묻히고 마우스 이벤트도 오지 않는다(오버레이 방식이 통하지 않는 이유).
 /// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
 ///
 /// 닫기는 창을 없애지 않고 숨기기다 — 앱이 살아 있는 동안 인스턴스를 유지해 다시 열 때 페이지를
@@ -138,7 +141,11 @@ public partial class MiniBrowserWindow : Window
         Root.SizeChanged += (_, _) => ApplyRoundedClip();
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
-        IsVisibleChanged += (_, _) => { if (_hiddenByUser && IsVisible) Hide(); };
+        IsVisibleChanged += (_, _) =>
+        {
+            if (_hiddenByUser && IsVisible) { Hide(); return; }
+            if (IsVisible) StartHoverWatch(); else StopHoverWatch();
+        };
     }
 
     private void OnLoadedFirst(object sender, RoutedEventArgs e)
@@ -322,20 +329,59 @@ public partial class MiniBrowserWindow : Window
         try { DragMove(); } catch { }
     }
 
-    // 컨트롤박스는 상단 감지 영역에 마우스가 들어올 때만 나타난다(스타일 트리거 대신 코드 —
-    // Style 안의 ElementName 바인딩은 네임스코프가 달라 해석되지 않는 경우가 있다).
-    private void Header_MouseEnter(object sender, MouseEventArgs e) => FadeHeaderBar(true);
+    // ── 컨트롤박스 펼침/접힘 ──────────────────────────────────────────
+    /// <summary>펼쳤을 때 컨트롤박스 높이.</summary>
+    private const double HeaderHeight = 28;
 
-    private void Header_MouseLeave(object sender, MouseEventArgs e) => FadeHeaderBar(false);
+    /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다.</summary>
+    private const double HoverEnterZone = 12;
 
-    private void FadeHeaderBar(bool show)
+    /// <summary>펼친 뒤에는 이 범위를 벗어나야 접는다(경계에서 깜빡이는 것 방지).</summary>
+    private const double HoverExitZone = HeaderHeight + 14;
+
+    private DispatcherTimer? _hoverTimer;
+    private bool _headerShown;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X, Y; }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out NativePoint point);
+
+    private void StartHoverWatch()
     {
-        var fade = new System.Windows.Media.Animation.DoubleAnimation
-        {
-            To = show ? 1 : 0,
-            Duration = TimeSpan.FromMilliseconds(110),
-        };
-        HeaderBar.BeginAnimation(OpacityProperty, fade);
+        if (_hoverTimer != null) { _hoverTimer.Start(); return; }
+        _hoverTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(120) };
+        _hoverTimer.Tick += (_, _) => UpdateHeaderByCursor();
+        _hoverTimer.Start();
+    }
+
+    private void StopHoverWatch()
+    {
+        _hoverTimer?.Stop();
+        SetHeaderShown(false);
+    }
+
+    /// <summary>커서가 창 위쪽에 있으면 컨트롤박스를 펼치고, 벗어나면 접는다.</summary>
+    private void UpdateHeaderByCursor()
+    {
+        if (!IsVisible) { SetHeaderShown(false); return; }
+        if (!GetCursorPos(out var cur)) return;
+
+        Point p;
+        try { p = PointFromScreen(new Point(cur.X, cur.Y)); }
+        catch { return; }   // 핸들 정리 중
+
+        bool insideX = p.X >= 0 && p.X <= ActualWidth;
+        double limit = _headerShown ? HoverExitZone : HoverEnterZone;
+        SetHeaderShown(insideX && p.Y >= 0 && p.Y <= limit);
+    }
+
+    private void SetHeaderShown(bool show)
+    {
+        if (_headerShown == show) return;
+        _headerShown = show;
+        HeaderRow.Height = new GridLength(show ? HeaderHeight : 0);
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => HideForLater();
@@ -351,6 +397,7 @@ public partial class MiniBrowserWindow : Window
         base.OnClosed(e);
         if (ReferenceEquals(_instance, this)) _instance = null;
         App.ThemeChanged -= _themeChangedHandler;
+        _hoverTimer?.Stop();
         try { _surface.Dispose(); } catch { }
         OpenStateChanged?.Invoke();
     }
