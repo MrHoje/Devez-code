@@ -16,17 +16,13 @@ namespace DevezCode.Views;
 /// 않고, 커서가 창 위쪽에 들어오면 펼쳐진다. 그 띠를 끌면 창이 이동한다. 여닫기는 타이틀바 버튼 토글만.
 /// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
 ///
-/// 웹 화면은 별도 HWND 라 WPF 요소로는 그 위를 덮을 수도, 그 위의 마우스를 감지할 수도 없다.
-/// 그래서 컨트롤박스는 자체 HWND 인 팝업으로 띄워 콘텐츠를 밀지 않고 위를 덮고, 진입 감지는
-/// 커서 좌표 폴링으로 한다.
+/// 리사이즈: 웹 화면(별도 HWND)이 창 테두리를 가려 표준 리사이즈 판정이 오지 않으므로, 웹 화면을
+/// 4px 안으로 들여 창 테두리 여백을 노출한다. 그 여백에서 WindowChrome 표준 리사이즈가 동작하고,
+/// 여백은 현재 페이지 배경색으로 칠해 이음새가 보이지 않게 한다(이동/로드마다 갱신).
 ///
 /// 닫기는 창을 없애지 않고 숨기기다 — 앱이 살아 있는 동안 인스턴스를 유지해 다시 열 때 페이지를
 /// 새로 로드하지 않는다. 앱을 껐다 켜면 설정의 시작 주소로 새로 연다.
 /// 위치·크기는 설정에 저장해 다음 실행에도 복원한다.
-///
-/// 라운드 코너는 DWM 창 코너(반경 8)로 깎는다. 투명 창 + 합성 렌더(WebView2CompositionControl)로 더 큰
-/// 반경을 매끄럽게 낼 수는 있었지만 화면 깜빡임이 심해 쓰지 않는다.
-/// (창 리전으로 큰 반경을 깎는 방법은 이진 마스크라 모서리에 계단이 생긴다.)
 /// </summary>
 public partial class MiniBrowserWindow : Window
 {
@@ -56,6 +52,12 @@ public partial class MiniBrowserWindow : Window
     [DllImport("user32.dll", SetLastError = true)]
     private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X, Y; }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out NativePoint point);
+
     private static MiniBrowserWindow? _instance;
 
     /// <summary>표시/숨김이 바뀔 때 — 타이틀바 버튼 색을 갱신하는 쪽에서 구독한다.</summary>
@@ -69,6 +71,13 @@ public partial class MiniBrowserWindow : Window
 
     /// <summary>설정·MCP 오버레이 때문에 임시로 숨긴 상태인지(오버레이가 닫히면 되돌린다).</summary>
     private bool _hiddenForOverlay;
+
+    private readonly WebView2 _view = new();
+    private readonly Action<string> _themeChangedHandler;
+    private readonly Action _browserThemeChangedHandler;
+    private readonly SolidColorBrush _chromeBrush = new(Colors.White);
+    private bool _coreReady;
+    private string? _pendingUrl;
 
     /// <summary>설정/MCP 오버레이가 열릴 때 — 같은 화면을 가리지 않도록 잠시 숨긴다.</summary>
     public static void HideForOverlay()
@@ -88,12 +97,6 @@ public partial class MiniBrowserWindow : Window
         if (!win._hiddenByUser) win.Show();
         OpenStateChanged?.Invoke();
     }
-
-    private readonly WebView2 _view = new();
-    private readonly Action<string> _themeChangedHandler;
-    private readonly Action _browserThemeChangedHandler;
-    private bool _coreReady;
-    private string? _pendingUrl;
 
     /// <summary>앱 종료 시작 시 — 미니 창을 실제로 닫는다(종료 오버레이 위를 덮지 않도록 가장 먼저).</summary>
     public static void CloseForShutdown()
@@ -151,9 +154,12 @@ public partial class MiniBrowserWindow : Window
         InitializeComponent();
 
         Chrome.CornerRadius = new CornerRadius(CornerRadiusDip);
-        _view.DefaultBackgroundColor = Application.Current.TryFindResource("BgBrush") is SolidColorBrush bg
-            ? System.Drawing.Color.FromArgb(0xFF, bg.Color.R, bg.Color.G, bg.Color.B)
-            : System.Drawing.Color.White;
+        // 여백(4px) 배경 = 페이지 배경색. 초기값은 앱 배경색.
+        if (Application.Current.TryFindResource("BgBrush") is SolidColorBrush bg)
+            _chromeBrush.Color = bg.Color;
+        Chrome.Background = _chromeBrush;
+        _view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(
+            0xFF, _chromeBrush.Color.R, _chromeBrush.Color.G, _chromeBrush.Color.B);
         BrowserHost.Children.Add(_view);
 
         _themeChangedHandler = _ => ApplyColorScheme();
@@ -161,16 +167,15 @@ public partial class MiniBrowserWindow : Window
         _browserThemeChangedHandler = ApplyColorScheme;
         SettingsService.BrowserThemeChanged += _browserThemeChangedHandler;
 
-        Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); SyncEdges(); };
-        LocationChanged += (_, _) => { SyncHeaderBar(); SyncEdges(); };
+        Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); };
+        LocationChanged += (_, _) => SyncHeaderBar();
         Deactivated += (_, _) => SetHeaderShown(false);   // 팝업은 별도 창이라 창이 뒤로 가면 직접 내린다
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
         IsVisibleChanged += (_, _) =>
         {
             if (_hiddenByUser && IsVisible) { Hide(); return; }
-            if (IsVisible) { StartHoverWatch(); SyncEdges(); }
-            else { StopHoverWatch(); SyncEdges(); }
+            if (IsVisible) StartHoverWatch(); else StopHoverWatch();
         };
     }
 
@@ -178,7 +183,6 @@ public partial class MiniBrowserWindow : Window
     {
         Loaded -= OnLoadedFirst;
         ApplyRoundedClip();
-        SyncEdges();
         _ = StartBrowserAsync();
     }
 
@@ -255,6 +259,9 @@ public partial class MiniBrowserWindow : Window
 
             // 새 창 요청은 같은 뷰에서 열기(팝업 창 대신 인라인 이동)
             core.NewWindowRequested += (_, args) => { args.Handled = true; NavigateCore(args.Uri); };
+            // 페이지가 그려진 뒤 배경색을 읽어 여백을 같은 색으로 칠한다.
+            core.DOMContentLoaded += (_, _) => _ = UpdateBackgroundFromPageAsync();
+            core.NavigationCompleted += (_, _) => _ = UpdateBackgroundFromPageAsync();
 
             NavigateCore(_pendingUrl ?? SettingsService.LoadMiniBrowserHomeUrl());
             _pendingUrl = null;
@@ -271,6 +278,48 @@ public partial class MiniBrowserWindow : Window
                 Margin = new Thickness(24),
             });
         }
+    }
+
+    /// <summary>현재 페이지 body/html 배경색을 읽어 4px 여백(Chrome 배경)에 칠한다.</summary>
+    private async Task UpdateBackgroundFromPageAsync()
+    {
+        var core = _view.CoreWebView2;
+        if (core == null) return;
+        try
+        {
+            // body 가 투명이면 html 을 본다. rgb/rgba 문자열을 그대로 받는다.
+            var json = await core.ExecuteScriptAsync(
+                "(function(){var b=getComputedStyle(document.body).backgroundColor;" +
+                "if(!b||b==='rgba(0, 0, 0, 0)'||b==='transparent')" +
+                "b=getComputedStyle(document.documentElement).backgroundColor;return b;})()");
+            if (TryParseCssColor(json, out var color)) ApplyChromeColor(color);
+        }
+        catch { /* 페이지 접근 제한 등 — 기존 색 유지 */ }
+    }
+
+    /// <summary>ExecuteScriptAsync 가 돌려준 JSON 문자열(예: "\"rgb(10, 61, 145)\"")을 Color 로 파싱.</summary>
+    private static bool TryParseCssColor(string? json, out Color color)
+    {
+        color = Colors.White;
+        if (string.IsNullOrEmpty(json)) return false;
+        var s = json.Trim('"').Trim();
+        int open = s.IndexOf('('), close = s.IndexOf(')');
+        if (open < 0 || close <= open) return false;
+
+        var parts = s[(open + 1)..close].Split(',');
+        if (parts.Length < 3) return false;
+        if (!byte.TryParse(parts[0].Trim(), out var r)) return false;
+        if (!byte.TryParse(parts[1].Trim(), out var g)) return false;
+        if (!byte.TryParse(parts[2].Trim(), out var b)) return false;
+        color = Color.FromRgb(r, g, b);
+        return true;
+    }
+
+    private void ApplyChromeColor(Color color)
+    {
+        _chromeBrush.Color = color;
+        try { _view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, color.R, color.G, color.B); }
+        catch { }
     }
 
     /// <summary>외부 요청 주소로 이동. 코어 준비 전이면 준비 후 열도록 보류한다.</summary>
@@ -307,7 +356,10 @@ public partial class MiniBrowserWindow : Window
         try
         {
             if (_view.CoreWebView2 is { } core)
+            {
                 core.Profile.PreferredColorScheme = PreferredScheme;
+                _ = UpdateBackgroundFromPageAsync();   // 테마가 바뀌면 배경색도 다시 읽는다
+            }
         }
         catch { /* 해제 중 등 */ }
     }
@@ -334,12 +386,6 @@ public partial class MiniBrowserWindow : Window
 
     private DispatcherTimer? _hoverTimer;
     private bool _headerShown;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativePoint { public int X, Y; }
-
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out NativePoint point);
 
     private void StartHoverWatch()
     {
@@ -404,183 +450,39 @@ public partial class MiniBrowserWindow : Window
         HeaderPopup.HorizontalOffset -= 1;
     }
 
-    // ── 리사이즈 영역(네 변 팝업) ──────────────────────────────────────
-    // 웹 화면이 HWND 라 창 테두리 판정이 오지 않는다. 팝업은 자체 HWND 라 그 위에 올라가므로
-    // 창 "안쪽" 가장자리에 8px 띠를 겹쳐 리사이즈를 받는다(밖에 두면 화면 밖으로 나가 못 맞힌다).
-    private const double EdgeThickness = 8;
+    // ── 컨트롤박스 드래그로 창 이동 ────────────────────────────────────
+    // 팝업은 별도 HWND 라 Window.DragMove() 가 통하지 않는다. 커서 이동량을 창 위치에 직접 반영한다.
+    private NativePoint? _dragOrigin;
+    private Point _windowOrigin;
 
-    /// <summary>변 띠의 양 끝 이 길이만큼은 모서리(대각선) 리사이즈로 다룬다.</summary>
-    private const double CornerZone = 26;
-
-    // 드래그 방향 코드(Win32 비클라이언트 적중 코드와 같은 값을 재사용).
-    private const int HTCAPTION = 2;
-    private const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
-                      HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
-
-    /// <summary>네 변 띠를 창 바깥에 붙인다. 창이 움직이거나 크기가 바뀔 때마다 다시 계산한다.</summary>
-    private void SyncEdges()
-    {
-        if (!IsVisible)
-        {
-            EdgeLeftPopup.IsOpen = EdgeRightPopup.IsOpen = EdgeTopPopup.IsOpen = EdgeBottomPopup.IsOpen = false;
-            return;
-        }
-        double w = Root.ActualWidth, h = Root.ActualHeight, t = EdgeThickness;
-        if (w <= 0 || h <= 0) return;
-
-        // 창 안쪽 가장자리에 붙인다(좌우는 세로 전체, 상하는 가로 전체 — 모서리는 좌우 띠가 담당).
-        Place(EdgeLeftPopup, EdgeLeft, 0, 0, t, h);
-        Place(EdgeRightPopup, EdgeRight, w - t, 0, t, h);
-        Place(EdgeTopPopup, EdgeTop, t, 0, w - t * 2, t);
-        Place(EdgeBottomPopup, EdgeBottom, t, h - t, w - t * 2, t);
-
-        static void Place(System.Windows.Controls.Primitives.Popup popup, FrameworkElement band,
-                          double x, double y, double width, double height)
-        {
-            band.Width = Math.Max(0, width);
-            band.Height = Math.Max(0, height);
-            popup.HorizontalOffset = x;
-            popup.VerticalOffset = y;
-            if (!popup.IsOpen) popup.IsOpen = true;
-            // 이미 열린 Popup 은 오프셋 변경만으로는 재배치되지 않는다 — 미세 변화로 강제 갱신.
-            else { popup.HorizontalOffset = x + 0.1; popup.HorizontalOffset = x; }
-        }
-    }
-
-    /// <summary>커서가 띠의 어느 위치에 있는지로 방향을 정한다(양 끝은 모서리).</summary>
-    private int ResolveEdgeHit(FrameworkElement band, Point p)
-    {
-        bool vertical = ReferenceEquals(band, EdgeLeft) || ReferenceEquals(band, EdgeRight);
-        bool left = ReferenceEquals(band, EdgeLeft);
-        bool top = ReferenceEquals(band, EdgeTop);
-
-        if (vertical)
-        {
-            if (p.Y <= CornerZone) return left ? HTTOPLEFT : HTTOPRIGHT;
-            if (p.Y >= band.ActualHeight - CornerZone) return left ? HTBOTTOMLEFT : HTBOTTOMRIGHT;
-            return left ? HTLEFT : HTRIGHT;
-        }
-
-        if (p.X <= CornerZone) return top ? HTTOPLEFT : HTBOTTOMLEFT;
-        if (p.X >= band.ActualWidth - CornerZone) return top ? HTTOPRIGHT : HTBOTTOMRIGHT;
-        return top ? HTTOP : HTBOTTOM;
-    }
-
-    private void Edge_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (_dragHit != 0)
-        {
-            if (e.LeftButton == MouseButtonState.Pressed) ApplyDrag();
-            else EndDrag();
-            return;
-        }
-        if (sender is not FrameworkElement band) return;
-        band.Cursor = ResolveEdgeHit(band, e.GetPosition(band)) switch
-        {
-            HTTOPLEFT or HTBOTTOMRIGHT => Cursors.SizeNWSE,
-            HTTOPRIGHT or HTBOTTOMLEFT => Cursors.SizeNESW,
-            HTLEFT or HTRIGHT          => Cursors.SizeWE,
-            _                          => Cursors.SizeNS,
-        };
-    }
-
-    // 크기 조절·이동은 좌표를 직접 계산한다. 팝업은 별도 HWND 라 창에 비클라이언트 클릭을 보내는
-    // 방식(시스템 위임)이나 Window.DragMove() 가 시작되지 않는다.
-    private int _dragHit;
-    private NativePoint _dragCursorOrigin;
-    private Rect _dragWindowOrigin;
-    private FrameworkElement? _dragBand;
-
-    private void Edge_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is not FrameworkElement band) return;
-        BeginDrag(band, ResolveEdgeHit(band, e.GetPosition(band)));
-        e.Handled = true;
-    }
-
-    private void Edge_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => EndDrag();
-
-    /// <summary>컨트롤박스 드래그로 창 이동.</summary>
     private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
-        BeginDrag(HeaderBar, HTCAPTION);
-        e.Handled = true;
+        if (!GetCursorPos(out var cur)) return;
+        _dragOrigin = cur;
+        _windowOrigin = new Point(Left, Top);
+        HeaderBar.CaptureMouse();
     }
-
-    private void HeaderBar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => EndDrag();
 
     private void HeaderBar_MouseMove(object sender, MouseEventArgs e)
     {
-        if (_dragHit == 0) return;
-        if (e.LeftButton == MouseButtonState.Pressed) ApplyDrag();
-        else EndDrag();
-    }
-
-    private void BeginDrag(FrameworkElement band, int hit)
-    {
-        if (!GetCursorPos(out var cur)) return;
-        _dragHit = hit;
-        _dragBand = band;
-        _dragCursorOrigin = cur;
-        _dragWindowOrigin = new Rect(Left, Top, Width, Height);
-        band.CaptureMouse();
-    }
-
-    private void EndDrag()
-    {
-        if (_dragHit == 0) return;
-        _dragHit = 0;
-        _dragBand?.ReleaseMouseCapture();
-        _dragBand = null;
-        SavePlacement();
-    }
-
-    /// <summary>드래그 중 커서 이동량을 창 위치·크기에 반영. 방향에 따라 좌/상은 위치까지 함께 움직인다.</summary>
-    private void ApplyDrag()
-    {
-        if (_dragHit == 0) return;
+        if (_dragOrigin is not { } origin || e.LeftButton != MouseButtonState.Pressed) return;
         if (!GetCursorPos(out var cur)) return;
 
-        var delta = new Vector(cur.X - _dragCursorOrigin.X, cur.Y - _dragCursorOrigin.Y);
+        var delta = new Vector(cur.X - origin.X, cur.Y - origin.Y);
         if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
             delta = target.TransformFromDevice.Transform(delta);   // 화면 픽셀 → DIP
 
-        if (_dragHit == HTCAPTION)
-        {
-            Left = _dragWindowOrigin.X + delta.X;
-            Top = _dragWindowOrigin.Y + delta.Y;
-            return;
-        }
+        Left = _windowOrigin.X + delta.X;
+        Top = _windowOrigin.Y + delta.Y;
+    }
 
-        double left = _dragWindowOrigin.X, top = _dragWindowOrigin.Y;
-        double width = _dragWindowOrigin.Width, height = _dragWindowOrigin.Height;
-
-        bool west = _dragHit is HTLEFT or HTTOPLEFT or HTBOTTOMLEFT;
-        bool east = _dragHit is HTRIGHT or HTTOPRIGHT or HTBOTTOMRIGHT;
-        bool north = _dragHit is HTTOP or HTTOPLEFT or HTTOPRIGHT;
-        bool south = _dragHit is HTBOTTOM or HTBOTTOMLEFT or HTBOTTOMRIGHT;
-
-        if (west)
-        {
-            double w = Math.Max(MinWidth, width - delta.X);
-            left += width - w;   // 최소 폭에 걸리면 위치도 더 이상 움직이지 않는다
-            width = w;
-        }
-        else if (east) width = Math.Max(MinWidth, width + delta.X);
-
-        if (north)
-        {
-            double h = Math.Max(MinHeight, height - delta.Y);
-            top += height - h;
-            height = h;
-        }
-        else if (south) height = Math.Max(MinHeight, height + delta.Y);
-
-        Left = left;
-        Top = top;
-        Width = width;
-        Height = height;
+    private void HeaderBar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_dragOrigin == null) return;
+        _dragOrigin = null;
+        HeaderBar.ReleaseMouseCapture();
+        SavePlacement();
     }
 
     /// <summary>저장된 위치·크기 복원. 화면 밖이면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
@@ -652,7 +554,6 @@ public partial class MiniBrowserWindow : Window
         try { SettingsService.BrowserThemeChanged -= _browserThemeChangedHandler; } catch { }
         _hoverTimer?.Stop();
         HeaderPopup.IsOpen = false;
-        EdgeLeftPopup.IsOpen = EdgeRightPopup.IsOpen = EdgeTopPopup.IsOpen = EdgeBottomPopup.IsOpen = false;
         try { _view.Dispose(); } catch { }
         OpenStateChanged?.Invoke();
     }
