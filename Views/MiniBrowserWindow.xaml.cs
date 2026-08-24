@@ -357,14 +357,11 @@ public partial class MiniBrowserWindow : Window
     /// <summary>펼쳤을 때 컨트롤박스 높이.</summary>
     private const double HeaderHeight = 28;
 
-    /// <summary>팝업이 창 최상단에서 내려앉는 거리(위쪽 리사이즈 영역을 비워 두기 위함).</summary>
-    private const double HeaderTopOffset = 6;
-
-    /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다. 최상단은 리사이즈용이라 제외한다.</summary>
-    private const double HoverEnterZone = HeaderTopOffset + HeaderHeight;
+    /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다(컨트롤박스 높이와 같게).</summary>
+    private const double HoverEnterZone = HeaderHeight;
 
     /// <summary>펼친 뒤에는 이 범위를 벗어나야 접는다(경계에서 깜빡이는 것 방지).</summary>
-    private const double HoverExitZone = HoverEnterZone + 16;
+    private const double HoverExitZone = HeaderHeight + 16;
 
     private DispatcherTimer? _hoverTimer;
     private bool _headerShown;
@@ -401,8 +398,7 @@ public partial class MiniBrowserWindow : Window
 
         bool insideX = p.X >= 0 && p.X <= ActualWidth;
         double limit = _headerShown ? HoverExitZone : HoverEnterZone;
-        // 최상단 리사이즈 영역에 커서가 있으면 펼치지 않는다(크기 조절을 방해하지 않도록).
-        SetHeaderShown(insideX && p.Y >= HeaderTopOffset && p.Y <= limit);
+        SetHeaderShown(insideX && p.Y >= 0 && p.Y <= limit);
     }
 
     private void SetHeaderShown(bool show)
@@ -430,11 +426,10 @@ public partial class MiniBrowserWindow : Window
         HeaderBar.BeginAnimation(HeightProperty, slide);
     }
 
-    /// <summary>컨트롤박스 폭을 창 폭에 맞추고, 창이 움직였으면 팝업 위치를 다시 잡는다
-    /// (팝업은 별도 창이라 부모가 이동해도 스스로 따라오지 않는다).</summary>
+    /// <summary>창이 움직이거나 크기가 바뀌면 팝업 위치를 다시 잡는다
+    /// (팝업은 별도 창이라 부모가 이동해도 스스로 따라오지 않는다. 폭은 XAML 에서 창 폭에 묶여 있다).</summary>
     private void SyncHeaderBar()
     {
-        if (Root.ActualWidth > 0) HeaderBar.Width = Root.ActualWidth;
         if (!HeaderPopup.IsOpen) return;
         HeaderPopup.HorizontalOffset += 1;
         HeaderPopup.HorizontalOffset -= 1;
