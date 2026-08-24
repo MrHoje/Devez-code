@@ -27,8 +27,9 @@ public partial class MiniBrowserWindow : Window
     /// <summary>미니 브라우저 전용 방문 기록 키(프로젝트별 브라우저 탭 기록과 분리).</summary>
     private const string StateKey = SettingsService.MiniBrowserStateKey;
 
-    /// <summary>GPU 렌더에서 쓰는 라운드 반경. 소프트웨어 렌더는 DWM 고정 반경(8)을 따른다.</summary>
-    private const double GpuCornerRadius = 20;
+    /// <summary>GPU 렌더에서 쓰는 라운드 반경. 참고한 ChatGPT 미니 창 스크린샷의 코너를 픽셀로 재
+    /// 반경 25(배율 100%)로 맞춘 값. 소프트웨어 렌더는 DWM 고정 반경(8)을 따른다.</summary>
+    private const double GpuCornerRadius = 25;
     private const double DwmCornerRadius = 8;
 
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
