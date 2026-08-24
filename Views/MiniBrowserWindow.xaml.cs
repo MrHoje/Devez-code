@@ -131,6 +131,12 @@ public partial class MiniBrowserWindow : Window
         }
     }
 
+    /// <summary>미니 창 밖(메인 창 등)에서 누른 F5 — 떠 있는 미니 창의 페이지를 새로고침한다.</summary>
+    public static void ReloadOpenWindow()
+    {
+        if (_instance is { IsVisible: true } win) win.ReloadPage();
+    }
+
     /// <summary>설정에서 시작 주소를 바꿨을 때 — 열려 있는 미니 창을 새 주소로 즉시 이동시킨다.</summary>
     public static void ApplyHomeUrlToOpenWindow()
     {
@@ -203,8 +209,11 @@ public partial class MiniBrowserWindow : Window
     // WindowChrome 의 ResizeBorderThickness 는 변과 모서리를 같은 두께로 잡아 모서리를 집기가 어렵다.
     // 직접 판정해 변은 조금, 모서리는 넉넉하게 준다.
     private const int WM_NCHITTEST = 0x0084;
-    private const double EdgeGrip = 10;     // 변 두께
-    private const double CornerGrip = 22;   // 모서리 한 변 길이
+    /// <summary>변 두께 — XAML 의 BrowserHost Margin 과 같아야 한다(웹 화면 밖에서만 판정이 온다).</summary>
+    private const double EdgeGrip = 8;
+
+    /// <summary>모서리 한 변 길이. 여백 띠 안에서만 잡히지만 대각선 리사이즈를 쉽게 한다.</summary>
+    private const double CornerGrip = 24;
 
     private const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
                       HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;

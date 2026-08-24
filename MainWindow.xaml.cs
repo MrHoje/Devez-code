@@ -2996,6 +2996,14 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+        // F5 — 미니 브라우저가 떠 있으면 그 페이지를 새로고침한다. 미니 창 안에서는 그쪽이 직접 처리하고,
+        // 여기서는 메인 창 등 미니 창 밖에서 누른 F5 를 받는다.
+        if (e.Key == System.Windows.Input.Key.F5 && Views.MiniBrowserWindow.IsOpen)
+        {
+            Views.MiniBrowserWindow.ReloadOpenWindow();
+            e.Handled = true;
+            return;
+        }
         // 세션이 활성화돼 있으면 Terminal/Claude WebView가 Ctrl+Shift+T를 처리한다.
         // 빈 프로젝트·파일 탭처럼 활성 세션이 없는 WPF 화면에서만 메인 창이 보완해 중복 생성을 막는다.
         if (_settingsView == null

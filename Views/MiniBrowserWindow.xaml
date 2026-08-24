@@ -21,8 +21,9 @@
             BorderBrush="{DynamicResource LineBrush}"
             BorderThickness="1">
         <Grid x:Name="Root">
-            <!-- 웹 화면이 창 전체를 채운다. 컨트롤박스는 아래 팝업이 위를 덮는다(콘텐츠를 밀지 않음). -->
-            <Grid x:Name="BrowserHost"/>
+            <!-- 웹 화면은 별도 HWND 라 그 위에서는 창 테두리 적중 판정이 오지 않는다(리사이즈 불가).
+                 가장자리에 여백을 두어 그 띠에서 크기를 조절할 수 있게 한다. Margin = EdgeGrip 과 같은 값. -->
+            <Grid x:Name="BrowserHost" Margin="8"/>
 
             <!-- 컨트롤박스: 웹 화면은 별도 HWND 라 WPF 요소로는 그 위를 덮을 수 없다.
                  팝업은 자체 HWND 라 웹 화면 위에 뜬다. 창 이동 전용(드래그). -->
