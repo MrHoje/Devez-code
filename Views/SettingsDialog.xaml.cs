@@ -103,7 +103,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.25.0", "2026-08-24", true, new[]
+          ("v1.25.1", "2026-08-24", true, new[]
+          {
+              "미니 브라우저에 뒤로·앞으로·새로고침·주소창 툴바를 추가했습니다.",
+              "미니 브라우저 전용 주소 설정을 없애고, 인앱 브라우저 기본 주소로 함께 열리도록 바꿨습니다.",
+          }),
+          ("v1.25.0", "2026-08-24", false, new[]
           {
               "타이틀바 버튼으로 여닫는 미니 웹 브라우저를 추가했습니다.",
               "미니 브라우저 시작 주소를 설정 > 브라우저에서 지정할 수 있습니다.",
