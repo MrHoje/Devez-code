@@ -89,12 +89,14 @@ public partial class MiniBrowserWindow : Window
         OpenStateChanged?.Invoke();
     }
 
-    /// <summary>오버레이가 닫힐 때 — 그때 숨긴 창만 다시 보여준다(사용자가 닫아 둔 창은 그대로).</summary>
+    /// <summary>오버레이가 닫힐 때 — 그때 숨긴 창만 다시 보여준다(사용자가 닫아 둔 창은 그대로).
+    /// 숨겨진 동안 바뀐 설정(브라우저 테마 등)을 못 받았을 수 있으니 다시 적용한다.</summary>
     public static void RestoreAfterOverlay()
     {
         if (_instance is not { IsLoaded: true } win || !win._hiddenForOverlay) return;
         win._hiddenForOverlay = false;
         if (!win._hiddenByUser) win.Show();
+        win.ApplyColorScheme();
         OpenStateChanged?.Invoke();
     }
 
