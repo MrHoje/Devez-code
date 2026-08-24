@@ -14,14 +14,26 @@ namespace DevezCode.Views;
 /// </summary>
 public partial class MiniBrowserWindow : Window
 {
-    /// <summary>미니 브라우저 전용 방문 기록 키. 프로젝트별 브라우저 탭 기록과 섞이지 않게 고정 키를 쓴다.</summary>
-    private const string StateKey = "__mini_browser__";
+    /// <summary>미니 브라우저 전용 방문 기록 키(프로젝트별 브라우저 탭 기록과 분리).</summary>
+    private const string StateKey = SettingsService.MiniBrowserStateKey;
 
-    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
-    private const int DWMWCP_ROUND = 2;
+    /// <summary>창 모서리 라운드 반경(DIP). DWM 기본 라운드(약 8)보다 크게 보이도록 창 리전으로 직접 깎는다.</summary>
+    private const double CornerRadiusDip = 14;
 
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr hObject);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
 
     private static MiniBrowserWindow? _instance;
 
@@ -42,13 +54,26 @@ public partial class MiniBrowserWindow : Window
         if (!string.IsNullOrWhiteSpace(url)) created.Browser.NavigateToUrl(url!);
     }
 
+    /// <summary>설정에서 시작 주소를 바꿨을 때 — 열려 있는 미니 창을 새 주소로 즉시 이동시킨다.</summary>
+    public static void ApplyHomeUrlToOpenWindow()
+    {
+        if (_instance is not { IsLoaded: true } win) return;
+        var url = SettingsService.LoadMiniBrowserHomeUrl();
+        win.Browser.HomeUrlOverride = url;
+        win.Browser.NavigateToUrl(url);
+    }
+
     public MiniBrowserWindow()
     {
         InitializeComponent();
+        Browser.ShowToolbar = false;   // 미니 창은 웹 화면만 — 주소창·네비게이션 버튼 없음
+        Browser.HomeUrlOverride = SettingsService.LoadMiniBrowserHomeUrl();
         Browser.StateKey = StateKey;
         Browser.DocumentTitleChanged += OnDocumentTitleChanged;
         Loaded += OnLoadedFirst;
         Root.SizeChanged += (_, _) => ApplyRoundedClip();
+        SizeChanged += (_, _) => ApplyWindowRegion();
+        DpiChanged += (_, _) => ApplyWindowRegion();
     }
 
     private void OnLoadedFirst(object sender, RoutedEventArgs e)
@@ -60,25 +85,41 @@ public partial class MiniBrowserWindow : Window
     }
 
     /// <summary>라운드 코너 밖으로 자식 사각 모서리가 삐져나오지 않게 내용 Grid 를 둥글게 클립.
-    /// 반경 = Chrome.CornerRadius(8) - BorderThickness(1).</summary>
+    /// 반경 = Chrome.CornerRadius - BorderThickness(1).</summary>
     private void ApplyRoundedClip()
     {
         double w = Root.ActualWidth, h = Root.ActualHeight;
         if (w <= 0 || h <= 0) return;
-        Root.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 7, 7);
+        double r = CornerRadiusDip - 1;
+        Root.Clip = new RectangleGeometry(new Rect(0, 0, w, h), r, r);
+    }
+
+    /// <summary>창 자체를 둥근 리전으로 클립. WebView2 는 별도 HWND 라 WPF 클립으로는 안 깎이므로
+    /// 창 리전으로 잘라야 라운드 코너 밖으로 웹 화면이 삐져나오지 않는다.
+    /// (DWM 코너 지정은 반경이 8px 로 고정이라 더 둥근 모서리를 만들 수 없다.)</summary>
+    private void ApplyWindowRegion()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!GetWindowRect(hwnd, out var wr)) return;
+
+        int w = wr.Right - wr.Left, h = wr.Bottom - wr.Top;
+        if (w <= 0 || h <= 0) return;
+
+        double scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        int d = (int)Math.Round(CornerRadiusDip * 2 * (scale <= 0 ? 1 : scale));
+
+        // CreateRoundRectRgn 은 우/하단 경계를 배타적으로 다뤄 +1 이 필요하다.
+        var rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, d, d);
+        if (rgn == IntPtr.Zero) return;
+        if (SetWindowRgn(hwnd, rgn, true) == 0) DeleteObject(rgn); // 실패 시에만 해제(성공 시 소유권 이전)
     }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        try
-        {
-            var hwnd = new WindowInteropHelper(this).Handle;
-            int preference = DWMWCP_ROUND;
-            DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
-        }
-        catch { }
         RestorePlacement();
+        ApplyWindowRegion();
     }
 
     /// <summary>저장된 위치·크기 복원. 화면 작업영역과 겹치지 않으면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
@@ -137,12 +178,6 @@ public partial class MiniBrowserWindow : Window
     {
         if (e.ChangedButton != MouseButton.Left) return;
         try { DragMove(); } catch { }
-    }
-
-    private void OpenExternalBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (!Browser.TryOpenInDefaultBrowser(StateKey))
-            ConfirmDialog.Alert("기본 브라우저로 열기", "열 수 있는 웹 주소가 없습니다.");
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();

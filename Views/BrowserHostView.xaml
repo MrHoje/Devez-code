@@ -5,12 +5,12 @@
              FontFamily="{StaticResource PretendardFont}">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="35"/>
+            <RowDefinition x:Name="ToolbarRow" Height="35"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <!-- 브라우저 툴바 (devez 정합) -->
-        <Border Grid.Row="0"
+        <Border x:Name="Toolbar" Grid.Row="0"
                 Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}"
                 BorderThickness="0,0,0,1"

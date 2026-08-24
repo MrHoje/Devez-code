@@ -173,6 +173,8 @@ public static class SettingsService
         public bool BrowserMcpEnabled { get; set; } = false;
         // 브라우저 기록이 없는 새 탭의 첫 주소. 잘못된 구버전 값은 LoadBrowserHomeUrl에서 Google로 보정한다.
         public string BrowserHomeUrl { get; set; } = "https://www.google.com";
+        // 미니 브라우저 창의 시작 주소. 방문 기록이 없을 때 이 주소를 연다.
+        public string MiniBrowserHomeUrl { get; set; } = "https://claude.ai";
         // URL 링크 열기 방식. 기본은 대상 프로젝트의 인앱 브라우저 새 탭.
         public TerminalUrlOpenTarget TerminalUrlOpenTargetMode { get; set; } = TerminalUrlOpenTarget.InAppBrowserTab;
         // 새로 숨긴 세션을 숨김 목록 맨 위에 넣을지 여부. JSON 필드명은 기존 설정 호환을 위해 유지한다.
@@ -1182,12 +1184,35 @@ public static class SettingsService
     }
 
     private static string NormalizeBrowserHomeUrl(string? value)
+        => NormalizeHomeUrl(value, "https://www.google.com");
+
+    /// <summary>미니 브라우저 창 시작 주소. 비었거나 http(s) 가 아니면 claude.ai 로 보정.</summary>
+    public static string LoadMiniBrowserHomeUrl()
+        => NormalizeHomeUrl(Current.MiniBrowserHomeUrl, MiniBrowserHomeUrlDefault);
+
+    public static void SaveMiniBrowserHomeUrl(string? url)
+    {
+        Current.MiniBrowserHomeUrl = NormalizeHomeUrl(url, MiniBrowserHomeUrlDefault);
+        // 시작 주소를 바꾸면 다음에 열 때 새 주소로 시작하도록 미니 창 방문 기록을 비운다.
+        Current.BrowserHistoryByProject.Remove(MiniBrowserStateKey);
+        Save();
+    }
+
+    public const string MiniBrowserHomeUrlDefault = "https://claude.ai";
+
+    /// <summary>미니 브라우저 방문 기록 키. 프로젝트별 브라우저 탭 기록과 섞이지 않게 고정 키를 쓴다.</summary>
+    public const string MiniBrowserStateKey = "__mini_browser__";
+
+    /// <summary>스킴 없는 입력은 https 로 보정하고, 그래도 http(s) 절대 URL 이 아니면 fallback 을 쓴다.</summary>
+    private static string NormalizeHomeUrl(string? value, string fallback)
     {
         var url = value?.Trim() ?? "";
+        if (url.Length > 0 && !url.Contains("://", StringComparison.Ordinal))
+            url = "https://" + url;
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
             return uri.AbsoluteUri;
-        return "https://www.google.com";
+        return fallback;
     }
 
     public static bool LoadHiddenSessionInsertionOnTop() => Current.HiddenSessionsOnTop;
