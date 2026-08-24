@@ -316,13 +316,13 @@ public partial class MiniBrowserWindow : Window
 
     // ── 컨트롤박스 펼침/접힘 ──────────────────────────────────────────
     /// <summary>펼쳤을 때 컨트롤박스 높이.</summary>
-    private const double HeaderHeight = 28;
+    private const double HeaderHeight = 22;
 
     /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다(컨트롤박스 높이와 같게).</summary>
     private const double HoverEnterZone = HeaderHeight;
 
     /// <summary>펼친 뒤에는 이 범위를 벗어나야 접는다(경계에서 깜빡이는 것 방지).</summary>
-    private const double HoverExitZone = HeaderHeight + 16;
+    private const double HoverExitZone = HeaderHeight + 13;
 
     private DispatcherTimer? _hoverTimer;
     private bool _headerShown;
@@ -404,18 +404,10 @@ public partial class MiniBrowserWindow : Window
     /// <summary>변 띠의 양 끝 이 길이만큼은 모서리(대각선) 리사이즈로 다룬다.</summary>
     private const double CornerZone = 26;
 
-    private const int WM_NCLBUTTONDOWN = 0x00A1;
+    // 드래그 방향 코드(Win32 비클라이언트 적중 코드와 같은 값을 재사용).
     private const int HTCAPTION = 2;
-
-    // 비클라이언트 적중 코드 — 시스템에 리사이즈를 맡길 때 방향으로 넘긴다.
     private const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
                       HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
-
-    [DllImport("user32.dll")]
-    private static extern bool ReleaseCapture();
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
     /// <summary>네 변 띠를 창 바깥에 붙인다. 창이 움직이거나 크기가 바뀔 때마다 다시 계산한다.</summary>
     private void SyncEdges()
@@ -465,6 +457,12 @@ public partial class MiniBrowserWindow : Window
 
     private void Edge_MouseMove(object sender, MouseEventArgs e)
     {
+        if (_dragHit != 0)
+        {
+            if (e.LeftButton == MouseButtonState.Pressed) ApplyDrag();
+            else EndDrag();
+            return;
+        }
         if (sender is not FrameworkElement band) return;
         band.Cursor = ResolveEdgeHit(band, e.GetPosition(band)) switch
         {
@@ -475,30 +473,103 @@ public partial class MiniBrowserWindow : Window
         };
     }
 
-    /// <summary>리사이즈는 시스템에 맡긴다 — 창에 비클라이언트 클릭을 보내면 표준 크기 조절이 시작된다.</summary>
+    // 크기 조절·이동은 좌표를 직접 계산한다. 팝업은 별도 HWND 라 창에 비클라이언트 클릭을 보내는
+    // 방식(시스템 위임)이나 Window.DragMove() 가 시작되지 않는다.
+    private int _dragHit;
+    private NativePoint _dragCursorOrigin;
+    private Rect _dragWindowOrigin;
+    private FrameworkElement? _dragBand;
+
     private void Edge_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement band) return;
+        BeginDrag(band, ResolveEdgeHit(band, e.GetPosition(band)));
         e.Handled = true;
-        BeginSystemDrag(ResolveEdgeHit(band, e.GetPosition(band)));
     }
 
-    /// <summary>컨트롤박스 드래그로 창 이동 — 이동도 같은 방식으로 시스템에 맡긴다.
-    /// (팝업은 별도 HWND 라 Window.DragMove() 가 통하지 않는다.)</summary>
+    private void Edge_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => EndDrag();
+
+    /// <summary>컨트롤박스 드래그로 창 이동.</summary>
     private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
+        BeginDrag(HeaderBar, HTCAPTION);
         e.Handled = true;
-        BeginSystemDrag(HTCAPTION);
     }
 
-    private void BeginSystemDrag(int hit)
+    private void HeaderBar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => EndDrag();
+
+    private void HeaderBar_MouseMove(object sender, MouseEventArgs e)
     {
-        var hwnd = new WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero) return;
-        ReleaseCapture();
-        SendMessage(hwnd, WM_NCLBUTTONDOWN, new IntPtr(hit), IntPtr.Zero);
+        if (_dragHit == 0) return;
+        if (e.LeftButton == MouseButtonState.Pressed) ApplyDrag();
+        else EndDrag();
+    }
+
+    private void BeginDrag(FrameworkElement band, int hit)
+    {
+        if (!GetCursorPos(out var cur)) return;
+        _dragHit = hit;
+        _dragBand = band;
+        _dragCursorOrigin = cur;
+        _dragWindowOrigin = new Rect(Left, Top, Width, Height);
+        band.CaptureMouse();
+    }
+
+    private void EndDrag()
+    {
+        if (_dragHit == 0) return;
+        _dragHit = 0;
+        _dragBand?.ReleaseMouseCapture();
+        _dragBand = null;
         SavePlacement();
+    }
+
+    /// <summary>드래그 중 커서 이동량을 창 위치·크기에 반영. 방향에 따라 좌/상은 위치까지 함께 움직인다.</summary>
+    private void ApplyDrag()
+    {
+        if (_dragHit == 0) return;
+        if (!GetCursorPos(out var cur)) return;
+
+        var delta = new Vector(cur.X - _dragCursorOrigin.X, cur.Y - _dragCursorOrigin.Y);
+        if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
+            delta = target.TransformFromDevice.Transform(delta);   // 화면 픽셀 → DIP
+
+        if (_dragHit == HTCAPTION)
+        {
+            Left = _dragWindowOrigin.X + delta.X;
+            Top = _dragWindowOrigin.Y + delta.Y;
+            return;
+        }
+
+        double left = _dragWindowOrigin.X, top = _dragWindowOrigin.Y;
+        double width = _dragWindowOrigin.Width, height = _dragWindowOrigin.Height;
+
+        bool west = _dragHit is HTLEFT or HTTOPLEFT or HTBOTTOMLEFT;
+        bool east = _dragHit is HTRIGHT or HTTOPRIGHT or HTBOTTOMRIGHT;
+        bool north = _dragHit is HTTOP or HTTOPLEFT or HTTOPRIGHT;
+        bool south = _dragHit is HTBOTTOM or HTBOTTOMLEFT or HTBOTTOMRIGHT;
+
+        if (west)
+        {
+            double w = Math.Max(MinWidth, width - delta.X);
+            left += width - w;   // 최소 폭에 걸리면 위치도 더 이상 움직이지 않는다
+            width = w;
+        }
+        else if (east) width = Math.Max(MinWidth, width + delta.X);
+
+        if (north)
+        {
+            double h = Math.Max(MinHeight, height - delta.Y);
+            top += height - h;
+            height = h;
+        }
+        else if (south) height = Math.Max(MinHeight, height + delta.Y);
+
+        Left = left;
+        Top = top;
+        Width = width;
+        Height = height;
     }
 
     /// <summary>저장된 위치·크기 복원. 화면 밖이면(모니터 제거 등) 소유 창 기준으로 배치.</summary>

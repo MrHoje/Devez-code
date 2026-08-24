@@ -42,10 +42,12 @@
                         CornerRadius="7,7,0,0"
                         Padding="0,0,6,0"
                         ClipToBounds="True"
-                        MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown">
+                        MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown"
+                        MouseMove="HeaderBar_MouseMove"
+                        MouseLeftButtonUp="HeaderBar_MouseLeftButtonUp">
                     <Button x:Name="CloseBtn"
                             HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Width="20" Height="20"
+                            Width="18" Height="18"
                             Style="{StaticResource IconButton}"
                             Cursor="Arrow" ToolTip="닫기"
                             Click="CloseBtn_Click">
@@ -61,22 +63,30 @@
             <Popup x:Name="EdgeLeftPopup" Placement="Relative" PlacementTarget="{Binding ElementName=Root}"
                    AllowsTransparency="True" StaysOpen="True" IsOpen="False">
                 <Border x:Name="EdgeLeft" Background="Transparent" Cursor="SizeWE"
-                        MouseMove="Edge_MouseMove" MouseLeftButtonDown="Edge_MouseLeftButtonDown"/>
+                        MouseMove="Edge_MouseMove"
+                        MouseLeftButtonDown="Edge_MouseLeftButtonDown"
+                        MouseLeftButtonUp="Edge_MouseLeftButtonUp"/>
             </Popup>
             <Popup x:Name="EdgeRightPopup" Placement="Relative" PlacementTarget="{Binding ElementName=Root}"
                    AllowsTransparency="True" StaysOpen="True" IsOpen="False">
                 <Border x:Name="EdgeRight" Background="Transparent" Cursor="SizeWE"
-                        MouseMove="Edge_MouseMove" MouseLeftButtonDown="Edge_MouseLeftButtonDown"/>
+                        MouseMove="Edge_MouseMove"
+                        MouseLeftButtonDown="Edge_MouseLeftButtonDown"
+                        MouseLeftButtonUp="Edge_MouseLeftButtonUp"/>
             </Popup>
             <Popup x:Name="EdgeTopPopup" Placement="Relative" PlacementTarget="{Binding ElementName=Root}"
                    AllowsTransparency="True" StaysOpen="True" IsOpen="False">
                 <Border x:Name="EdgeTop" Background="Transparent" Cursor="SizeNS"
-                        MouseMove="Edge_MouseMove" MouseLeftButtonDown="Edge_MouseLeftButtonDown"/>
+                        MouseMove="Edge_MouseMove"
+                        MouseLeftButtonDown="Edge_MouseLeftButtonDown"
+                        MouseLeftButtonUp="Edge_MouseLeftButtonUp"/>
             </Popup>
             <Popup x:Name="EdgeBottomPopup" Placement="Relative" PlacementTarget="{Binding ElementName=Root}"
                    AllowsTransparency="True" StaysOpen="True" IsOpen="False">
                 <Border x:Name="EdgeBottom" Background="Transparent" Cursor="SizeNS"
-                        MouseMove="Edge_MouseMove" MouseLeftButtonDown="Edge_MouseLeftButtonDown"/>
+                        MouseMove="Edge_MouseMove"
+                        MouseLeftButtonDown="Edge_MouseLeftButtonDown"
+                        MouseLeftButtonUp="Edge_MouseLeftButtonUp"/>
             </Popup>
         </Grid>
     </Border>
