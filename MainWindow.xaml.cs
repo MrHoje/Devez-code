@@ -3196,6 +3196,7 @@ public partial class MainWindow : Window
         }
         SetUsagePanelOpen(SettingsService.LoadUsagePanelOpen(), persist: false); // 사용량 사이드바 상태 복원
         SetSessionHistoryPanelOpen(SettingsService.LoadSessionHistoryPanelOpen(), persist: false); // 완료 기록 사이드바 상태 복원
+        Views.MiniBrowserWindow.OpenStateChanged += UpdatePanelToggleVisual;
         UpdatePanelToggleVisual();
         ApplyProjectColumns(SettingsService.LoadProjectColumns()); // 저장된 열 수 복원(최소/현재 폭 반영)
     }
@@ -3211,6 +3212,8 @@ public partial class MainWindow : Window
         // 사용량 사이드바는 '펼침' 상태일 때만 강조(열려 있음 표시).
         UsagePanelIcon.Stroke = _usageOpen ? primary : muted;
         SessionHistoryPanelIcon.Stroke = _sessionHistoryOpen ? primary : muted;
+        // 미니 브라우저는 창이 떠 있는 동안만 강조(닫으면 숨겨진 상태라 muted).
+        MiniBrowserIcon.Stroke = Views.MiniBrowserWindow.IsOpen ? primary : muted;
         // 우측 패널이 접혔으면 파일탐색기 스플리터 비활성화 — 빈(폭 0) 패널이 드래그로 열리는 것 방지.
         FileExpSplitter.IsEnabled = !rightHidden;
     }

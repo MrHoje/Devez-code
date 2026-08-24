@@ -11,11 +11,12 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>
-/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 툴바·주소창·닫기 버튼 없이 웹 화면만 보여주고
-/// 상단 헤더는 창 이동 전용 띠다. 여닫기는 타이틀바 버튼 토글로만 한다.
+/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 툴바·주소창 없이 웹 화면만 보여주고 상단 헤더는
+/// 창 이동용 띠다(닫기 버튼은 헤더에 마우스를 올릴 때만 보인다).
 /// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
 ///
-/// 마지막 주소는 앱이 켜져 있는 동안만 기억한다(정적 필드). 앱을 껐다 켜면 설정의 시작 주소로 연다.
+/// 닫기는 창을 없애지 않고 숨기기다 — 앱이 살아 있는 동안 인스턴스를 유지해 다시 열 때 페이지를
+/// 새로 로드하지 않는다. 앱을 껐다 켜면 설정의 시작 주소로 새로 연다.
 /// 위치·크기는 설정에 저장해 다음 실행에도 복원한다.
 ///
 /// 라운드 코너는 렌더 모드에 따라 두 경로로 갈린다.
@@ -54,9 +55,14 @@ public partial class MiniBrowserWindow : Window
 
     private static MiniBrowserWindow? _instance;
 
-    /// <summary>같은 실행 안에서 창을 닫고 다시 열 때 이어보기 위한 마지막 주소.
-    /// 설정 파일에 남기지 않으므로 앱을 재시작하면 시작 주소로 돌아간다.</summary>
-    private static string? _lastUrlThisRun;
+    /// <summary>표시/숨김이 바뀔 때 — 타이틀바 버튼 색을 갱신하는 쪽에서 구독한다.</summary>
+    public static event Action? OpenStateChanged;
+
+    /// <summary>미니 창이 화면에 떠 있는지.</summary>
+    public static bool IsOpen => _instance is { IsVisible: true };
+
+    /// <summary>사용자가 닫기(숨기기)를 눌렀는지. 소유 창 최소화→복원 때 다시 나타나는 것을 막는 데 쓴다.</summary>
+    private bool _hiddenByUser;
 
     private readonly BrowserSurface _surface;
     private readonly Action<string> _themeChangedHandler;
@@ -64,21 +70,24 @@ public partial class MiniBrowserWindow : Window
     private bool _coreReady;
     private string? _pendingUrl;
 
-    /// <summary>타이틀바 버튼용 — 열려 있으면 닫고, 없으면 띄운다.</summary>
+    /// <summary>타이틀바 버튼용 — 떠 있으면 숨기고, 아니면 보여준다.</summary>
     public static void Toggle(Window? owner)
     {
-        if (_instance is { IsLoaded: true } win) { win.Close(); return; }
+        if (_instance is { IsVisible: true } open) { open.HideForLater(); return; }
         ShowOrActivate(owner);
     }
 
-    /// <summary>이미 열려 있으면 활성화만, 아니면 새로 띄운다. url 이 있으면 그 주소로 이동.</summary>
+    /// <summary>숨겨져 있던 창은 그대로 다시 보여주고(페이지 재로드 없음), 없으면 새로 띄운다.</summary>
     public static void ShowOrActivate(Window? owner, string? url = null)
     {
         if (_instance is { IsLoaded: true } win)
         {
+            win._hiddenByUser = false;
             if (win.WindowState == WindowState.Minimized) win.WindowState = WindowState.Normal;
+            if (!win.IsVisible) win.Show();
             win.Activate();
             win.Navigate(url);
+            OpenStateChanged?.Invoke();
             return;
         }
 
@@ -89,6 +98,7 @@ public partial class MiniBrowserWindow : Window
             _instance = created;
             created.Show();
             created.Navigate(url);
+            OpenStateChanged?.Invoke();
         }
         catch (Exception ex)
         {
@@ -100,7 +110,6 @@ public partial class MiniBrowserWindow : Window
     /// <summary>설정에서 시작 주소를 바꿨을 때 — 열려 있는 미니 창을 새 주소로 즉시 이동시킨다.</summary>
     public static void ApplyHomeUrlToOpenWindow()
     {
-        _lastUrlThisRun = null;
         if (_instance is { IsLoaded: true } win)
             win.Navigate(SettingsService.LoadMiniBrowserHomeUrl());
     }
@@ -127,6 +136,8 @@ public partial class MiniBrowserWindow : Window
 
         Root.SizeChanged += (_, _) => ApplyRoundedClip();
         Loaded += OnLoadedFirst;
+        // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
+        IsVisibleChanged += (_, _) => { if (_hiddenByUser && IsVisible) Hide(); };
     }
 
     private void OnLoadedFirst(object sender, RoutedEventArgs e)
@@ -194,12 +205,13 @@ public partial class MiniBrowserWindow : Window
             _coreReady = true;
             ApplyColorScheme();
             _surface.SetZoom(InitialZoomFactor);
+            // 웹 화면에 포커스가 있을 때의 F5·Ctrl+R 은 브라우저 기본 단축키가 처리한다.
+            try { core.Settings.AreBrowserAcceleratorKeysEnabled = true; } catch { }
 
-            core.SourceChanged += (_, _) => OnSourceChanged(core.Source);
             // 새 창 요청은 같은 뷰에서 열기(팝업 창 대신 인라인 이동)
             core.NewWindowRequested += (_, args) => { args.Handled = true; NavigateCore(args.Uri); };
 
-            NavigateCore(_pendingUrl ?? _lastUrlThisRun ?? SettingsService.LoadMiniBrowserHomeUrl());
+            NavigateCore(_pendingUrl ?? SettingsService.LoadMiniBrowserHomeUrl());
             _pendingUrl = null;
         }
         catch (Exception ex)
@@ -214,13 +226,6 @@ public partial class MiniBrowserWindow : Window
                 Margin = new Thickness(24),
             });
         }
-    }
-
-    /// <summary>같은 실행 안에서만 쓰는 마지막 주소 기록(설정 파일에는 남기지 않는다).</summary>
-    private static void OnSourceChanged(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url) || url == "about:blank") return;
-        _lastUrlThisRun = url;
     }
 
     /// <summary>외부 요청 주소로 이동. 코어 준비 전이면 준비 후 열도록 보류한다.</summary>
@@ -246,6 +251,15 @@ public partial class MiniBrowserWindow : Window
                     : CoreWebView2PreferredColorScheme.Light;
         }
         catch { /* 해제 중 등 */ }
+    }
+
+    /// <summary>헤더 등 WPF 쪽에 포커스가 있을 때의 F5 — 웹 화면 포커스 시엔 브라우저 기본 단축키가 처리한다.</summary>
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+        if (e.Key != Key.F5) return;
+        try { _surface.Core?.Reload(); } catch { }
+        e.Handled = true;
     }
 
     /// <summary>저장된 위치·크기 복원. 화면 밖이면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
@@ -286,19 +300,33 @@ public partial class MiniBrowserWindow : Window
         return !hit.IsEmpty && hit.Width >= 100 && hit.Height >= 60;
     }
 
+    private void SavePlacement()
+    {
+        if (WindowState != WindowState.Normal || Width <= 0 || Height <= 0) return;
+        try { SettingsService.SaveMiniBrowserPlacement(Left, Top, Width, Height); } catch { }
+    }
+
+    /// <summary>닫기 = 숨기기. 인스턴스와 로드된 페이지를 그대로 두어 다시 열 때 재로드하지 않는다.</summary>
+    private void HideForLater()
+    {
+        SavePlacement();
+        _hiddenByUser = true;
+        Hide();
+        OpenStateChanged?.Invoke();
+    }
+
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
         try { DragMove(); } catch { }
     }
 
+    private void CloseBtn_Click(object sender, RoutedEventArgs e) => HideForLater();
+
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         base.OnClosing(e);
-        if (WindowState == WindowState.Normal && Width > 0 && Height > 0)
-        {
-            try { SettingsService.SaveMiniBrowserPlacement(Left, Top, Width, Height); } catch { }
-        }
+        SavePlacement();
     }
 
     protected override void OnClosed(EventArgs e)
@@ -307,6 +335,7 @@ public partial class MiniBrowserWindow : Window
         if (ReferenceEquals(_instance, this)) _instance = null;
         App.ThemeChanged -= _themeChangedHandler;
         try { _surface.Dispose(); } catch { }
+        OpenStateChanged?.Invoke();
     }
 
     // ── 브라우저 표면 — 두 컨트롤의 공통 기반(WebView2Base)이 internal 이라 얇게 감싼다 ─────────

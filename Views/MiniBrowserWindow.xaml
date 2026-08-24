@@ -26,10 +26,30 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 헤더: 창 이동 전용 띠(주소창·닫기 없음 — 여닫기는 상단 버튼으로). -->
+            <!-- 헤더: 창 이동용 띠. 닫기 버튼은 마우스를 올릴 때만 보인다. -->
             <Border x:Name="Header" Grid.Row="0"
                     Background="Transparent"
-                    MouseLeftButtonDown="Header_MouseLeftButtonDown"/>
+                    Padding="0,0,4,0"
+                    MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <Button x:Name="CloseBtn"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Width="20" Height="20"
+                        Cursor="Arrow" ToolTip="닫기"
+                        Click="CloseBtn_Click">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                            <Setter Property="Opacity" Value="0"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsMouseOver, ElementName=Header}" Value="True">
+                                    <Setter Property="Opacity" Value="1"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <TextBlock Text="&#x2715;" FontSize="11"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                </Button>
+            </Border>
 
             <!-- 브라우저 본문 -->
             <Grid x:Name="BrowserHost" Grid.Row="1"/>
