@@ -5,7 +5,6 @@
         Title="미니 브라우저"
         Width="520" Height="700" MinWidth="320" MinHeight="240"
         WindowStyle="None" ResizeMode="CanResize" ShowInTaskbar="False"
-        AllowsTransparency="True" Background="Transparent"
         FontFamily="{StaticResource PretendardFont}">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
@@ -15,13 +14,11 @@
                             UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
-    <!-- AllowsTransparency 창이므로 라운드 코너가 WPF 안티앨리어싱으로 매끄럽게 그려진다.
-         본문 브라우저도 WPF 렌더 경로(WebView2CompositionControl)라 같은 클립을 그대로 탄다. -->
+    <!-- 창 투명도·CornerRadius 는 렌더 모드에 따라 코드에서 정한다(MiniBrowserWindow 생성자 주석 참고). -->
     <Border x:Name="Chrome"
             Background="{DynamicResource BgBrush}"
             BorderBrush="{DynamicResource LineBrush}"
             BorderThickness="1"
-            CornerRadius="16"
             SnapsToDevicePixels="False">
         <Grid x:Name="Root">
             <Grid.RowDefinitions>
