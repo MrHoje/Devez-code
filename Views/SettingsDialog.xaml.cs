@@ -43,7 +43,6 @@ public partial class SettingsDialog : UserControl
     private bool   _originalBrowserMcp;
     private bool   _selectedBrowserMcp;
     private string _originalBrowserHomeUrl = "";
-    private string _originalMiniBrowserHomeUrl = "";
     private TerminalUrlOpenTarget _originalTerminalUrlOpenTarget;
     private bool   _originalHiddenSessionInsertionOnTop;
     private bool   _originalHideProjectInfoHeader;
@@ -68,7 +67,6 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedPromptForNewSessionName;
     private bool   _selectedPromptForNewBrowserTabName;
     private string _selectedBrowserHomeUrl = "";
-    private string _selectedMiniBrowserHomeUrl = "";
     private TerminalUrlOpenTarget _selectedTerminalUrlOpenTarget;
     private bool   _selectedHiddenSessionInsertionOnTop;
     private bool   _selectedHideProjectInfoHeader;
@@ -745,9 +743,6 @@ public partial class SettingsDialog : UserControl
         _originalBrowserHomeUrl = SettingsService.LoadBrowserHomeUrl();
         _selectedBrowserHomeUrl = _originalBrowserHomeUrl;
         BrowserHomeUrlBox.Text = _selectedBrowserHomeUrl;
-        _originalMiniBrowserHomeUrl = SettingsService.LoadMiniBrowserHomeUrl();
-        _selectedMiniBrowserHomeUrl = _originalMiniBrowserHomeUrl;
-        MiniBrowserHomeUrlBox.Text = _selectedMiniBrowserHomeUrl;
         _originalTerminalUrlOpenTarget = SettingsService.LoadTerminalUrlOpenTarget();
         _selectedTerminalUrlOpenTarget = _originalTerminalUrlOpenTarget;
         SelectComboByTag(TerminalUrlOpenTargetCombo, _selectedTerminalUrlOpenTarget.ToString());
@@ -1249,9 +1244,6 @@ public partial class SettingsDialog : UserControl
 
     private void BrowserHomeUrlBox_TextChanged(object sender, TextChangedEventArgs e)
         => _selectedBrowserHomeUrl = BrowserHomeUrlBox.Text;
-
-    private void MiniBrowserHomeUrlBox_TextChanged(object sender, TextChangedEventArgs e)
-        => _selectedMiniBrowserHomeUrl = MiniBrowserHomeUrlBox.Text;
 
     private void BrowserMcpToggle_Changed(object sender, RoutedEventArgs e)
     {
@@ -2164,15 +2156,6 @@ public partial class SettingsDialog : UserControl
             BrowserMcpInstaller.Sync();
         }
         SettingsService.SaveBrowserHomeUrl(_selectedBrowserHomeUrl);
-        // 미니 브라우저 주소는 저장 시 방문 기록을 비우므로, 실제로 바뀐 경우에만 저장한다.
-        if (SettingsService.LoadMiniBrowserHomeUrl() != _selectedMiniBrowserHomeUrl)
-        {
-            SettingsService.SaveMiniBrowserHomeUrl(_selectedMiniBrowserHomeUrl);
-            _originalMiniBrowserHomeUrl = SettingsService.LoadMiniBrowserHomeUrl();
-            _selectedMiniBrowserHomeUrl = _originalMiniBrowserHomeUrl;
-            MiniBrowserHomeUrlBox.Text = _selectedMiniBrowserHomeUrl;
-            MiniBrowserWindow.ApplyHomeUrlToOpenWindow();   // 열려 있으면 새 주소로 즉시 이동
-        }
         SettingsService.SaveTerminalUrlOpenTarget(_selectedTerminalUrlOpenTarget);
         if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)
             SettingsService.SaveHiddenSessionInsertionOnTop(_selectedHiddenSessionInsertionOnTop);
@@ -2278,9 +2261,6 @@ public partial class SettingsDialog : UserControl
         _originalBrowserHomeUrl = SettingsService.LoadBrowserHomeUrl();
         _selectedBrowserHomeUrl = _originalBrowserHomeUrl;
         BrowserHomeUrlBox.Text = _selectedBrowserHomeUrl;
-        _originalMiniBrowserHomeUrl = SettingsService.LoadMiniBrowserHomeUrl();
-        _selectedMiniBrowserHomeUrl = _originalMiniBrowserHomeUrl;
-        MiniBrowserHomeUrlBox.Text = _selectedMiniBrowserHomeUrl;
         _originalTerminalUrlOpenTarget = _selectedTerminalUrlOpenTarget;
         _originalHiddenSessionInsertionOnTop = _selectedHiddenSessionInsertionOnTop;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;

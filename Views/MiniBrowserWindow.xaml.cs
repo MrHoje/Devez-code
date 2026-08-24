@@ -138,13 +138,6 @@ public partial class MiniBrowserWindow : Window
         }
     }
 
-    /// <summary>설정에서 시작 주소를 바꿨을 때 — 열려 있는 미니 창을 새 주소로 즉시 이동시킨다.</summary>
-    public static void ApplyHomeUrlToOpenWindow()
-    {
-        if (_instance is { IsLoaded: true } win)
-            win.Navigate(SettingsService.LoadMiniBrowserHomeUrl());
-    }
-
     public MiniBrowserWindow()
     {
         InitializeComponent();
@@ -259,7 +252,7 @@ public partial class MiniBrowserWindow : Window
             core.HistoryChanged += (_, _) => UpdateNavState();
             UpdateNavState();
 
-            NavigateCore(_pendingUrl ?? SettingsService.LoadMiniBrowserHomeUrl());
+            NavigateCore(_pendingUrl ?? SettingsService.LoadBrowserHomeUrl());
             _pendingUrl = null;
         }
         catch (Exception ex)
