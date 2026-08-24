@@ -8,8 +8,9 @@
         Background="{DynamicResource BgBrush}"
         FontFamily="{StaticResource PretendardFont}">
     <shell:WindowChrome.WindowChrome>
+        <!-- 리사이즈 적중 판정은 코드(WM_NCHITTEST)에서 직접 한다 — 변/모서리를 더 넉넉하게 잡기 위해. -->
         <shell:WindowChrome CaptionHeight="0"
-                            ResizeBorderThickness="7"
+                            ResizeBorderThickness="0"
                             CornerRadius="0"
                             GlassFrameThickness="0"
                             UseAeroCaptionButtons="False"/>
@@ -25,8 +26,10 @@
 
             <!-- 컨트롤박스: 웹 화면은 별도 HWND 라 WPF 요소로는 그 위를 덮을 수 없다.
                  팝업은 자체 HWND 라 웹 화면 위에 뜬다. 창 이동 전용(드래그). -->
+            <!-- VerticalOffset — 최상단 몇 px 는 비워 위쪽 리사이즈를 막지 않는다. -->
             <Popup x:Name="HeaderPopup"
                    Placement="Relative"
+                   VerticalOffset="6"
                    PlacementTarget="{Binding ElementName=Root}"
                    AllowsTransparency="True"
                    StaysOpen="True"

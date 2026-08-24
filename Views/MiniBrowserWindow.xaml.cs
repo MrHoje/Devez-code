@@ -187,6 +187,7 @@ public partial class MiniBrowserWindow : Window
         base.OnSourceInitialized(e);
         RestorePlacement();
         DisableEdgeSnap();
+        HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(ResizeHitTestHook);
 
         // DWM 이 창 자체를 라운드로 깎아 자식 HWND(웹 화면)까지 매끄럽게 잘린다.
         try
@@ -196,6 +197,47 @@ public partial class MiniBrowserWindow : Window
                 DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
         }
         catch { }
+    }
+
+    // ── 리사이즈 적중 판정 ────────────────────────────────────────────
+    // WindowChrome 의 ResizeBorderThickness 는 변과 모서리를 같은 두께로 잡아 모서리를 집기가 어렵다.
+    // 직접 판정해 변은 조금, 모서리는 넉넉하게 준다.
+    private const int WM_NCHITTEST = 0x0084;
+    private const double EdgeGrip = 10;     // 변 두께
+    private const double CornerGrip = 22;   // 모서리 한 변 길이
+
+    private const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
+                      HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
+
+    private IntPtr ResizeHitTestHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg != WM_NCHITTEST || WindowState != WindowState.Normal) return IntPtr.Zero;
+        if (!GetCursorPos(out var cur)) return IntPtr.Zero;
+
+        Point p;
+        try { p = PointFromScreen(new Point(cur.X, cur.Y)); }
+        catch { return IntPtr.Zero; }
+
+        double w = ActualWidth, h = ActualHeight;
+        if (w <= 0 || h <= 0) return IntPtr.Zero;
+        if (p.X < 0 || p.Y < 0 || p.X > w || p.Y > h) return IntPtr.Zero;
+
+        bool left = p.X <= CornerGrip, right = p.X >= w - CornerGrip;
+        bool top = p.Y <= CornerGrip, bottom = p.Y >= h - CornerGrip;
+
+        int hit = 0;
+        if (left && top) hit = HTTOPLEFT;
+        else if (right && top) hit = HTTOPRIGHT;
+        else if (left && bottom) hit = HTBOTTOMLEFT;
+        else if (right && bottom) hit = HTBOTTOMRIGHT;
+        else if (p.X <= EdgeGrip) hit = HTLEFT;
+        else if (p.X >= w - EdgeGrip) hit = HTRIGHT;
+        else if (p.Y <= EdgeGrip) hit = HTTOP;
+        else if (p.Y >= h - EdgeGrip) hit = HTBOTTOM;
+
+        if (hit == 0) return IntPtr.Zero;
+        handled = true;
+        return new IntPtr(hit);
     }
 
     /// <summary>가장자리 스냅 차단. 리사이즈(WS_THICKFRAME)는 그대로 두고 최대화 비트만 뗀다.</summary>
@@ -315,11 +357,14 @@ public partial class MiniBrowserWindow : Window
     /// <summary>펼쳤을 때 컨트롤박스 높이.</summary>
     private const double HeaderHeight = 28;
 
-    /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다(컨트롤박스 높이와 같게).</summary>
-    private const double HoverEnterZone = HeaderHeight;
+    /// <summary>팝업이 창 최상단에서 내려앉는 거리(위쪽 리사이즈 영역을 비워 두기 위함).</summary>
+    private const double HeaderTopOffset = 6;
+
+    /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다. 최상단은 리사이즈용이라 제외한다.</summary>
+    private const double HoverEnterZone = HeaderTopOffset + HeaderHeight;
 
     /// <summary>펼친 뒤에는 이 범위를 벗어나야 접는다(경계에서 깜빡이는 것 방지).</summary>
-    private const double HoverExitZone = HeaderHeight + 16;
+    private const double HoverExitZone = HoverEnterZone + 16;
 
     private DispatcherTimer? _hoverTimer;
     private bool _headerShown;
@@ -356,7 +401,8 @@ public partial class MiniBrowserWindow : Window
 
         bool insideX = p.X >= 0 && p.X <= ActualWidth;
         double limit = _headerShown ? HoverExitZone : HoverEnterZone;
-        SetHeaderShown(insideX && p.Y >= 0 && p.Y <= limit);
+        // 최상단 리사이즈 영역에 커서가 있으면 펼치지 않는다(크기 조절을 방해하지 않도록).
+        SetHeaderShown(insideX && p.Y >= HeaderTopOffset && p.Y <= limit);
     }
 
     private void SetHeaderShown(bool show)
