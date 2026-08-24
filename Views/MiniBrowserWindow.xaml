@@ -68,12 +68,21 @@
                             <!-- 글리프가 시각적으로 아래로 치우쳐 보여 아이콘만 1px 올린다. -->
                             <TextBlock x:Name="CloseGlyph" Text="&#x2715;" FontSize="11" Margin="0,-1,0,0"/>
                         </Button>
-                        <TextBox x:Name="AddressBox"
-                                 Margin="4,0,4,0" Height="22"
-                                 VerticalContentAlignment="Center"
-                                 BorderThickness="1" Padding="8,0"
-                                 FontSize="12"
-                                 KeyDown="AddressBox_KeyDown"/>
+                        <!-- 디자인 시스템 입력: 라운드 8·보더 1·PanelSoft 배경. 색은 페이지 팔레트에 맞춰
+                             코드에서 칠하고, 포커스 시 보더를 Primary 로 강조한다. -->
+                        <Border x:Name="AddressBorder"
+                                Margin="6,0,4,0" Height="24"
+                                VerticalAlignment="Center"
+                                CornerRadius="8" BorderThickness="1"
+                                Padding="10,0" SnapsToDevicePixels="True">
+                            <TextBox x:Name="AddressBox"
+                                     Style="{StaticResource InputStyle}"
+                                     FontSize="{DynamicResource Fs12}"
+                                     VerticalContentAlignment="Center"
+                                     KeyDown="AddressBox_KeyDown"
+                                     GotKeyboardFocus="AddressBox_FocusChanged"
+                                     LostKeyboardFocus="AddressBox_FocusChanged"/>
+                        </Border>
                     </DockPanel>
                 </Border>
             </Popup>

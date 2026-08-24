@@ -83,6 +83,7 @@ public partial class MiniBrowserWindow : Window
     private readonly SolidColorBrush _chromeBorderBrush = new(Colors.Gray);   // 바깥 테두리 = 페이지색을 살짝 민 색
     private readonly SolidColorBrush _addressFgBrush = new(Colors.Black);     // 주소창 글자색
     private readonly SolidColorBrush _addressBgBrush = new(Colors.White);     // 주소창 배경색
+    private readonly SolidColorBrush _addressBorderBrush = new(Colors.Gray);  // 주소창 보더(포커스 시 Primary)
     private bool _coreReady;
     private string? _pendingUrl;
 
@@ -174,8 +175,9 @@ public partial class MiniBrowserWindow : Window
         BackGlyph.Foreground = _headerGlyphBrush;
         ForwardGlyph.Foreground = _headerGlyphBrush;
         AddressBox.Foreground = _addressFgBrush;
-        AddressBox.Background = _addressBgBrush;
-        AddressBox.BorderBrush = _headerLineBrush;
+        AddressBox.CaretBrush = _addressFgBrush;
+        AddressBorder.Background = _addressBgBrush;
+        AddressBorder.BorderBrush = _addressBorderBrush;
         ApplyHeaderPalette(_chromeBrush.Color);
         _view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(
             0xFF, _chromeBrush.Color.R, _chromeBrush.Color.G, _chromeBrush.Color.B);
@@ -391,6 +393,9 @@ public partial class MiniBrowserWindow : Window
         _headerGlyphBrush.Color = Contrast(light, light ? 0.55 : 0.65);
         _addressBgBrush.Color = Shade(pageColor, light ? -0.04 : 0.16);
         _addressFgBrush.Color = light ? Color.FromRgb(0x20, 0x20, 0x20) : Color.FromRgb(0xE6, 0xE6, 0xE6);
+        // 주소창 보더: 포커스 중이면 Primary 유지, 아니면 헤더 라인색과 같게.
+        if (AddressBox is { IsKeyboardFocusWithin: false })
+            _addressBorderBrush.Color = _headerLineBrush.Color;
         Resources["PanelSoftBrush"] = new SolidColorBrush(Contrast(light, light ? 0.08 : 0.14));
         Resources["LineBrush"] = new SolidColorBrush(Contrast(light, light ? 0.16 : 0.22));
         Resources["TextBrush"] = new SolidColorBrush(Contrast(light, light ? 0.85 : 0.95));
@@ -718,6 +723,20 @@ public partial class MiniBrowserWindow : Window
         if (Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
             NavigateCore(uri.AbsoluteUri);
+    }
+
+    /// <summary>주소창 포커스 상태에 따라 보더를 Primary(강조)/평상시 라인색으로 바꾼다.
+    /// 포커스를 얻으면 전체 선택해 바로 새 주소를 입력하기 쉽게 한다.</summary>
+    private void AddressBox_FocusChanged(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (AddressBox.IsKeyboardFocusWithin)
+        {
+            AddressBox.SelectAll();
+            _addressBorderBrush.Color =
+                Application.Current.TryFindResource("PrimaryBrush") is SolidColorBrush p
+                    ? p.Color : _headerLineBrush.Color;
+        }
+        else _addressBorderBrush.Color = _headerLineBrush.Color;
     }
 
     /// <summary>주소 텍스트와 뒤로/앞으로 버튼 활성 상태를 현재 이동 위치에 맞춘다.
