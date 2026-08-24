@@ -16,8 +16,9 @@ namespace DevezCode.Views;
 /// 않고, 커서가 창 위쪽에 들어오면 펼쳐진다. 그 띠를 끌면 창이 이동한다. 여닫기는 타이틀바 버튼 토글만.
 /// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
 ///
-/// 감지는 커서 좌표 폴링으로 한다 — 웹 화면은 별도 HWND 라 WPF 오버레이가 그 뒤로 묻히고
-/// 마우스 이벤트도 오지 않는다(오버레이 방식이 통하지 않는 이유).
+/// 웹 화면은 별도 HWND 라 WPF 요소로는 그 위를 덮을 수도, 그 위의 마우스를 감지할 수도 없다.
+/// 그래서 컨트롤박스는 자체 HWND 인 팝업으로 띄워 콘텐츠를 밀지 않고 위를 덮고, 진입 감지는
+/// 커서 좌표 폴링으로 한다.
 ///
 /// 닫기는 창을 없애지 않고 숨기기다 — 앱이 살아 있는 동안 인스턴스를 유지해 다시 열 때 페이지를
 /// 새로 로드하지 않는다. 앱을 껐다 켜면 설정의 시작 주소로 새로 연다.
@@ -65,6 +66,28 @@ public partial class MiniBrowserWindow : Window
 
     /// <summary>사용자가 닫기(숨기기)를 눌렀는지. 소유 창 최소화→복원 때 다시 나타나는 것을 막는 데 쓴다.</summary>
     private bool _hiddenByUser;
+
+    /// <summary>설정·MCP 오버레이 때문에 임시로 숨긴 상태인지(오버레이가 닫히면 되돌린다).</summary>
+    private bool _hiddenForOverlay;
+
+    /// <summary>설정/MCP 오버레이가 열릴 때 — 같은 화면을 가리지 않도록 잠시 숨긴다.</summary>
+    public static void HideForOverlay()
+    {
+        if (_instance is not { IsVisible: true } win) return;
+        win.SavePlacement();
+        win._hiddenForOverlay = true;
+        win.Hide();
+        OpenStateChanged?.Invoke();
+    }
+
+    /// <summary>오버레이가 닫힐 때 — 그때 숨긴 창만 다시 보여준다(사용자가 닫아 둔 창은 그대로).</summary>
+    public static void RestoreAfterOverlay()
+    {
+        if (_instance is not { IsLoaded: true } win || !win._hiddenForOverlay) return;
+        win._hiddenForOverlay = false;
+        if (!win._hiddenByUser) win.Show();
+        OpenStateChanged?.Invoke();
+    }
 
     private readonly WebView2 _view = new();
     private readonly Action<string> _themeChangedHandler;
@@ -130,7 +153,9 @@ public partial class MiniBrowserWindow : Window
         _browserThemeChangedHandler = ApplyColorScheme;
         SettingsService.BrowserThemeChanged += _browserThemeChangedHandler;
 
-        Root.SizeChanged += (_, _) => ApplyRoundedClip();
+        Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); };
+        LocationChanged += (_, _) => SyncHeaderBar();
+        Deactivated += (_, _) => SetHeaderShown(false);   // 팝업은 별도 창이라 창이 뒤로 가면 직접 내린다
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
         IsVisibleChanged += (_, _) =>
@@ -339,6 +364,12 @@ public partial class MiniBrowserWindow : Window
         if (_headerShown == show) return;
         _headerShown = show;
 
+        if (show)
+        {
+            SyncHeaderBar();
+            HeaderPopup.IsOpen = true;
+        }
+
         var slide = new System.Windows.Media.Animation.DoubleAnimation
         {
             To = show ? HeaderHeight : 0,
@@ -349,7 +380,53 @@ public partial class MiniBrowserWindow : Window
                                   : System.Windows.Media.Animation.EasingMode.EaseIn,
             },
         };
-        Header.BeginAnimation(HeightProperty, slide);
+        if (!show) slide.Completed += (_, _) => { if (!_headerShown) HeaderPopup.IsOpen = false; };
+        HeaderBar.BeginAnimation(HeightProperty, slide);
+    }
+
+    /// <summary>컨트롤박스 폭을 창 폭에 맞추고, 창이 움직였으면 팝업 위치를 다시 잡는다
+    /// (팝업은 별도 창이라 부모가 이동해도 스스로 따라오지 않는다).</summary>
+    private void SyncHeaderBar()
+    {
+        if (Root.ActualWidth > 0) HeaderBar.Width = Root.ActualWidth;
+        if (!HeaderPopup.IsOpen) return;
+        HeaderPopup.HorizontalOffset += 1;
+        HeaderPopup.HorizontalOffset -= 1;
+    }
+
+    // ── 컨트롤박스 드래그로 창 이동 ────────────────────────────────────
+    // 팝업은 별도 HWND 라 Window.DragMove() 가 통하지 않는다. 커서 이동량을 직접 창 위치에 반영한다.
+    private NativePoint? _dragOrigin;
+    private Point _windowOrigin;
+
+    private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left) return;
+        if (!GetCursorPos(out var cur)) return;
+        _dragOrigin = cur;
+        _windowOrigin = new Point(Left, Top);
+        HeaderBar.CaptureMouse();
+    }
+
+    private void HeaderBar_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragOrigin is not { } origin || e.LeftButton != MouseButtonState.Pressed) return;
+        if (!GetCursorPos(out var cur)) return;
+
+        var delta = new Vector(cur.X - origin.X, cur.Y - origin.Y);
+        if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
+            delta = target.TransformFromDevice.Transform(delta);   // 화면 픽셀 → DIP
+
+        Left = _windowOrigin.X + delta.X;
+        Top = _windowOrigin.Y + delta.Y;
+    }
+
+    private void HeaderBar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_dragOrigin == null) return;
+        _dragOrigin = null;
+        HeaderBar.ReleaseMouseCapture();
+        SavePlacement();
     }
 
     /// <summary>저장된 위치·크기 복원. 화면 밖이면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
@@ -405,12 +482,6 @@ public partial class MiniBrowserWindow : Window
         OpenStateChanged?.Invoke();
     }
 
-    private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ChangedButton != MouseButton.Left) return;
-        try { DragMove(); } catch { }
-    }
-
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         base.OnClosing(e);
@@ -424,6 +495,7 @@ public partial class MiniBrowserWindow : Window
         App.ThemeChanged -= _themeChangedHandler;
         try { SettingsService.BrowserThemeChanged -= _browserThemeChangedHandler; } catch { }
         _hoverTimer?.Stop();
+        HeaderPopup.IsOpen = false;
         try { _view.Dispose(); } catch { }
         OpenStateChanged?.Invoke();
     }

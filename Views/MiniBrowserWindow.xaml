@@ -5,6 +5,7 @@
         Title="미니 브라우저"
         Width="520" Height="700" MinWidth="320" MinHeight="240"
         WindowStyle="None" ResizeMode="CanResize" ShowInTaskbar="False"
+        Background="{DynamicResource BgBrush}"
         FontFamily="{StaticResource PretendardFont}">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
@@ -14,30 +15,33 @@
                             UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
-    <!-- 창 투명도·CornerRadius 는 렌더 모드에 따라 코드에서 정한다(MiniBrowserWindow 생성자 주석 참고). -->
     <Border x:Name="Chrome"
             Background="{DynamicResource BgBrush}"
             BorderBrush="{DynamicResource LineBrush}"
-            BorderThickness="1"
-            SnapsToDevicePixels="False">
+            BorderThickness="1">
         <Grid x:Name="Root">
-            <Grid.RowDefinitions>
-                <!-- 컨트롤박스 행 — 헤더 높이를 따라간다(기본 0 = 안 보임). 커서가 창 위쪽에 오면 코드가 펼친다. -->
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+            <!-- 웹 화면이 창 전체를 채운다. 컨트롤박스는 아래 팝업이 위를 덮는다(콘텐츠를 밀지 않음). -->
+            <Grid x:Name="BrowserHost"/>
 
-            <!-- 컨트롤박스: 창 이동(드래그) 전용. 여닫기는 타이틀바 버튼 토글로만 한다. -->
-            <Border x:Name="Header" Grid.Row="0"
-                    Height="0"
-                    Background="{DynamicResource BgBrush}"
-                    BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="0,0,0,1"
-                    ClipToBounds="True"
-                    MouseLeftButtonDown="Header_MouseLeftButtonDown"/>
-
-            <!-- 브라우저 본문 -->
-            <Grid x:Name="BrowserHost" Grid.Row="1"/>
+            <!-- 컨트롤박스: 웹 화면은 별도 HWND 라 WPF 요소로는 그 위를 덮을 수 없다.
+                 팝업은 자체 HWND 라 웹 화면 위에 뜬다. 창 이동 전용(드래그). -->
+            <Popup x:Name="HeaderPopup"
+                   Placement="Relative"
+                   PlacementTarget="{Binding ElementName=Root}"
+                   AllowsTransparency="True"
+                   StaysOpen="True"
+                   IsOpen="False">
+                <Border x:Name="HeaderBar"
+                        Height="0"
+                        Background="{DynamicResource BgBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="0,0,0,1"
+                        CornerRadius="7,7,0,0"
+                        ClipToBounds="True"
+                        MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown"
+                        MouseMove="HeaderBar_MouseMove"
+                        MouseLeftButtonUp="HeaderBar_MouseLeftButtonUp"/>
+            </Popup>
         </Grid>
     </Border>
 </Window>

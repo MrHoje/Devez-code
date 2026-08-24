@@ -7293,6 +7293,8 @@ public partial class MainWindow : Window
         // await 전에 동기 취소한다. 각 호스트의 suspend도 자체 취소해 단독 호출 경로를 방어한다.
         CancelAllPendingTerminalFocusTransfers();
         _overlaySuspended = true;
+        // 미니 브라우저는 별도 창이라 오버레이가 가릴 수 없다 — 오버레이가 열려 있는 동안 숨긴다.
+        Views.MiniBrowserWindow.HideForOverlay();
         bool gateHeld = false;
         try
         {
@@ -7321,6 +7323,7 @@ public partial class MainWindow : Window
     private void ResumeTerminal()
     {
         _overlaySuspended = false;
+        Views.MiniBrowserWindow.RestoreAfterOverlay();
         FileExplorer.ResumeBrowser();
         foreach (var pane in _panes) pane.ResumeTerminal();
         ResumeShellPanel();
