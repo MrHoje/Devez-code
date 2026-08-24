@@ -1,10 +1,10 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using DevezCode.Services;
@@ -12,13 +12,13 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>
-/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 컨트롤박스(창 이동 띠)는 평소 높이 0 으로 접혀 보이지
-/// 않고, 커서가 창 위쪽에 들어오면 펼쳐진다. 그 띠를 끌면 창이 이동한다. 여닫기는 타이틀바 버튼 토글만.
+/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 상단에 내장 브라우저와 같은 모양의 툴바(뒤로/앞으로/새로고침/
+/// 주소창/닫기)를 상시 표시하고, 툴바 빈 영역을 끌면 창이 이동한다. 여닫기는 타이틀바 버튼 토글과 F5.
 /// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
 ///
-/// 리사이즈: 웹 화면(별도 HWND)이 창 테두리를 가려 표준 리사이즈 판정이 오지 않으므로, 웹 화면을
-/// 6px 안으로 들여 창 테두리 여백을 노출한다. 그 여백에서 WindowChrome 표준 리사이즈가 동작하고,
-/// 여백은 현재 페이지 배경색으로 칠해 이음새가 보이지 않게 한다(이동/로드마다 갱신).
+/// 리사이즈: 툴바(WPF)는 표준 리사이즈 판정이 그대로 오고, 웹 화면(별도 HWND)이 가리는 좌·우·하단은
+/// 웹 화면을 6px 안으로 들여 창 테두리 여백을 노출한다. 그 여백은 현재 페이지 배경색으로 칠해 이음새가
+/// 보이지 않게 한다(이동/로드마다 갱신).
 ///
 /// 닫기는 창을 없애지 않고 숨기기다 — 앱이 살아 있는 동안 인스턴스를 유지해 다시 열 때 페이지를
 /// 새로 로드하지 않는다. 앱을 껐다 켜면 설정의 시작 주소로 새로 연다.
@@ -52,12 +52,6 @@ public partial class MiniBrowserWindow : Window
     [DllImport("user32.dll", SetLastError = true)]
     private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativePoint { public int X, Y; }
-
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out NativePoint point);
-
     private static MiniBrowserWindow? _instance;
 
     /// <summary>표시/숨김이 바뀔 때 — 타이틀바 버튼 색을 갱신하는 쪽에서 구독한다.</summary>
@@ -75,15 +69,7 @@ public partial class MiniBrowserWindow : Window
     private readonly WebView2 _view = new();
     private readonly Action<string> _themeChangedHandler;
     private readonly Action _browserThemeChangedHandler;
-    private readonly SolidColorBrush _chromeBrush = new(Colors.White);
-    // 컨트롤박스 팔레트 — 앱 테마가 아니라 '지금 열린 페이지 색' 기준(ApplyHeaderPalette).
-    private readonly SolidColorBrush _headerBgBrush = new(Colors.White);
-    private readonly SolidColorBrush _headerLineBrush = new(Colors.Gray);
-    private readonly SolidColorBrush _headerGlyphBrush = new(Colors.Gray);
-    private readonly SolidColorBrush _chromeBorderBrush = new(Colors.Gray);   // 바깥 테두리 = 페이지색을 살짝 민 색
-    private readonly SolidColorBrush _addressFgBrush = new(Colors.Black);     // 주소창 글자색
-    private readonly SolidColorBrush _addressBgBrush = new(Colors.White);     // 주소창 배경색
-    private readonly SolidColorBrush _addressBorderBrush = new(Colors.Gray);  // 주소창 보더(포커스 시 Primary)
+    private readonly SolidColorBrush _chromeBrush = new(Colors.White);   // 웹 화면 여백 = 페이지 배경색
     private bool _coreReady;
     private string? _pendingUrl;
 
@@ -164,21 +150,10 @@ public partial class MiniBrowserWindow : Window
         InitializeComponent();
 
         Chrome.CornerRadius = new CornerRadius(CornerRadiusDip);
-        // 여백(6px) 배경 = 페이지 배경색. 초기값은 앱 배경색.
+        // 여백 배경 = 페이지 배경색. 초기값은 앱 배경색.
         if (Application.Current.TryFindResource("BgBrush") is SolidColorBrush bg)
             _chromeBrush.Color = bg.Color;
         Chrome.Background = _chromeBrush;
-        Chrome.BorderBrush = _chromeBorderBrush;
-        HeaderBar.Background = _headerBgBrush;
-        HeaderBar.BorderBrush = _headerLineBrush;
-        CloseGlyph.Foreground = _headerGlyphBrush;
-        BackGlyph.Foreground = _headerGlyphBrush;
-        ForwardGlyph.Foreground = _headerGlyphBrush;
-        AddressBox.Foreground = _addressFgBrush;
-        AddressBox.CaretBrush = _addressFgBrush;
-        AddressBorder.Background = _addressBgBrush;
-        AddressBorder.BorderBrush = _addressBorderBrush;
-        ApplyHeaderPalette(_chromeBrush.Color);
         _view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(
             0xFF, _chromeBrush.Color.R, _chromeBrush.Color.G, _chromeBrush.Color.B);
         BrowserHost.Children.Add(_view);
@@ -188,17 +163,11 @@ public partial class MiniBrowserWindow : Window
         _browserThemeChangedHandler = ApplyColorScheme;
         SettingsService.BrowserThemeChanged += _browserThemeChangedHandler;
 
-        Root.SizeChanged += (_, _) => { ApplyRoundedClip(); SyncHeaderBar(); };
-        LocationChanged += (_, _) => SyncHeaderBar();
-        Deactivated += (_, _) => SetHeaderShown(false);   // 팝업은 별도 창이라 창이 뒤로 가면 직접 내린다
+        Root.SizeChanged += (_, _) => ApplyRoundedClip();
         Activated += (_, _) => { if (_coreReady) RefreshPageBackground(); };   // 창 전환으로 다시 앞에 오면 색 재확인
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
-        IsVisibleChanged += (_, _) =>
-        {
-            if (_hiddenByUser && IsVisible) { Hide(); return; }
-            if (IsVisible) StartHoverWatch(); else StopHoverWatch();
-        };
+        IsVisibleChanged += (_, _) => { if (_hiddenByUser && IsVisible) Hide(); };
     }
 
     private void OnLoadedFirst(object sender, RoutedEventArgs e)
@@ -208,7 +177,7 @@ public partial class MiniBrowserWindow : Window
         _ = StartBrowserAsync();
     }
 
-    /// <summary>컨트롤박스 등 WPF 자식의 사각 모서리가 라운드 밖으로 삐져나오지 않게 클립.
+    /// <summary>WPF 자식(툴바 등)의 사각 모서리가 라운드 밖으로 삐져나오지 않게 클립.
     /// 웹 화면은 별도 HWND 라 이 클립을 타지 않고 DWM 창 코너가 잘라준다.</summary>
     private void ApplyRoundedClip()
     {
@@ -296,7 +265,7 @@ public partial class MiniBrowserWindow : Window
         catch (Exception ex)
         {
             BrowserHost.Children.Clear();
-            BrowserHost.Children.Add(new System.Windows.Controls.TextBlock
+            BrowserHost.Children.Add(new TextBlock
             {
                 Text = "브라우저를 시작할 수 없습니다.\nWebView2 런타임이 필요합니다.\n\n" + ex.Message,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -324,7 +293,7 @@ public partial class MiniBrowserWindow : Window
         }
     }
 
-    /// <summary>현재 페이지 body/html 배경색을 읽어 6px 여백(Chrome 배경)에 칠한다.</summary>
+    /// <summary>현재 페이지 배경색을 읽어 웹 화면 여백(Chrome 배경)에 칠한다.</summary>
     private async Task UpdateBackgroundFromPageAsync()
     {
         var core = _view.CoreWebView2;
@@ -372,48 +341,8 @@ public partial class MiniBrowserWindow : Window
     private void ApplyChromeColor(Color color)
     {
         _chromeBrush.Color = color;
-        ApplyHeaderPalette(color);
         try { _view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, color.R, color.G, color.B); }
         catch { }
-    }
-
-    /// <summary>컨트롤박스 색을 페이지 배경색에 맞춘다. 앱 테마를 그대로 쓰면 다크 테마에서 흰 페이지를
-    /// 볼 때 검은 띠가 튄다. 띠는 페이지색을 살짝만 밀어 경계만 보이게 하고, 보더·글자·버튼 hover 는
-    /// 페이지가 밝으면 검정을, 어두우면 흰색을 옅게 얹어 대비를 만든다.
-    /// (hover/pressed 배경은 IconButton 스타일이 참조하는 리소스를 창 로컬로 덮어 함께 맞춘다.)</summary>
-    private void ApplyHeaderPalette(Color pageColor)
-    {
-        double luma = (0.299 * pageColor.R + 0.587 * pageColor.G + 0.114 * pageColor.B) / 255.0;
-        bool light = luma > 0.5;
-
-        // 바깥 테두리: 페이지색을 살짝만 밀어 가장자리 경계만 은은하게(흰/검 오버레이는 밝은 링으로 튄다).
-        _chromeBorderBrush.Color = Shade(pageColor, light ? -0.12 : 0.16);
-        _headerBgBrush.Color = Shade(pageColor, light ? -0.06 : 0.10);
-        _headerLineBrush.Color = Contrast(light, light ? 0.14 : 0.20);
-        _headerGlyphBrush.Color = Contrast(light, light ? 0.55 : 0.65);
-        _addressBgBrush.Color = Shade(pageColor, light ? -0.04 : 0.16);
-        _addressFgBrush.Color = light ? Color.FromRgb(0x20, 0x20, 0x20) : Color.FromRgb(0xE6, 0xE6, 0xE6);
-        // 주소창 보더: 포커스 중이면 Primary 유지, 아니면 헤더 라인색과 같게.
-        if (AddressBox is { IsKeyboardFocusWithin: false })
-            _addressBorderBrush.Color = _headerLineBrush.Color;
-        Resources["PanelSoftBrush"] = new SolidColorBrush(Contrast(light, light ? 0.08 : 0.14));
-        Resources["LineBrush"] = new SolidColorBrush(Contrast(light, light ? 0.16 : 0.22));
-        Resources["TextBrush"] = new SolidColorBrush(Contrast(light, light ? 0.85 : 0.95));
-    }
-
-    /// <summary>색을 밝게(양수)/어둡게(음수) 민다.</summary>
-    private static Color Shade(Color c, double amount)
-    {
-        static byte Mix(byte v, double t) =>
-            (byte)Math.Clamp(t >= 0 ? v + (255 - v) * t : v * (1 + t), 0, 255);
-        return Color.FromRgb(Mix(c.R, amount), Mix(c.G, amount), Mix(c.B, amount));
-    }
-
-    /// <summary>밝은 바탕 위에는 검정을, 어두운 바탕 위에는 흰색을 지정 불투명도로 얹은 색.</summary>
-    private static Color Contrast(bool lightBackground, double opacity)
-    {
-        var a = (byte)Math.Clamp(opacity * 255, 0, 255);
-        return lightBackground ? Color.FromArgb(a, 0, 0, 0) : Color.FromArgb(a, 255, 255, 255);
     }
 
     /// <summary>외부 요청 주소로 이동. 코어 준비 전이면 준비 후 열도록 보류한다.</summary>
@@ -458,7 +387,7 @@ public partial class MiniBrowserWindow : Window
         catch { /* 해제 중 등 */ }
     }
 
-    /// <summary>WPF 쪽(컨트롤박스 등)에 포커스가 있을 때의 F5 는 창 닫기(숨기기).
+    /// <summary>WPF 쪽(툴바 등)에 포커스가 있을 때의 F5 는 창 닫기(숨기기).
     /// 웹 화면에 포커스가 있으면 주입 스크립트가 먼저 잡아 페이지 새로고침으로 처리한다.</summary>
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
@@ -468,182 +397,78 @@ public partial class MiniBrowserWindow : Window
         e.Handled = true;
     }
 
-    // ── 컨트롤박스 펼침/접힘 ──────────────────────────────────────────
-    /// <summary>펼쳤을 때 컨트롤박스 높이(주소창·뒤로/앞으로 버튼이 들어가 조금 높다).</summary>
-    private const double HeaderHeight = 32;
-
-    /// <summary>창 테두리 리사이즈 여백(XAML 의 BrowserHost Margin·ResizeBorderThickness 와 같은 값).
-    /// 컨트롤박스도 이 안쪽에만 뜨므로 커서 판정도 같은 기준을 쓴다.</summary>
-    private const double EdgeInset = 6;
-
-    /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다(컨트롤박스 높이와 같게).</summary>
-    private const double HoverEnterZone = HeaderHeight;
-
-    /// <summary>접히는 기준. 컨트롤박스 밖으로 나가는 즉시 접도록 펼침 범위와 같게 둔다.</summary>
-    private const double HoverExitZone = HeaderHeight;
-
-    private DispatcherTimer? _hoverTimer;
-    private bool _headerShown;
-
-    private void StartHoverWatch()
+    // ── 툴바: 창 이동 + 버튼/주소창 ─────────────────────────────────────
+    /// <summary>툴바 빈 영역을 끌면 창을 옮긴다. 버튼·주소창 위에서는 각자 동작에 맡긴다.</summary>
+    private void Toolbar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (_hoverTimer != null) { _hoverTimer.Start(); return; }
-        // 벗어나는 즉시 접히는 느낌이 나도록 촘촘히 본다(커서 좌표 조회뿐이라 비용은 거의 없다).
-        _hoverTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(30) };
-        _hoverTimer.Tick += (_, _) => UpdateHeaderByCursor();
-        _hoverTimer.Start();
-    }
-
-    private void StopHoverWatch()
-    {
-        _hoverTimer?.Stop();
-        SetHeaderShown(false);
-    }
-
-    /// <summary>커서가 창 위쪽에 있으면 컨트롤박스를 펼치고, 벗어나면 접는다.</summary>
-    private void UpdateHeaderByCursor()
-    {
-        if (!IsVisible) { SetHeaderShown(false); return; }
-        if (_dragOrigin != null) return;   // 컨트롤박스를 끌어 창을 옮기는 중 — 접으면 드래그가 끊긴다
-        if (!GetCursorPos(out var cur)) return;
-
-        Point p;
-        try { p = PointFromScreen(new Point(cur.X, cur.Y)); }
-        catch { return; }   // 핸들 정리 중
-
-        // 헤더는 창 최상단 전체 폭을 덮으므로 좌우 여백까지 포함해 감지한다(상단 리사이즈는 헤더가 처리).
-        bool insideX = p.X >= 0 && p.X <= ActualWidth;
-        double limit = _headerShown ? HoverExitZone : HoverEnterZone;
-        SetHeaderShown(insideX && p.Y >= 0 && p.Y <= limit);
-    }
-
-    private void SetHeaderShown(bool show)
-    {
-        if (_headerShown == show) return;
-        _headerShown = show;
-
-        if (show)
+        if (e.ButtonState != MouseButtonState.Pressed) return;
+        // 툴바 자신 또는 DockPanel 여백에서만 이동(버튼·주소창은 별도 요소라 제외).
+        if (ReferenceEquals(e.OriginalSource, Toolbar) || e.OriginalSource is DockPanel)
         {
-            SyncHeaderBar();
-            HeaderPopup.IsOpen = true;
+            try { DragMove(); } catch { }
         }
+    }
 
-        var slide = new System.Windows.Media.Animation.DoubleAnimation
+    private void BackBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try { if (_view.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); } catch { }
+    }
+
+    private void ForwardBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try { if (_view.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); } catch { }
+    }
+
+    private void RefreshBtn_Click(object sender, RoutedEventArgs e) => ReloadPage();
+
+    private void AddressBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        => AddressBox.SelectAll();
+
+    private void AddressBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!AddressBox.IsKeyboardFocusWithin)
         {
-            To = show ? HeaderHeight : 0,
-            Duration = TimeSpan.FromMilliseconds(show ? 150 : 120),
-            EasingFunction = new System.Windows.Media.Animation.CubicEase
-            {
-                EasingMode = show ? System.Windows.Media.Animation.EasingMode.EaseOut
-                                  : System.Windows.Media.Animation.EasingMode.EaseIn,
-            },
-        };
-        if (!show) slide.Completed += (_, _) => { if (!_headerShown) HeaderPopup.IsOpen = false; };
-        HeaderBar.BeginAnimation(HeightProperty, slide);
-    }
-
-    /// <summary>애니메이션 없이 컨트롤박스를 즉시 치운다(창을 숨길 때 잔상 방지).</summary>
-    private void CollapseHeaderNow()
-    {
-        _headerShown = false;
-        HeaderBar.BeginAnimation(HeightProperty, null);
-        HeaderBar.Height = 0;
-        HeaderPopup.IsOpen = false;
-    }
-
-    /// <summary>창이 움직이거나 크기가 바뀌면 팝업 위치를 다시 잡는다
-    /// (팝업은 별도 창이라 부모가 이동해도 스스로 따라오지 않는다. 폭은 XAML 에서 창 폭에 묶여 있다).</summary>
-    private void SyncHeaderBar()
-    {
-        if (!HeaderPopup.IsOpen) return;
-        HeaderPopup.HorizontalOffset += 1;
-        HeaderPopup.HorizontalOffset -= 1;
-    }
-
-    // ── 컨트롤박스 드래그: 이동 + 상단 가장자리 리사이즈 ───────────────
-    // 헤더가 창 최상단 전체 폭을 덮어 그 자리의 표준 리사이즈가 사라지므로, 헤더 위쪽 가장자리
-    // (EdgeInset 안)에서 커서 이동량으로 세로·모서리 리사이즈를 직접 처리한다. 나머지는 창 이동.
-    // 팝업은 별도 HWND 라 Window.DragMove() 나 시스템 위임이 통하지 않는다.
-    private const int HTCAPTION = 2, HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
-    private const double HeaderCornerZone = 26;
-
-    private NativePoint? _dragOrigin;
-    private Rect _dragWindowOrigin;
-    private int _dragHit;
-
-    /// <summary>헤더 안 커서 위치로 동작을 정한다 — 위쪽 EdgeInset 안이면 리사이즈, 아니면 이동.</summary>
-    private int HeaderHitTest(Point p)
-    {
-        if (p.Y > EdgeInset) return HTCAPTION;
-        double w = HeaderBar.ActualWidth;
-        if (p.X <= HeaderCornerZone) return HTTOPLEFT;
-        if (p.X >= w - HeaderCornerZone) return HTTOPRIGHT;
-        return HTTOP;
-    }
-
-    private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ChangedButton != MouseButton.Left) return;
-        if (!GetCursorPos(out var cur)) return;
-        _dragHit = HeaderHitTest(e.GetPosition(HeaderBar));
-        _dragOrigin = cur;
-        _dragWindowOrigin = new Rect(Left, Top, Width, Height);
-        HeaderBar.CaptureMouse();
-    }
-
-    private void HeaderBar_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (_dragOrigin is not { } origin || e.LeftButton != MouseButtonState.Pressed)
-        {
-            // 드래그 전 — 위쪽 가장자리에서는 리사이즈 커서를 보여 준다.
-            HeaderBar.Cursor = HeaderHitTest(e.GetPosition(HeaderBar)) switch
-            {
-                HTTOPLEFT  => Cursors.SizeNWSE,
-                HTTOPRIGHT => Cursors.SizeNESW,
-                HTTOP      => Cursors.SizeNS,
-                _          => Cursors.Arrow,
-            };
-            return;
+            e.Handled = true;
+            AddressBox.Focus();
         }
-        if (!GetCursorPos(out var cur)) return;
-
-        var delta = new Vector(cur.X - origin.X, cur.Y - origin.Y);
-        if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
-            delta = target.TransformFromDevice.Transform(delta);   // 화면 픽셀 → DIP
-
-        if (_dragHit == HTCAPTION)
-        {
-            Left = _dragWindowOrigin.X + delta.X;
-            Top = _dragWindowOrigin.Y + delta.Y;
-            return;
-        }
-
-        double left = _dragWindowOrigin.X, top = _dragWindowOrigin.Y;
-        double width = _dragWindowOrigin.Width, height = _dragWindowOrigin.Height;
-
-        // 상단: 위로 끌면 위쪽 변이 올라가고(위치+높이 동시), 아래로 끌면 내려온다.
-        double h = Math.Max(MinHeight, height - delta.Y);
-        top += height - h;
-        height = h;
-
-        if (_dragHit == HTTOPLEFT)
-        {
-            double w = Math.Max(MinWidth, width - delta.X);
-            left += width - w;
-            width = w;
-        }
-        else if (_dragHit == HTTOPRIGHT) width = Math.Max(MinWidth, width + delta.X);
-
-        Left = left; Top = top; Width = width; Height = height;
     }
 
-    private void HeaderBar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private void AddressBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (_dragOrigin == null) return;
-        _dragOrigin = null;
-        _dragHit = 0;
-        HeaderBar.ReleaseMouseCapture();
-        SavePlacement();
+        if (e.Key != Key.Enter) return;
+        var input = AddressBox.Text.Trim();
+        if (input.Length == 0) return;
+        NavigateCore(ToNavigationTarget(input));
+        _view.Focus();
+        e.Handled = true;
+    }
+
+    /// <summary>입력이 URL이면 그대로 이동, 아니면 구글 검색(내장 브라우저와 동일 규칙).</summary>
+    private static string ToNavigationTarget(string input)
+    {
+        if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return input;
+
+        bool looksLikeDomain = !input.Contains(' ')
+            && input.Contains('.')
+            && Uri.TryCreate("https://" + input, UriKind.Absolute, out var u)
+            && u.Host.Contains('.');
+        if (looksLikeDomain) return "https://" + input;
+
+        return "https://www.google.com/search?q=" + Uri.EscapeDataString(input);
+    }
+
+    /// <summary>주소 텍스트와 뒤로/앞으로 버튼 활성 상태를 현재 이동 위치에 맞춘다.
+    /// 사용자가 주소창을 편집 중이면 입력을 덮지 않는다.</summary>
+    private void UpdateNavState()
+    {
+        var core = _view.CoreWebView2;
+        if (core == null) return;
+        BackBtn.IsEnabled = core.CanGoBack;
+        ForwardBtn.IsEnabled = core.CanGoForward;
+        if (!AddressBox.IsKeyboardFocusWithin)
+            AddressBox.Text = core.Source ?? "";
     }
 
     /// <summary>저장된 위치·크기 복원. 화면 밖이면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
@@ -695,61 +520,11 @@ public partial class MiniBrowserWindow : Window
     {
         SavePlacement();
         _hiddenByUser = true;
-        CollapseHeaderNow();   // 팝업은 별도 창이라 접힘 애니메이션이 끝날 때까지 화면에 남는다
         Hide();
         OpenStateChanged?.Invoke();
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => HideForLater();
-
-    private void BackBtn_Click(object sender, RoutedEventArgs e)
-    {
-        try { if (_view.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); } catch { }
-    }
-
-    private void ForwardBtn_Click(object sender, RoutedEventArgs e)
-    {
-        try { if (_view.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); } catch { }
-    }
-
-    /// <summary>주소창에서 Enter — 스킴 없는 입력은 https 로 보정해 이동한다.</summary>
-    private void AddressBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter) return;
-        e.Handled = true;
-        var text = AddressBox.Text?.Trim() ?? "";
-        if (text.Length == 0) return;
-        if (!text.Contains("://", StringComparison.Ordinal)) text = "https://" + text;
-        if (Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
-            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            NavigateCore(uri.AbsoluteUri);
-    }
-
-    /// <summary>주소창 포커스 상태에 따라 보더를 Primary(강조)/평상시 라인색으로 바꾼다.
-    /// 포커스를 얻으면 전체 선택해 바로 새 주소를 입력하기 쉽게 한다.</summary>
-    private void AddressBox_FocusChanged(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (AddressBox.IsKeyboardFocusWithin)
-        {
-            AddressBox.SelectAll();
-            _addressBorderBrush.Color =
-                Application.Current.TryFindResource("PrimaryBrush") is SolidColorBrush p
-                    ? p.Color : _headerLineBrush.Color;
-        }
-        else _addressBorderBrush.Color = _headerLineBrush.Color;
-    }
-
-    /// <summary>주소 텍스트와 뒤로/앞으로 버튼 활성 상태를 현재 이동 위치에 맞춘다.
-    /// 사용자가 주소창을 편집 중이면 입력을 덮지 않는다.</summary>
-    private void UpdateNavState()
-    {
-        var core = _view.CoreWebView2;
-        if (core == null) return;
-        BackBtn.IsEnabled = core.CanGoBack;
-        ForwardBtn.IsEnabled = core.CanGoForward;
-        if (!AddressBox.IsKeyboardFocusWithin)
-            AddressBox.Text = core.Source ?? "";
-    }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
@@ -763,8 +538,6 @@ public partial class MiniBrowserWindow : Window
         if (ReferenceEquals(_instance, this)) _instance = null;
         App.ThemeChanged -= _themeChangedHandler;
         try { SettingsService.BrowserThemeChanged -= _browserThemeChangedHandler; } catch { }
-        _hoverTimer?.Stop();
-        HeaderPopup.IsOpen = false;
         try { _view.Dispose(); } catch { }
         OpenStateChanged?.Invoke();
     }
