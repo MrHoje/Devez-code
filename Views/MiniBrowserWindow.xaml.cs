@@ -421,6 +421,10 @@ public partial class MiniBrowserWindow : Window
     /// <summary>펼쳤을 때 컨트롤박스 높이.</summary>
     private const double HeaderHeight = 22;
 
+    /// <summary>창 테두리 리사이즈 여백(XAML 의 BrowserHost Margin·ResizeBorderThickness 와 같은 값).
+    /// 컨트롤박스도 이 안쪽에만 뜨므로 커서 판정도 같은 기준을 쓴다.</summary>
+    private const double EdgeInset = 6;
+
     /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다(컨트롤박스 높이와 같게).</summary>
     private const double HoverEnterZone = HeaderHeight;
 
@@ -456,9 +460,10 @@ public partial class MiniBrowserWindow : Window
         try { p = PointFromScreen(new Point(cur.X, cur.Y)); }
         catch { return; }   // 핸들 정리 중
 
-        bool insideX = p.X >= 0 && p.X <= ActualWidth;
-        double limit = _headerShown ? HoverExitZone : HoverEnterZone;
-        SetHeaderShown(insideX && p.Y >= 0 && p.Y <= limit);
+        // 여백 위(리사이즈 영역)에 있으면 펼치지 않는다 — 모서리에서 리사이즈가 먼저다.
+        bool insideX = p.X >= EdgeInset && p.X <= ActualWidth - EdgeInset;
+        double limit = EdgeInset + (_headerShown ? HoverExitZone : HoverEnterZone);
+        SetHeaderShown(insideX && p.Y >= EdgeInset && p.Y <= limit);
     }
 
     private void SetHeaderShown(bool show)
@@ -484,6 +489,15 @@ public partial class MiniBrowserWindow : Window
         };
         if (!show) slide.Completed += (_, _) => { if (!_headerShown) HeaderPopup.IsOpen = false; };
         HeaderBar.BeginAnimation(HeightProperty, slide);
+    }
+
+    /// <summary>애니메이션 없이 컨트롤박스를 즉시 치운다(창을 숨길 때 잔상 방지).</summary>
+    private void CollapseHeaderNow()
+    {
+        _headerShown = false;
+        HeaderBar.BeginAnimation(HeightProperty, null);
+        HeaderBar.Height = 0;
+        HeaderPopup.IsOpen = false;
     }
 
     /// <summary>창이 움직이거나 크기가 바뀌면 팝업 위치를 다시 잡는다
@@ -579,6 +593,7 @@ public partial class MiniBrowserWindow : Window
     {
         SavePlacement();
         _hiddenByUser = true;
+        CollapseHeaderNow();   // 팝업은 별도 창이라 접힘 애니메이션이 끝날 때까지 화면에 남는다
         Hide();
         OpenStateChanged?.Invoke();
     }
