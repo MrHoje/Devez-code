@@ -27,25 +27,14 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 컨트롤박스: 창 이동(드래그) + 닫기 -->
+            <!-- 컨트롤박스: 창 이동(드래그) 전용. 여닫기는 타이틀바 버튼 토글로만 한다. -->
             <Border x:Name="Header" Grid.Row="0"
                     Height="0"
                     Background="{DynamicResource BgBrush}"
                     BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="0,0,0,1"
-                    Padding="0,0,6,0"
                     ClipToBounds="True"
-                    MouseLeftButtonDown="Header_MouseLeftButtonDown">
-                <Button x:Name="CloseBtn"
-                        HorizontalAlignment="Right" VerticalAlignment="Center"
-                        Width="20" Height="20"
-                        Style="{StaticResource IconButton}"
-                        Cursor="Arrow" ToolTip="닫기"
-                        Click="CloseBtn_Click">
-                    <TextBlock Text="&#x2715;" FontSize="11"
-                               Foreground="{DynamicResource TextMutedBrush}"/>
-                </Button>
-            </Border>
+                    MouseLeftButtonDown="Header_MouseLeftButtonDown"/>
 
             <!-- 브라우저 본문 -->
             <Grid x:Name="BrowserHost" Grid.Row="1"/>

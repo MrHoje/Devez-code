@@ -12,8 +12,8 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>
-/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 컨트롤박스(창 이동 띠 + 닫기)는 평소 높이 0 으로 접혀
-/// 보이지 않고, 커서가 창 위쪽에 들어오면 펼쳐진다. 그 띠를 끌면 창이 이동한다.
+/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 컨트롤박스(창 이동 띠)는 평소 높이 0 으로 접혀 보이지
+/// 않고, 커서가 창 위쪽에 들어오면 펼쳐진다. 그 띠를 끌면 창이 이동한다. 여닫기는 타이틀바 버튼 토글만.
 ///
 /// 감지는 커서 좌표 폴링으로 한다 — 소프트웨어 렌더에서 웹 화면은 별도 HWND 라 WPF 오버레이가
 /// 그 뒤로 묻히고 마우스 이벤트도 오지 않는다(오버레이 방식이 통하지 않는 이유).
@@ -261,11 +261,13 @@ public partial class MiniBrowserWindow : Window
         catch { /* 해제 중 등 */ }
     }
 
-    /// <summary>헤더 등 WPF 쪽에 포커스가 있을 때의 F5 — 웹 화면 포커스 시엔 브라우저 기본 단축키가 처리한다.</summary>
+    /// <summary>F5 새로고침. 웹 화면에 포커스가 있으면 브라우저 기본 단축키가 이미 처리하므로
+    /// 여기서 또 Reload 하면 두 번 새로고침된다 — 그 경우는 그냥 넘긴다.</summary>
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
         if (e.Key != Key.F5) return;
+        if (_surface.Element.IsKeyboardFocusWithin) return;
         try { _surface.Core?.Reload(); } catch { }
         e.Handled = true;
     }
@@ -394,8 +396,6 @@ public partial class MiniBrowserWindow : Window
         };
         Header.BeginAnimation(HeightProperty, slide);
     }
-
-    private void CloseBtn_Click(object sender, RoutedEventArgs e) => HideForLater();
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
