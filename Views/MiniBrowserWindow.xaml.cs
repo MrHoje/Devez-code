@@ -80,6 +80,7 @@ public partial class MiniBrowserWindow : Window
     private readonly SolidColorBrush _headerBgBrush = new(Colors.White);
     private readonly SolidColorBrush _headerLineBrush = new(Colors.Gray);
     private readonly SolidColorBrush _headerGlyphBrush = new(Colors.Gray);
+    private readonly SolidColorBrush _chromeBorderBrush = new(Colors.Gray);   // 바깥 테두리 = 페이지색을 살짝 민 색
     private bool _coreReady;
     private string? _pendingUrl;
 
@@ -164,6 +165,7 @@ public partial class MiniBrowserWindow : Window
         if (Application.Current.TryFindResource("BgBrush") is SolidColorBrush bg)
             _chromeBrush.Color = bg.Color;
         Chrome.Background = _chromeBrush;
+        Chrome.BorderBrush = _chromeBorderBrush;
         HeaderBar.Background = _headerBgBrush;
         HeaderBar.BorderBrush = _headerLineBrush;
         CloseGlyph.Foreground = _headerGlyphBrush;
@@ -297,11 +299,20 @@ public partial class MiniBrowserWindow : Window
         if (core == null) return;
         try
         {
-            // body 가 투명이면 html 을 본다. rgb/rgba 문자열을 그대로 받는다.
+            // 화면 가장자리에 '실제로 보이는' 색을 쓴다. body/html 배경색은 안쪽 컨테이너가 색을
+            // 칠하는 사이트(claude.ai 등)에서 엉뚱한 값이 나온다. 모서리 지점의 요소에서 위로 올라가며
+            // 처음 만나는 불투명 배경색을 뽑는다.
             var json = await core.ExecuteScriptAsync(
-                "(function(){var b=getComputedStyle(document.body).backgroundColor;" +
-                "if(!b||b==='rgba(0, 0, 0, 0)'||b==='transparent')" +
-                "b=getComputedStyle(document.documentElement).backgroundColor;return b;})()");
+                "(function(){" +
+                "function op(x,y){var el=document.elementFromPoint(x,y);" +
+                "while(el){var c=getComputedStyle(el).backgroundColor;" +
+                "var m=c&&c.match(/[\\d.]+/g);" +
+                "if(m&&(m.length<4||parseFloat(m[3])>=0.5)&&!(m[0]==='0'&&m[1]==='0'&&m[2]==='0'&&m.length>=4&&parseFloat(m[3])===0))return c;" +
+                "el=el.parentElement;}return null;}" +
+                "var w=innerWidth,h=innerHeight;" +
+                "return op(3,3)||op(w-3,3)||op(3,h-3)||" +
+                "getComputedStyle(document.body).backgroundColor||" +
+                "getComputedStyle(document.documentElement).backgroundColor;})()");
             if (TryParseCssColor(json, out var color)) ApplyChromeColor(color);
         }
         catch { /* 페이지 접근 제한 등 — 기존 색 유지 */ }
@@ -342,6 +353,8 @@ public partial class MiniBrowserWindow : Window
         double luma = (0.299 * pageColor.R + 0.587 * pageColor.G + 0.114 * pageColor.B) / 255.0;
         bool light = luma > 0.5;
 
+        // 바깥 테두리: 페이지색을 살짝만 밀어 가장자리 경계만 은은하게(흰/검 오버레이는 밝은 링으로 튄다).
+        _chromeBorderBrush.Color = Shade(pageColor, light ? -0.12 : 0.16);
         _headerBgBrush.Color = Shade(pageColor, light ? -0.06 : 0.10);
         _headerLineBrush.Color = Contrast(light, light ? 0.14 : 0.20);
         _headerGlyphBrush.Color = Contrast(light, light ? 0.55 : 0.65);
