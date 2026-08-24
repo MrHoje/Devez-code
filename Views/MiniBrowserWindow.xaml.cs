@@ -11,8 +11,9 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>
-/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 헤더에는 주소창만 두고(뒤로·앞으로·새로고침 없음),
-/// 여닫기는 타이틀바 버튼 토글로만 한다. Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
+/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 툴바·주소창·닫기 버튼 없이 웹 화면만 보여주고
+/// 상단 헤더는 창 이동 전용 띠다. 여닫기는 타이틀바 버튼 토글로만 한다.
+/// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
 ///
 /// 마지막 주소는 앱이 켜져 있는 동안만 기억한다(정적 필드). 앱을 껐다 켜면 설정의 시작 주소로 연다.
 /// 위치·크기는 설정에 저장해 다음 실행에도 복원한다.
@@ -31,11 +32,25 @@ public partial class MiniBrowserWindow : Window
     private const double GpuCornerRadius = 25;
     private const double DwmCornerRadius = 8;
 
+    /// <summary>미니 창은 좁아서 웹 화면을 조금 축소해 연다.</summary>
+    private const double InitialZoomFactor = 0.8;
+
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUND = 2;
 
+    // 화면 가장자리로 끌었을 때 Windows 가 창을 반쪽/최대로 확장(스냅)하는 것을 막는다.
+    // 스냅은 최대화 가능한 창에만 걸리므로 WS_MAXIMIZEBOX 비트를 떼면 비활성된다.
+    private const int GWL_STYLE = -16;
+    private const int WS_MAXIMIZEBOX = 0x00010000;
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
     private static MiniBrowserWindow? _instance;
 
@@ -136,6 +151,7 @@ public partial class MiniBrowserWindow : Window
     {
         base.OnSourceInitialized(e);
         RestorePlacement();
+        DisableEdgeSnap();
 
         if (!AllowsTransparency)
         {
@@ -148,6 +164,20 @@ public partial class MiniBrowserWindow : Window
             }
             catch { }
         }
+    }
+
+    /// <summary>가장자리 스냅 차단. 리사이즈(WS_THICKFRAME)는 그대로 두고 최대화 비트만 뗀다.</summary>
+    private void DisableEdgeSnap()
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+            int style = GetWindowLong(hwnd, GWL_STYLE);
+            if ((style & WS_MAXIMIZEBOX) != 0)
+                SetWindowLong(hwnd, GWL_STYLE, style & ~WS_MAXIMIZEBOX);
+        }
+        catch { }
     }
 
     private async Task StartBrowserAsync()
@@ -163,6 +193,7 @@ public partial class MiniBrowserWindow : Window
             var core = _surface.Core!;
             _coreReady = true;
             ApplyColorScheme();
+            _surface.SetZoom(InitialZoomFactor);
 
             core.SourceChanged += (_, _) => OnSourceChanged(core.Source);
             // 새 창 요청은 같은 뷰에서 열기(팝업 창 대신 인라인 이동)
@@ -185,12 +216,11 @@ public partial class MiniBrowserWindow : Window
         }
     }
 
-    /// <summary>주소창 표시 갱신 + 같은 실행 안에서만 쓰는 마지막 주소 기록.</summary>
-    private void OnSourceChanged(string? url)
+    /// <summary>같은 실행 안에서만 쓰는 마지막 주소 기록(설정 파일에는 남기지 않는다).</summary>
+    private static void OnSourceChanged(string? url)
     {
         if (string.IsNullOrWhiteSpace(url) || url == "about:blank") return;
         _lastUrlThisRun = url;
-        if (!AddressBox.IsKeyboardFocusWithin) AddressBox.Text = url;
     }
 
     /// <summary>외부 요청 주소로 이동. 코어 준비 전이면 준비 후 열도록 보류한다.</summary>
@@ -216,45 +246,6 @@ public partial class MiniBrowserWindow : Window
                     : CoreWebView2PreferredColorScheme.Light;
         }
         catch { /* 해제 중 등 */ }
-    }
-
-    // ── 주소창 ────────────────────────────────────────────────────────
-    private void AddressBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
-        => AddressBox.SelectAll();
-
-    private void AddressBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (!AddressBox.IsKeyboardFocusWithin)
-        {
-            e.Handled = true;
-            AddressBox.Focus();
-        }
-    }
-
-    private void AddressBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter) return;
-        var input = AddressBox.Text.Trim();
-        if (input.Length == 0) return;
-        NavigateCore(ToNavigationTarget(input));
-        _surface.Element.Focus();
-        e.Handled = true;
-    }
-
-    /// <summary>입력이 URL이면 그대로 이동, 아니면 구글 검색(브라우저 탭 주소창과 동일 규칙).</summary>
-    private static string ToNavigationTarget(string input)
-    {
-        if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return input;
-
-        bool looksLikeDomain = !input.Contains(' ')
-            && input.Contains('.')
-            && Uri.TryCreate("https://" + input, UriKind.Absolute, out var u)
-            && u.Host.Contains('.');
-        if (looksLikeDomain) return "https://" + input;
-
-        return "https://www.google.com/search?q=" + Uri.EscapeDataString(input);
     }
 
     /// <summary>저장된 위치·크기 복원. 화면 밖이면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
@@ -325,6 +316,7 @@ public partial class MiniBrowserWindow : Window
         public abstract CoreWebView2? Core { get; }
         public abstract Task EnsureAsync(CoreWebView2Environment env);
         public abstract void SetDefaultBackground(System.Drawing.Color color);
+        public abstract void SetZoom(double factor);
         public abstract void Dispose();
     }
 
@@ -336,6 +328,7 @@ public partial class MiniBrowserWindow : Window
         public override CoreWebView2? Core => _view.CoreWebView2;
         public override Task EnsureAsync(CoreWebView2Environment env) => _view.EnsureCoreWebView2Async(env);
         public override void SetDefaultBackground(System.Drawing.Color color) => _view.DefaultBackgroundColor = color;
+        public override void SetZoom(double factor) => _view.ZoomFactor = factor;
         public override void Dispose() => _view.Dispose();
     }
 
@@ -347,6 +340,7 @@ public partial class MiniBrowserWindow : Window
         public override CoreWebView2? Core => _view.CoreWebView2;
         public override Task EnsureAsync(CoreWebView2Environment env) => _view.EnsureCoreWebView2Async(env);
         public override void SetDefaultBackground(System.Drawing.Color color) => _view.DefaultBackgroundColor = color;
+        public override void SetZoom(double factor) => _view.ZoomFactor = factor;
         public override void Dispose() => _view.Dispose();
     }
 }

@@ -22,32 +22,14 @@
             SnapsToDevicePixels="False">
         <Grid x:Name="Root">
             <Grid.RowDefinitions>
-                <RowDefinition Height="36"/>
+                <RowDefinition Height="26"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 헤더: 주소창만. 좌우 여백을 잡고 끌면 창이 이동한다(닫기는 상단 버튼으로). -->
+            <!-- 헤더: 창 이동 전용 띠(주소창·닫기 없음 — 여닫기는 상단 버튼으로). -->
             <Border x:Name="Header" Grid.Row="0"
                     Background="Transparent"
-                    Padding="12,0,12,0"
-                    MouseLeftButtonDown="Header_MouseLeftButtonDown">
-                <Border Height="24" VerticalAlignment="Center"
-                        Background="{DynamicResource PanelSoftBrush}"
-                        BorderBrush="{DynamicResource LineBrush}"
-                        BorderThickness="1" CornerRadius="9"
-                        Padding="9,0">
-                    <TextBox x:Name="AddressBox"
-                             BorderThickness="0" Background="Transparent"
-                             Foreground="{DynamicResource TextBrush}"
-                             CaretBrush="{DynamicResource TextBrush}"
-                             FontSize="{DynamicResource Fs12}"
-                             FontFamily="{StaticResource PretendardFont}"
-                             VerticalContentAlignment="Center" Padding="0"
-                             GotKeyboardFocus="AddressBox_GotKeyboardFocus"
-                             PreviewMouseLeftButtonDown="AddressBox_PreviewMouseLeftButtonDown"
-                             KeyDown="AddressBox_KeyDown"/>
-                </Border>
-            </Border>
+                    MouseLeftButtonDown="Header_MouseLeftButtonDown"/>
 
             <!-- 브라우저 본문 -->
             <Grid x:Name="BrowserHost" Grid.Row="1"/>
