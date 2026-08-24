@@ -41,7 +41,7 @@ PATH에서 자동 감지하며, 설치돼 있지 않으면 설정 화면의 한 
 
 ## 기술 스택
 
-- .NET 9 (`net9.0-windows10.0.19041.0`), WPF
+- .NET 9 (`net9.0-windows`), WPF
 - 터미널: **ConPTY**(`CreatePseudoConsole`) + **xterm.js**(WebView2 임베드)
 - Windows Terminal `settings.json`의 폰트/컬러 스킴 자동 적용 (`WtSettingsLoader`)
 - 프로젝트/세션 영속: `%AppData%\DevezCode\workspace.json`

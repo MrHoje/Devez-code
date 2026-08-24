@@ -2,10 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- Windows 버전 지정 = WinRT 프로젝션(Microsoft.Windows.SDK.NET / WinRT.Runtime) 포함.
-         미니 브라우저 창이 쓰는 WebView2CompositionControl 이 Windows.UI.Composition 을 요구한다
-         (프로젝션이 없으면 창을 띄우는 순간 FileNotFoundException 으로 앱이 죽는다). -->
-    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net9.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>

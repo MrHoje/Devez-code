@@ -634,13 +634,30 @@
   // 한 번만 보낸다. xterm 기본 경로는 트랙패드의 작은 wheel 이벤트를 각각 앱 휠/방향키로 바꿔
   // 관성 구간에서 세션별 이동량이 크게 달라진다.
   const TERMINAL_WHEEL_FALLBACK_STEP_PX = 48;
+  // 휠 이벤트 하나가 만들 수 있는 CLI 휠 보고 수 상한(폭주 차단).
+  const TERMINAL_WHEEL_REPORT_MAX = 10;
+  function terminalCellHeight(entry) {
+    const screen = entry.term.element && entry.term.element.querySelector('.xterm-screen');
+    return screen && entry.term.rows > 0 ? screen.clientHeight / entry.term.rows : 16;
+  }
   function terminalWheelPixels(entry, ev) {
     let amount = ev.deltaY;
-    const screen = entry.term.element && entry.term.element.querySelector('.xterm-screen');
-    const cell = screen && entry.term.rows > 0 ? screen.clientHeight / entry.term.rows : 16;
+    const cell = terminalCellHeight(entry);
     if (ev.deltaMode === 1) amount *= cell;
     else if (ev.deltaMode === 2) amount *= cell * entry.term.rows;
     return amount;
+  }
+  // 홈 있는 휠 한 칸이 몇 줄인지 — xterm 의 로컬 스크롤·방향키 변환과 같은 기준(픽셀 ÷ 셀 높이,
+  // 잔여 이월)으로 계산한다. 방향이 바뀌면 이월분은 버린다.
+  function terminalWheelLines(entry, ev) {
+    const cell = terminalCellHeight(entry);
+    const px = terminalWheelPixels(entry, ev);
+    if (!(cell > 0) || !Number.isFinite(px) || px === 0) return 0;
+    const carry = (entry._wheelLineCarry && Math.sign(entry._wheelLineCarry) === Math.sign(px))
+      ? entry._wheelLineCarry : 0;
+    const acc = carry + px / cell;
+    entry._wheelLineCarry = acc % 1;
+    return Math.min(Math.floor(Math.abs(acc)), TERMINAL_WHEEL_REPORT_MAX);
   }
 
   function terminalWheelSample(entry, ev) {
@@ -729,6 +746,20 @@
       entry._wheelUnits = 0;
       entry._wheelStep = 0;
       entry._wheelAt = performance.now();
+      // 단, 마우스 프로토콜이 켜진 방(claude 등 alt-buffer TUI)에서 xterm 은 휠 이벤트당 보고를
+      // 1건만 보내 한 칸이 1줄로 줄어든다. 같은 마우스인데 앱의 마우스 모드 on/off 에 따라 이동량이
+      // 1줄 ↔ 여러 줄로 갈리므로, 보고를 줄 수만큼 반복해 로컬 스크롤과 이동량을 맞춘다.
+      if (svc) {
+        const lines = terminalWheelLines(entry, ev);
+        if (lines > 0) {
+          const dir = ev.deltaY < 0 ? -1 : 1;
+          if (!sendTerminalWheelReport(entry, ev, dir)) return true; // 보고 실패 — xterm 기본에 맡김
+          for (let i = 1; i < lines; i++) sendTerminalWheelReport(entry, ev, dir);
+          ev.preventDefault();
+          ev.stopPropagation();
+          return false;
+        }
+      }
       return true;
     }
 
