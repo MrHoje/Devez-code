@@ -11,9 +11,9 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>
-/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 웹 화면이 창 전체를 채우고, 상단 26px 은 창 이동·닫기용
-/// 투명 오버레이 띠다 — 컨트롤 영역이 따로 보이지 않고 마우스를 올릴 때만 닫기 버튼이 나타난다.
-/// (그 띠는 웹 화면 위에 겹치므로 최상단 26px 의 웹 클릭은 창 쪽으로 간다.)
+/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 웹 화면이 창 전체를 채우고, 상단 28px 은 감지 영역이다
+/// — 평소엔 아무것도 보이지 않고 그 영역에 마우스가 들어오면 컨트롤박스(배경 띠 + 닫기 버튼)가 뜬다.
+/// 그 띠를 끌면 창이 이동한다. (감지 영역이 웹 화면 위에 겹치므로 최상단 28px 클릭은 창 쪽으로 간다.)
 /// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
 ///
 /// 닫기는 창을 없애지 않고 숨기기다 — 앱이 살아 있는 동안 인스턴스를 유지해 다시 열 때 페이지를
@@ -320,6 +320,22 @@ public partial class MiniBrowserWindow : Window
     {
         if (e.ChangedButton != MouseButton.Left) return;
         try { DragMove(); } catch { }
+    }
+
+    // 컨트롤박스는 상단 감지 영역에 마우스가 들어올 때만 나타난다(스타일 트리거 대신 코드 —
+    // Style 안의 ElementName 바인딩은 네임스코프가 달라 해석되지 않는 경우가 있다).
+    private void Header_MouseEnter(object sender, MouseEventArgs e) => FadeHeaderBar(true);
+
+    private void Header_MouseLeave(object sender, MouseEventArgs e) => FadeHeaderBar(false);
+
+    private void FadeHeaderBar(bool show)
+    {
+        var fade = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = show ? 1 : 0,
+            Duration = TimeSpan.FromMilliseconds(110),
+        };
+        HeaderBar.BeginAnimation(OpacityProperty, fade);
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => HideForLater();
