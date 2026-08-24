@@ -22,13 +22,14 @@
             SnapsToDevicePixels="False">
         <Grid x:Name="Root">
             <Grid.RowDefinitions>
-                <!-- 컨트롤박스 행 — 기본 높이 0(안 보임). 커서가 창 위쪽에 오면 코드가 펼친다. -->
-                <RowDefinition x:Name="HeaderRow" Height="0"/>
+                <!-- 컨트롤박스 행 — 헤더 높이를 따라간다(기본 0 = 안 보임). 커서가 창 위쪽에 오면 코드가 펼친다. -->
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
             <!-- 컨트롤박스: 창 이동(드래그) + 닫기 -->
             <Border x:Name="Header" Grid.Row="0"
+                    Height="0"
                     Background="{DynamicResource BgBrush}"
                     BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="0,0,0,1"

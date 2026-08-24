@@ -333,11 +333,11 @@ public partial class MiniBrowserWindow : Window
     /// <summary>펼쳤을 때 컨트롤박스 높이.</summary>
     private const double HeaderHeight = 28;
 
-    /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다.</summary>
-    private const double HoverEnterZone = 12;
+    /// <summary>커서가 창 상단 이 범위에 들어오면 펼친다(컨트롤박스 높이와 같게).</summary>
+    private const double HoverEnterZone = HeaderHeight;
 
     /// <summary>펼친 뒤에는 이 범위를 벗어나야 접는다(경계에서 깜빡이는 것 방지).</summary>
-    private const double HoverExitZone = HeaderHeight + 14;
+    private const double HoverExitZone = HeaderHeight + 16;
 
     private DispatcherTimer? _hoverTimer;
     private bool _headerShown;
@@ -381,7 +381,18 @@ public partial class MiniBrowserWindow : Window
     {
         if (_headerShown == show) return;
         _headerShown = show;
-        HeaderRow.Height = new GridLength(show ? HeaderHeight : 0);
+
+        var slide = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = show ? HeaderHeight : 0,
+            Duration = TimeSpan.FromMilliseconds(show ? 150 : 120),
+            EasingFunction = new System.Windows.Media.Animation.CubicEase
+            {
+                EasingMode = show ? System.Windows.Media.Animation.EasingMode.EaseOut
+                                  : System.Windows.Media.Animation.EasingMode.EaseIn,
+            },
+        };
+        Header.BeginAnimation(HeightProperty, slide);
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => HideForLater();
