@@ -22,32 +22,31 @@
             SnapsToDevicePixels="False">
         <Grid x:Name="Root">
             <Grid.RowDefinitions>
-                <RowDefinition Height="34"/>
+                <RowDefinition Height="36"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 헤더: 드래그 이동 + 제목 + 닫기 -->
+            <!-- 헤더: 주소창만. 좌우 여백을 잡고 끌면 창이 이동한다(닫기는 상단 버튼으로). -->
             <Border x:Name="Header" Grid.Row="0"
                     Background="Transparent"
-                    Padding="14,0,6,0"
+                    Padding="12,0,12,0"
                     MouseLeftButtonDown="Header_MouseLeftButtonDown">
-                <DockPanel LastChildFill="True">
-                    <Button x:Name="CloseBtn" DockPanel.Dock="Right"
-                            Width="28" Height="24" Margin="0,0,0,0"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource IconButton}"
-                            Cursor="Arrow" ToolTip="닫기"
-                            Click="CloseBtn_Click">
-                        <TextBlock Text="&#x2715;" FontSize="12"
-                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                    </Button>
-                    <TextBlock x:Name="TitleText"
-                               Text="미니 브라우저"
-                               FontSize="{DynamicResource Fs12}"
-                               Foreground="{DynamicResource TextMutedBrush}"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis"/>
-                </DockPanel>
+                <Border Height="24" VerticalAlignment="Center"
+                        Background="{DynamicResource PanelSoftBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1" CornerRadius="9"
+                        Padding="9,0">
+                    <TextBox x:Name="AddressBox"
+                             BorderThickness="0" Background="Transparent"
+                             Foreground="{DynamicResource TextBrush}"
+                             CaretBrush="{DynamicResource TextBrush}"
+                             FontSize="{DynamicResource Fs12}"
+                             FontFamily="{StaticResource PretendardFont}"
+                             VerticalContentAlignment="Center" Padding="0"
+                             GotKeyboardFocus="AddressBox_GotKeyboardFocus"
+                             PreviewMouseLeftButtonDown="AddressBox_PreviewMouseLeftButtonDown"
+                             KeyDown="AddressBox_KeyDown"/>
+                </Border>
             </Border>
 
             <!-- 브라우저 본문 -->

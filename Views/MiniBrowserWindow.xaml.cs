@@ -11,9 +11,11 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>
-/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 주소창·네비게이션 없이 웹 화면만 보여준다.
-/// Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시되고(다른 앱 위로는 올라가지 않음),
-/// 위치·크기·마지막 주소를 저장해 다시 열 때 복원한다.
+/// 메인 창 위에 겹쳐 띄우는 작은 브라우저 창. 헤더에는 주소창만 두고(뒤로·앞으로·새로고침 없음),
+/// 여닫기는 타이틀바 버튼 토글로만 한다. Owner 를 메인 창으로 두어 메인 창 위에만 항상 표시된다.
+///
+/// 마지막 주소는 앱이 켜져 있는 동안만 기억한다(정적 필드). 앱을 껐다 켜면 설정의 시작 주소로 연다.
+/// 위치·크기는 설정에 저장해 다음 실행에도 복원한다.
 ///
 /// 라운드 코너는 렌더 모드에 따라 두 경로로 갈린다.
 /// - GPU 렌더: 투명 창 + WebView2CompositionControl(WPF 렌더 경로) → 큰 반경도 WPF 안티앨리어싱으로
@@ -24,9 +26,6 @@ namespace DevezCode.Views;
 /// </summary>
 public partial class MiniBrowserWindow : Window
 {
-    /// <summary>미니 브라우저 전용 방문 기록 키(프로젝트별 브라우저 탭 기록과 분리).</summary>
-    private const string StateKey = SettingsService.MiniBrowserStateKey;
-
     /// <summary>GPU 렌더에서 쓰는 라운드 반경. 참고한 ChatGPT 미니 창 스크린샷의 코너를 픽셀로 재
     /// 반경 25(배율 100%)로 맞춘 값. 소프트웨어 렌더는 DWM 고정 반경(8)을 따른다.</summary>
     private const double GpuCornerRadius = 25;
@@ -40,11 +39,22 @@ public partial class MiniBrowserWindow : Window
 
     private static MiniBrowserWindow? _instance;
 
+    /// <summary>같은 실행 안에서 창을 닫고 다시 열 때 이어보기 위한 마지막 주소.
+    /// 설정 파일에 남기지 않으므로 앱을 재시작하면 시작 주소로 돌아간다.</summary>
+    private static string? _lastUrlThisRun;
+
     private readonly BrowserSurface _surface;
     private readonly Action<string> _themeChangedHandler;
     private readonly double _cornerRadius;
     private bool _coreReady;
     private string? _pendingUrl;
+
+    /// <summary>타이틀바 버튼용 — 열려 있으면 닫고, 없으면 띄운다.</summary>
+    public static void Toggle(Window? owner)
+    {
+        if (_instance is { IsLoaded: true } win) { win.Close(); return; }
+        ShowOrActivate(owner);
+    }
 
     /// <summary>이미 열려 있으면 활성화만, 아니면 새로 띄운다. url 이 있으면 그 주소로 이동.</summary>
     public static void ShowOrActivate(Window? owner, string? url = null)
@@ -75,6 +85,7 @@ public partial class MiniBrowserWindow : Window
     /// <summary>설정에서 시작 주소를 바꿨을 때 — 열려 있는 미니 창을 새 주소로 즉시 이동시킨다.</summary>
     public static void ApplyHomeUrlToOpenWindow()
     {
+        _lastUrlThisRun = null;
         if (_instance is { IsLoaded: true } win)
             win.Navigate(SettingsService.LoadMiniBrowserHomeUrl());
     }
@@ -153,12 +164,11 @@ public partial class MiniBrowserWindow : Window
             _coreReady = true;
             ApplyColorScheme();
 
-            core.DocumentTitleChanged += (_, _) => SyncTitle(core.DocumentTitle);
-            core.SourceChanged += (_, _) => PersistCurrentUrl(core.Source);
+            core.SourceChanged += (_, _) => OnSourceChanged(core.Source);
             // 새 창 요청은 같은 뷰에서 열기(팝업 창 대신 인라인 이동)
             core.NewWindowRequested += (_, args) => { args.Handled = true; NavigateCore(args.Uri); };
 
-            NavigateCore(_pendingUrl ?? LoadStartUrl());
+            NavigateCore(_pendingUrl ?? _lastUrlThisRun ?? SettingsService.LoadMiniBrowserHomeUrl());
             _pendingUrl = null;
         }
         catch (Exception ex)
@@ -175,23 +185,12 @@ public partial class MiniBrowserWindow : Window
         }
     }
 
-    /// <summary>마지막으로 보던 주소, 없으면 설정의 미니 브라우저 시작 주소.</summary>
-    private static string LoadStartUrl()
-    {
-        var saved = SettingsService.LoadBrowserHistory(StateKey);
-        if (saved is { } h && h.Urls.Count > 0)
-        {
-            var idx = Math.Clamp(h.Index, 0, h.Urls.Count - 1);
-            if (!string.IsNullOrWhiteSpace(h.Urls[idx])) return h.Urls[idx];
-        }
-        return SettingsService.LoadMiniBrowserHomeUrl();
-    }
-
-    /// <summary>다시 열 때 이어보도록 현재 주소만 저장한다(미니 창은 히스토리 UI 가 없다).</summary>
-    private static void PersistCurrentUrl(string? url)
+    /// <summary>주소창 표시 갱신 + 같은 실행 안에서만 쓰는 마지막 주소 기록.</summary>
+    private void OnSourceChanged(string? url)
     {
         if (string.IsNullOrWhiteSpace(url) || url == "about:blank") return;
-        try { SettingsService.SaveBrowserHistory(StateKey, new[] { url }, 0); } catch { }
+        _lastUrlThisRun = url;
+        if (!AddressBox.IsKeyboardFocusWithin) AddressBox.Text = url;
     }
 
     /// <summary>외부 요청 주소로 이동. 코어 준비 전이면 준비 후 열도록 보류한다.</summary>
@@ -219,9 +218,44 @@ public partial class MiniBrowserWindow : Window
         catch { /* 해제 중 등 */ }
     }
 
-    /// <summary>헤더 제목 — 페이지 제목이 없으면 기본 문구.</summary>
-    private void SyncTitle(string? documentTitle)
-        => TitleText.Text = string.IsNullOrWhiteSpace(documentTitle) ? "미니 브라우저" : documentTitle!.Trim();
+    // ── 주소창 ────────────────────────────────────────────────────────
+    private void AddressBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        => AddressBox.SelectAll();
+
+    private void AddressBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!AddressBox.IsKeyboardFocusWithin)
+        {
+            e.Handled = true;
+            AddressBox.Focus();
+        }
+    }
+
+    private void AddressBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        var input = AddressBox.Text.Trim();
+        if (input.Length == 0) return;
+        NavigateCore(ToNavigationTarget(input));
+        _surface.Element.Focus();
+        e.Handled = true;
+    }
+
+    /// <summary>입력이 URL이면 그대로 이동, 아니면 구글 검색(브라우저 탭 주소창과 동일 규칙).</summary>
+    private static string ToNavigationTarget(string input)
+    {
+        if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return input;
+
+        bool looksLikeDomain = !input.Contains(' ')
+            && input.Contains('.')
+            && Uri.TryCreate("https://" + input, UriKind.Absolute, out var u)
+            && u.Host.Contains('.');
+        if (looksLikeDomain) return "https://" + input;
+
+        return "https://www.google.com/search?q=" + Uri.EscapeDataString(input);
+    }
 
     /// <summary>저장된 위치·크기 복원. 화면 밖이면(모니터 제거 등) 소유 창 기준으로 배치.</summary>
     private void RestorePlacement()
@@ -266,8 +300,6 @@ public partial class MiniBrowserWindow : Window
         if (e.ChangedButton != MouseButton.Left) return;
         try { DragMove(); } catch { }
     }
-
-    private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {

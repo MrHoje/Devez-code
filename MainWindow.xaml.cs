@@ -2932,9 +2932,10 @@ public partial class MainWindow : Window
     private void SessionHistoryPanelBtn_Click(object sender, RoutedEventArgs e)
         => RunPanelToggleCovered(() => SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true));
 
-    /// <summary>미니 브라우저 창 — 메인 창 위에 겹쳐 띄운다(Owner=this 라 다른 앱 위로는 올라가지 않음).</summary>
+    /// <summary>미니 브라우저 창 열기/닫기 토글 — 창 자체에는 닫기 버튼이 없어 이 버튼이 유일한 창구다.
+    /// 메인 창 위에 겹쳐 띄운다(Owner=this 라 다른 앱 위로는 올라가지 않음).</summary>
     private void MiniBrowserBtn_Click(object sender, RoutedEventArgs e)
-        => Views.MiniBrowserWindow.ShowOrActivate(this);
+        => Views.MiniBrowserWindow.Toggle(this);
 
     /// <summary>Ctrl+Shift 세션 단축키 — 전역 훅에서 들어온다. 터미널 WebView2 뿐 아니라 파일 탭·
     /// Monaco 편집기·Claude 채팅·사이드바 어디에 포커스가 있어도 같은 동작을 하도록 한 창구.</summary>

@@ -855,7 +855,7 @@
                                 <Border Padding="0,0,0,16" CornerRadius="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <StackPanel>
                                         <TextBlock Text="미니 브라우저 주소" FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="상단 미니 브라우저 창을 처음 열 때 표시할 주소입니다. 주소를 바꾸면 미니 브라우저의 방문 기록이 초기화됩니다."
+                                        <TextBlock Text="상단 미니 브라우저 창을 열 때 표시할 주소입니다. 앱을 다시 실행하면 항상 이 주소로 시작합니다."
                                                    FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                         <Border Style="{StaticResource FormFieldBox}" Margin="0,8,0,0">

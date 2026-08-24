@@ -117,7 +117,7 @@
 
                     <!-- ── 미니 브라우저 창 (메인 창 위에 겹쳐 띄우는 작은 브라우저) ──── -->
                     <Button x:Name="MiniBrowserBtn" Click="MiniBrowserBtn_Click"
-                            Style="{StaticResource TitleBarChipButton}" ToolTip="미니 브라우저 열기">
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="미니 브라우저 열기/닫기">
                         <Path x:Name="MiniBrowserIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconAppWindow}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>

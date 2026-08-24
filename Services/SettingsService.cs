@@ -1193,15 +1193,10 @@ public static class SettingsService
     public static void SaveMiniBrowserHomeUrl(string? url)
     {
         Current.MiniBrowserHomeUrl = NormalizeHomeUrl(url, MiniBrowserHomeUrlDefault);
-        // 시작 주소를 바꾸면 다음에 열 때 새 주소로 시작하도록 미니 창 방문 기록을 비운다.
-        Current.BrowserHistoryByProject.Remove(MiniBrowserStateKey);
         Save();
     }
 
     public const string MiniBrowserHomeUrlDefault = "https://claude.ai";
-
-    /// <summary>미니 브라우저 방문 기록 키. 프로젝트별 브라우저 탭 기록과 섞이지 않게 고정 키를 쓴다.</summary>
-    public const string MiniBrowserStateKey = "__mini_browser__";
 
     /// <summary>스킴 없는 입력은 https 로 보정하고, 그래도 http(s) 절대 URL 이 아니면 fallback 을 쓴다.</summary>
     private static string NormalizeHomeUrl(string? value, string fallback)
