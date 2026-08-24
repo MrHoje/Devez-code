@@ -45,6 +45,8 @@ public static class SettingsService
         public int MarkdownViewportWidth { get; set; } = 0;
         // 문서(md) 뷰어 테마. "auto"=앱 테마를 따라감, 그 외(minimal/soft/dark/gray/softpink/midnight)=고정.
         public string MarkdownTheme { get; set; } = "auto";
+        // 웹브라우저 패널 색 구성. "system"=앱 테마를 따라감, "light"/"dark"=고정.
+        public string BrowserTheme { get; set; } = "system";
         // 토큰 사용량 비용 단가(모델별). 비어 있으면 SessionUsageService 내장 기본값 사용.
         // 채우면 내장값보다 우선(덮어쓰기/신규 모델 추가). 갱신 절차: .knowledge/토큰사용량-단가-갱신.md
         public List<UsagePriceRule> UsagePricing { get; set; } = new();
@@ -435,6 +437,22 @@ public static class SettingsService
         Current.MarkdownTheme = theme;
         Save();
         MarkdownThemeChanged?.Invoke();
+    }
+
+    // ── 웹브라우저 색 구성 ("system"=앱 테마 따라감 / "light" / "dark") ──
+    public static event Action? BrowserThemeChanged;
+    public static string LoadBrowserTheme()
+    {
+        var t = Current.BrowserTheme?.Trim().ToLowerInvariant();
+        return t is "light" or "dark" ? t : "system";
+    }
+    public static void SaveBrowserTheme(string theme)
+    {
+        theme = theme?.Trim().ToLowerInvariant() is "light" or "dark" ? theme!.Trim().ToLowerInvariant() : "system";
+        if (LoadBrowserTheme() == theme) return;
+        Current.BrowserTheme = theme;
+        Save();
+        BrowserThemeChanged?.Invoke();
     }
 
     // ── 앱 전체 글꼴 크기 단계 (devez 이식: 0=작게, 1=크게) ───────

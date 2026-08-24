@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -722,6 +722,7 @@ public partial class SettingsDialog : UserControl
         _selectedMarkdownViewportWidth = _originalMarkdownViewportWidth;
         SetMarkdownViewportWidthEditor(_selectedMarkdownViewportWidth);
         SelectComboByTag(MarkdownThemeCombo, SettingsService.LoadMarkdownTheme());
+        SelectComboByTag(BrowserThemeCombo, SettingsService.LoadBrowserTheme());
         _originalAutoLoadLastProject = SettingsService.LoadAutoLoadLastProject();
         _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
         AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
@@ -1175,6 +1176,13 @@ public partial class SettingsDialog : UserControl
     {
         if ((MarkdownThemeCombo.SelectedItem as ComboBoxItem)?.Tag is string tag)
             SettingsService.SaveMarkdownTheme(tag);
+    }
+
+    /// <summary>웹브라우저 색 구성 선택 — 즉시 저장하고 열려 있는 브라우저 패널에 반영.</summary>
+    private void BrowserThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if ((BrowserThemeCombo.SelectedItem as ComboBoxItem)?.Tag is string tag)
+            SettingsService.SaveBrowserTheme(tag);
     }
 
     private void MarkdownViewportWidthCombo_Changed(object sender, SelectionChangedEventArgs e)

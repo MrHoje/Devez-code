@@ -2240,6 +2240,22 @@
                                     <ComboBoxItem Tag="softpink" Content="소프트 핑크"/>
                                     <ComboBoxItem Tag="midnight" Content="미드나이트 블루"/>
                                 </ComboBox>
+
+                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
+
+                                <!-- 웹브라우저 테마 — 시스템이면 앱 테마를 따르고, 그 외에는 고정 -->
+                                <TextBlock Text="웹브라우저 테마" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,22,0,6"/>
+                                <TextBlock Text="웹브라우저 패널이 사이트에 알려 줄 색 구성입니다. 시스템이면 앱 테마를 따라갑니다."
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
+                                           Margin="0,0,0,12"/>
+                                <ComboBox x:Name="BrowserThemeCombo" Width="220" HorizontalAlignment="Left"
+                                          Style="{StaticResource ThemedCombo}"
+                                          SelectionChanged="BrowserThemeCombo_SelectionChanged">
+                                    <ComboBoxItem Tag="system" Content="시스템 (앱 테마 따라감)"/>
+                                    <ComboBoxItem Tag="light" Content="라이트"/>
+                                    <ComboBoxItem Tag="dark" Content="다크"/>
+                                </ComboBox>
                             </StackPanel>
 
                             <!-- 알림 패널 — 세션 종료 알림 / 자동 닫힘 / 표시 위치 / 모니터 -->

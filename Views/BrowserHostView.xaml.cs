@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
@@ -24,6 +24,7 @@ public partial class BrowserHostView : UserControl
     private string? _pendingOpenUrl;
 
     private readonly Action<string> _themeChangedHandler;
+    private readonly Action _browserThemeChangedHandler;
 
     // ── 가상 히스토리 ────────────────────────────────────────────────
     // WebView2(Chromium) 네이티브 뒤로/앞으로 스택은 외부 주입 API 가 없어,
@@ -63,6 +64,8 @@ public partial class BrowserHostView : UserControl
         InitializeComponent();
         _themeChangedHandler = _ => ApplyColorScheme();
         App.ThemeChanged += _themeChangedHandler;
+        _browserThemeChangedHandler = ApplyColorScheme;
+        SettingsService.BrowserThemeChanged += _browserThemeChangedHandler;
     }
 
     /// <summary>프로젝트 전환 시 — 이미 초기화된 경우 해당 프로젝트의 저장된 히스토리를 불러와
@@ -205,10 +208,15 @@ public partial class BrowserHostView : UserControl
             SettingsService.SaveBrowserHistory(_projectPath, _history, _index);
     }
 
-    private static CoreWebView2PreferredColorScheme PreferredScheme =>
-        App.IsDarkTheme(App.CurrentTheme)
-            ? CoreWebView2PreferredColorScheme.Dark
-            : CoreWebView2PreferredColorScheme.Light;
+    /// <summary>설정의 웹브라우저 테마("system"=앱 테마 따라감 / light / dark)를 WebView2 색 구성으로 변환.</summary>
+    private static CoreWebView2PreferredColorScheme PreferredScheme => SettingsService.LoadBrowserTheme() switch
+    {
+        "light" => CoreWebView2PreferredColorScheme.Light,
+        "dark"  => CoreWebView2PreferredColorScheme.Dark,
+        _       => App.IsDarkTheme(App.CurrentTheme)
+                       ? CoreWebView2PreferredColorScheme.Dark
+                       : CoreWebView2PreferredColorScheme.Light,
+    };
 
     private void ApplyColorScheme()
     {
@@ -729,6 +737,7 @@ public partial class BrowserHostView : UserControl
     {
         try { PersistHistory(); } catch { }
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
+        try { SettingsService.BrowserThemeChanged -= _browserThemeChangedHandler; } catch { }
         try { if (_view != null) BrowserContent.Children.Remove(_view); } catch { }
         try { _view?.Dispose(); } catch { }
         _view = null;
