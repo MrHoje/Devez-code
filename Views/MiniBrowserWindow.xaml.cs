@@ -68,6 +68,7 @@ public partial class MiniBrowserWindow : Window
 
     private readonly WebView2 _view = new();
     private readonly Action<string> _themeChangedHandler;
+    private readonly Action _browserThemeChangedHandler;
     private bool _coreReady;
     private string? _pendingUrl;
 
@@ -126,6 +127,8 @@ public partial class MiniBrowserWindow : Window
 
         _themeChangedHandler = _ => ApplyColorScheme();
         App.ThemeChanged += _themeChangedHandler;
+        _browserThemeChangedHandler = ApplyColorScheme;
+        SettingsService.BrowserThemeChanged += _browserThemeChangedHandler;
 
         Root.SizeChanged += (_, _) => ApplyRoundedClip();
         Loaded += OnLoadedFirst;
@@ -253,14 +256,23 @@ public partial class MiniBrowserWindow : Window
         try { _view.CoreWebView2?.Reload(); } catch { }
     }
 
+    /// <summary>설정의 웹브라우저 테마("system"=앱 테마 따라감 / light / dark)를 WebView2 색 구성으로 변환.
+    /// 브라우저 탭과 같은 규칙을 쓴다.</summary>
+    private static CoreWebView2PreferredColorScheme PreferredScheme => SettingsService.LoadBrowserTheme() switch
+    {
+        "light" => CoreWebView2PreferredColorScheme.Light,
+        "dark"  => CoreWebView2PreferredColorScheme.Dark,
+        _       => App.IsDarkTheme(App.CurrentTheme)
+                       ? CoreWebView2PreferredColorScheme.Dark
+                       : CoreWebView2PreferredColorScheme.Light,
+    };
+
     private void ApplyColorScheme()
     {
         try
         {
             if (_view.CoreWebView2 is { } core)
-                core.Profile.PreferredColorScheme = App.IsDarkTheme(App.CurrentTheme)
-                    ? CoreWebView2PreferredColorScheme.Dark
-                    : CoreWebView2PreferredColorScheme.Light;
+                core.Profile.PreferredColorScheme = PreferredScheme;
         }
         catch { /* 해제 중 등 */ }
     }
@@ -410,6 +422,7 @@ public partial class MiniBrowserWindow : Window
         base.OnClosed(e);
         if (ReferenceEquals(_instance, this)) _instance = null;
         App.ThemeChanged -= _themeChangedHandler;
+        try { SettingsService.BrowserThemeChanged -= _browserThemeChangedHandler; } catch { }
         _hoverTimer?.Stop();
         try { _view.Dispose(); } catch { }
         OpenStateChanged?.Invoke();
