@@ -307,12 +307,13 @@ public partial class MiniBrowserWindow : Window
                 "function op(x,y){var el=document.elementFromPoint(x,y);" +
                 "while(el){var c=getComputedStyle(el).backgroundColor;" +
                 "var m=c&&c.match(/[\\d.]+/g);" +
-                "if(m&&(m.length<4||parseFloat(m[3])>=0.5)&&!(m[0]==='0'&&m[1]==='0'&&m[2]==='0'&&m.length>=4&&parseFloat(m[3])===0))return c;" +
+                "if(m&&(m.length<4||parseFloat(m[3])>=0.5))return c;" +
                 "el=el.parentElement;}return null;}" +
                 "var w=innerWidth,h=innerHeight;" +
-                "return op(3,3)||op(w-3,3)||op(3,h-3)||" +
-                "getComputedStyle(document.body).backgroundColor||" +
-                "getComputedStyle(document.documentElement).backgroundColor;})()");
+                // 오른쪽은 스크롤바라 피하고, 좌·중앙·하단 가장자리에서 실제 배경을 뽑는다.
+                "return op(2,Math.floor(h/2))||op(Math.floor(w/2),2)||op(Math.floor(w/2),h-2)||op(2,2)||" +
+                "getComputedStyle(document.documentElement).backgroundColor||" +
+                "getComputedStyle(document.body).backgroundColor;})()");
             if (TryParseCssColor(json, out var color)) ApplyChromeColor(color);
         }
         catch { /* 페이지 접근 제한 등 — 기존 색 유지 */ }
