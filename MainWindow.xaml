@@ -114,6 +114,16 @@
                     </Button>
                     <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
                             Background="{DynamicResource LineBrush}" Opacity="0.5"/>
+
+                    <!-- ── 미니 브라우저 창 (메인 창 위에 겹쳐 띄우는 작은 브라우저) ──── -->
+                    <Button x:Name="MiniBrowserBtn" Click="MiniBrowserBtn_Click"
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="미니 브라우저 열기">
+                        <Path x:Name="MiniBrowserIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconAppWindow}" Width="16" Height="16"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                    <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
+                            Background="{DynamicResource LineBrush}" Opacity="0.5"/>
                   </StackPanel>
 
                     <!-- 컨트롤 버튼: 글꼴 크기 설정과 무관하게 항상 "크게"(base+2) 기준 고정 -->

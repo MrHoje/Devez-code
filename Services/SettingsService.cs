@@ -200,6 +200,11 @@ public static class SettingsService
         public double? WindowWidth  { get; set; }
         public double? WindowHeight { get; set; }
         public bool    WindowMaximized { get; set; }
+        // 미니 브라우저 창 위치/크기(재개 시 복원). 화면 밖이면 복원 안 함. 로컬 전용.
+        public double? MiniBrowserLeft   { get; set; }
+        public double? MiniBrowserTop    { get; set; }
+        public double? MiniBrowserWidth  { get; set; }
+        public double? MiniBrowserHeight { get; set; }
         // 우측 패널 마지막 활성 탭 (0=탐색기, 1=브라우저, 2=DIFF, 3=작업 큐). 기본=3.
         public int FileExpActiveTab { get; set; } = 3;
         // 사이드 패널 뷰 전환 버튼 표시 여부. 기본=모두 표시.
@@ -1244,6 +1249,19 @@ public static class SettingsService
         Current.WindowWidth = width;
         Current.WindowHeight = height;
         Current.WindowMaximized = maximized;
+        Save();
+    }
+
+    // ── 미니 브라우저 창 위치/크기 ────────────────────────────────
+    public static (double? left, double? top, double? width, double? height) LoadMiniBrowserPlacement()
+        => (Current.MiniBrowserLeft, Current.MiniBrowserTop, Current.MiniBrowserWidth, Current.MiniBrowserHeight);
+
+    public static void SaveMiniBrowserPlacement(double left, double top, double width, double height)
+    {
+        Current.MiniBrowserLeft = left;
+        Current.MiniBrowserTop = top;
+        Current.MiniBrowserWidth = width;
+        Current.MiniBrowserHeight = height;
         Save();
     }
 
