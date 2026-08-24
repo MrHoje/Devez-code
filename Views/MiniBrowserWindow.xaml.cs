@@ -44,10 +44,19 @@ public partial class MiniBrowserWindow : Window
             return;
         }
 
-        var created = new MiniBrowserWindow { Owner = owner };
-        _instance = created;
-        created.Show();
-        created.Navigate(url);
+        // 합성 컨트롤 생성 실패(WinRT 프로젝션 누락 등)로 앱 전체가 죽지 않도록 창 생성 자체를 감싼다.
+        try
+        {
+            var created = new MiniBrowserWindow { Owner = owner };
+            _instance = created;
+            created.Show();
+            created.Navigate(url);
+        }
+        catch (Exception ex)
+        {
+            _instance = null;
+            ConfirmDialog.Alert("미니 브라우저", "미니 브라우저를 열 수 없습니다.\n\n" + ex.Message);
+        }
     }
 
     /// <summary>설정에서 시작 주소를 바꿨을 때 — 열려 있는 미니 창을 새 주소로 즉시 이동시킨다.</summary>
