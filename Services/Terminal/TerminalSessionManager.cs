@@ -3359,6 +3359,15 @@ public sealed class TerminalSessionManager
             SettingsService.LoadGrokRoomSession(roomId),
             SettingsService.LoadAntigravityRoomSession(roomId),
         });
+        // dvz 방의 claude 백엔드 대화도 이 방의 기록 — 후보에서 빠지면 방만 사라지고 transcript 는 고아로 남는다.
+        ids.AddRange(new[]
+        {
+            SettingsService.LoadDevezVibeRoomSession(roomId),
+            DevezVibeStateService.LoadTrackedSessionId(roomId),
+        }
+            .Where(v => !string.IsNullOrWhiteSpace(v)
+                && v!.StartsWith("claude:", StringComparison.Ordinal))
+            .Select(v => (string?)DevezVibeStateService.StripBackendPrefix(v!)));
         DisposeRoom(roomId);
 
         PurgeAppOwnedRoomArtifacts(roomId, ids);
@@ -3374,6 +3383,10 @@ public sealed class TerminalSessionManager
         // 삭제에서 제외한다 — 남겨도 claude 는 영구보관(cleanupPeriodDays=99999)이라 무해하다.
         var otherRoomSids = SettingsService.ClaudeSessionIdsExcept(roomId);
         otherRoomSids.UnionWith(CollectOtherRoomTrackedSids(roomId));
+        // dvz 방이 claude 백엔드로 이어가는 sid 는 claude 추적 파일·설정 어디에도 안 남는다(dvz 전용 저장소).
+        // 위 두 집합만으로는 살아있는 dvz 방 대화가 방어 대상에서 통째로 빠진다 — 클리너 보호 목록과 같게 맞춘다.
+        otherRoomSids.UnionWith(SettingsService.DevezVibeClaudeSessionIdsExcept(roomId));
+        otherRoomSids.UnionWith(DevezVibeStateService.ClaudeBackedSessionIdsExcept(roomId));
         foreach (var id in ids)
         {
             if (string.IsNullOrWhiteSpace(id)) continue;

@@ -1362,6 +1362,21 @@ public static class SettingsService
         Save();
     }
 
+    /// <summary>지정 방을 제외한 모든 dvz 방의 claude 백엔드 세션 ID 집합(소문자).
+    /// 세션 삭제(PurgeRoom)가 살아있는 dvz 방의 claude 대화를 오삭제하지 않게 하는 방어 목록용.</summary>
+    public static HashSet<string> DevezVibeClaudeSessionIdsExcept(string exceptRoomId)
+    {
+        lock (_lock)
+            return Current.DevezVibeRoomSessions
+                .Where(kv => !string.Equals(kv.Key, exceptRoomId, StringComparison.OrdinalIgnoreCase))
+                .Select(kv => kv.Value)
+                .Where(v => !string.IsNullOrWhiteSpace(v)
+                    && v.StartsWith("claude:", StringComparison.Ordinal))
+                .Select(v => DevezVibeStateService.StripBackendPrefix(v).ToLowerInvariant())
+                .Where(v => Guid.TryParse(v, out _))
+                .ToHashSet();
+    }
+
     public static void ClearDevezVibeRoomSession(string roomId)
     {
         if (Current.DevezVibeRoomSessions.Remove(roomId)) Save();

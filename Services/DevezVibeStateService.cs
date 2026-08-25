@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -65,6 +66,30 @@ public sealed class DevezVibeStateService : IDisposable
         => sid.StartsWith("claude:", StringComparison.Ordinal)
             ? sid.Substring("claude:".Length)
             : sid;
+
+    /// <summary>지정 방을 제외한 모든 dvz 방이 claude 백엔드로 이어가는 세션 ID 집합(소문자).
+    /// dvz 방의 claude sid 는 claude 추적 파일에 남지 않아, 다른 방을 삭제할 때 오삭제 방어 목록에
+    /// 넣어주지 않으면 멀쩡한 dvz 방 대화가 함께 지워진다.</summary>
+    public static HashSet<string> ClaudeBackedSessionIdsExcept(string exceptRoom)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            if (!Directory.Exists(SessionDir)) return set;
+            var except = Sanitize(exceptRoom) + ".txt";
+            foreach (var f in Directory.EnumerateFiles(SessionDir, "*.txt"))
+            {
+                if (Path.GetFileName(f).Equals(except, StringComparison.OrdinalIgnoreCase)) continue;
+                var sid = TryRead(f);
+                if (string.IsNullOrWhiteSpace(sid)
+                    || !sid!.StartsWith("claude:", StringComparison.Ordinal)) continue;
+                var raw = StripBackendPrefix(sid);
+                if (Guid.TryParse(raw, out _)) set.Add(raw.ToLowerInvariant());
+            }
+        }
+        catch { }
+        return set;
+    }
 
     /// <summary>방의 마지막 프롬프트(dvz 가 쓴 lastmsg). 감시 이벤트를 놓친 방을 카드 발행 직전에 메꾼다.</summary>
     public static string? LoadLastMessage(string room)
