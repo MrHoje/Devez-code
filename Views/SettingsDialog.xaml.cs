@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.0", "2026-08-25", true, new[]
+          ("v1.26.1", "2026-08-25", true, new[]
+          {
+              "세션을 삭제할 때 삭제하지 않은 다른 Devez Vibe 세션의 대화 기록이 함께 지워질 수 있던 문제를 수정했습니다.",
+          }),
+          ("v1.26.0", "2026-08-25", false, new[]
           {
               "세션이 미니 브라우저 창을 직접 열고 조작할 수 있게 추가했습니다.",
               "설정 > 브라우저의 \"세션이 내장 브라우저 사용\" 옵션을 켜고, 세션에게 미니 브라우저를 다뤄 달라고 말하거나 슬래시 목록의 /devez-mini-browser 로 부를 수 있게 했습니다.",
