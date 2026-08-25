@@ -3040,6 +3040,35 @@ public partial class MainWindow : Window
         base.OnPreviewKeyDown(e);
     }
 
+    /// <summary>
+    /// 열려 있는 오른쪽 서브 패널들(파일 탐색기·세션 완료 기록·계정 사용량)이 화면에서 차지한 영역을
+    /// DIP 좌표로 합쳐 돌려준다. 미니 브라우저 "화면 맞추기"가 이 영역에 자신을 겹친다.
+    /// 모두 접혀 있으면 false.
+    /// </summary>
+    public bool TryGetRightPanelArea(out Rect area)
+    {
+        area = Rect.Empty;
+        if (!IsVisible || WindowState == WindowState.Minimized) return false;
+
+        var target = PresentationSource.FromVisual(this)?.CompositionTarget;
+        if (target == null) return false;
+
+        foreach (FrameworkElement panel in new FrameworkElement[] { FileExplorer, SessionHistorySidebar, UsageSidebar })
+        {
+            if (panel is null || !panel.IsVisible || panel.ActualWidth < 1 || panel.ActualHeight < 1) continue;
+            try
+            {
+                var tl = target.TransformFromDevice.Transform(panel.PointToScreen(new Point(0, 0)));
+                var br = target.TransformFromDevice.Transform(
+                    panel.PointToScreen(new Point(panel.ActualWidth, panel.ActualHeight)));
+                var r = new Rect(tl, br);
+                area = area.IsEmpty ? r : Rect.Union(area, r);
+            }
+            catch { }
+        }
+        return !area.IsEmpty && area.Width >= 100 && area.Height >= 80;
+    }
+
     /// <summary>최우측 사용량 사이드바를 즉시 펼치거나 접는다.</summary>
     private void SetUsagePanelOpen(bool open, bool persist)
     {

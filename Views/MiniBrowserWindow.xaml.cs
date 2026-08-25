@@ -133,16 +133,30 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
 
         try
         {
-            var created = new MiniBrowserWindow { Owner = owner };
-            _instance = created;
-            created.Show();
-            created.Navigate(url);
-            OpenStateChanged?.Invoke();
+            CreateAndShow(owner).Navigate(url);
         }
         catch (Exception ex)
         {
-            _instance = null;
             ConfirmDialog.Alert("미니 브라우저", "미니 브라우저를 열 수 없습니다.\n\n" + ex.Message);
+        }
+    }
+
+    /// <summary>새 인스턴스를 만들어 띄운다. 실패는 호출자에게 그대로 올린다
+    /// (자동화 경로에서는 모달 알림을 띄우면 UI 스레드가 막혀 세션 명령이 매달린다).</summary>
+    private static MiniBrowserWindow CreateAndShow(Window? owner)
+    {
+        try
+        {
+            var created = new MiniBrowserWindow { Owner = owner };
+            _instance = created;
+            created.Show();
+            OpenStateChanged?.Invoke();
+            return created;
+        }
+        catch
+        {
+            _instance = null;
+            throw;
         }
     }
 
@@ -165,7 +179,13 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
         SettingsService.BrowserThemeChanged += _browserThemeChangedHandler;
 
         Root.SizeChanged += (_, _) => ApplyRoundedClip();
-        Activated += (_, _) => { if (_coreReady) RefreshPageBackground(); };   // 창 전환으로 다시 앞에 오면 색 재확인
+        Activated += (_, _) =>
+        {
+            if (_coreReady) RefreshPageBackground();   // 창 전환으로 다시 앞에 오면 색 재확인
+            UpdateFitState();
+        };
+        // 메인 창에서 패널을 여닫아도 미니 창은 알림을 못 받으므로, 툴바에 마우스가 들어올 때 다시 판정한다.
+        Toolbar.MouseEnter += (_, _) => UpdateFitState();
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
         IsVisibleChanged += (_, _) => { if (_hiddenByUser && IsVisible) Hide(); };
@@ -175,6 +195,7 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
     {
         Loaded -= OnLoadedFirst;
         ApplyRoundedClip();
+        UpdateFitState();
         _ = StartBrowserAsync();
     }
 
@@ -425,6 +446,30 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
 
     private void RefreshBtn_Click(object sender, RoutedEventArgs e) => ReloadPage();
 
+    // ── 화면 맞추기: 메인 창의 오른쪽 서브 패널 영역을 그대로 덮는다 ──────────
+    private MainWindow? MainHost =>
+        (Owner as MainWindow) ?? (Application.Current?.MainWindow as MainWindow);
+
+    /// <summary>오른쪽 서브 패널이 하나라도 펼쳐져 있을 때만 맞추기 버튼을 켠다.</summary>
+    private void UpdateFitState()
+    {
+        var host = MainHost;
+        FitBtn.IsEnabled = host != null && host.TryGetRightPanelArea(out _);
+    }
+
+    private void FitBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var host = MainHost;
+        if (host == null || !host.TryGetRightPanelArea(out var area)) { UpdateFitState(); return; }
+
+        if (WindowState != WindowState.Normal) WindowState = WindowState.Normal;
+        Left = area.Left;
+        Top = area.Top;
+        Width = Math.Max(MinWidth, area.Width);
+        Height = Math.Max(MinHeight, area.Height);
+        SavePlacement();
+    }
+
     private void AddressBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         => AddressBox.SelectAll();
 
@@ -451,16 +496,29 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
     // 실제 동작은 탭 브라우저와 같은 공용 엔진이 맡는다. 미니 창은 가상 히스토리가 없어 뒤로 가기도
     // WebView2 자체 스택을 그대로 쓴다.
 
-    /// <summary>자동화 명령을 받을 미니 브라우저를 준비한다. 닫아 둔(숨긴) 상태면 다시 띄운다.</summary>
+    /// <summary>자동화 명령을 받을 미니 브라우저를 준비한다. 사용자가 닫아 둔 창은 다시 띄운다.
+    /// <para>창을 앞으로 끌어오지는 않는다(Activate 생략) — 세션 명령 때문에 사용자가 보던 창의
+    /// 포커스를 뺏지 않기 위해서다.</para></summary>
     public static async Task<MiniBrowserWindow> EnsureForAutomationAsync(Window? owner)
     {
-        if (_instance is not { IsLoaded: true, IsVisible: true })
-        {
-            ShowOrActivate(owner);
-            if (_instance == null) throw new InvalidOperationException("미니 브라우저 창을 열 수 없습니다.");
-        }
-
         var win = _instance;
+        if (win is { IsLoaded: true })
+        {
+            // 설정·MCP 오버레이가 열려 잠시 숨긴 창은 자동화가 다시 띄우지 않는다 — 오버레이를 가린다.
+            if (win._hiddenForOverlay)
+                throw new InvalidOperationException(
+                    "설정 창이 열려 있는 동안에는 미니 브라우저를 쓸 수 없습니다. 설정을 닫고 다시 시도하세요.");
+            // 최소화된 창은 화면 캡처가 끝나지 않으므로 먼저 정상 크기로 되돌린다.
+            if (win.WindowState == WindowState.Minimized) win.WindowState = WindowState.Normal;
+            if (!win.IsVisible)
+            {
+                win._hiddenByUser = false;
+                win.Show();
+                OpenStateChanged?.Invoke();
+            }
+        }
+        else win = CreateAndShow(owner);
+
         if (await win._coreTcs.Task == null)
             throw new InvalidOperationException("미니 브라우저의 WebView2 를 시작할 수 없습니다(런타임 미설치 가능).");
         return win;
