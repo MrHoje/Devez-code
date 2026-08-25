@@ -23,12 +23,15 @@ public static class BrowserMcpInstaller
     {
         try
         {
-            if (SettingsService.LoadBrowserMcpEnabled())
+            bool enabled = SettingsService.LoadBrowserMcpEnabled();
+            if (enabled)
             {
                 WriteScript();
                 Register();
             }
             else Unregister();
+            // 슬래시로 부르는 스킬 문서도 같은 설정을 따른다.
+            BrowserSkillInstaller.Sync(enabled);
         }
         catch (Exception ex)
         {
