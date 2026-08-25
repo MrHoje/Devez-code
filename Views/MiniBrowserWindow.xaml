@@ -73,7 +73,7 @@
                             Click="FitBtn_Click" ToolTip="오른쪽 패널 영역에 맞추기"
                             IsEnabled="False" VerticalAlignment="Center" Margin="6,0,0,0">
                         <Path Style="{StaticResource LucideButtonIcon}"
-                              Data="{StaticResource IconSquareDimensions}" Width="12" Height="12"/>
+                              Data="{StaticResource IconSquareDimensions}" Width="14" Height="14"/>
                     </Button>
 
                     <!-- 주소창 -->
