@@ -24,7 +24,7 @@ namespace DevezCode.Views;
 /// 새로 로드하지 않는다. 앱을 껐다 켜면 설정의 시작 주소로 새로 연다.
 /// 위치·크기는 설정에 저장해 다음 실행에도 복원한다.
 /// </summary>
-public partial class MiniBrowserWindow : Window
+public partial class MiniBrowserWindow : Window, IAutomationBrowser
 {
     /// <summary>DWM 창 코너 반경(고정 8).</summary>
     private const double CornerRadiusDip = 8;
@@ -72,6 +72,14 @@ public partial class MiniBrowserWindow : Window
     private readonly SolidColorBrush _chromeBrush = new(Colors.White);   // 웹 화면 여백 = 페이지 배경색
     private bool _coreReady;
     private string? _pendingUrl;
+
+    /// <summary>코어 준비 완료(또는 시작 실패) 신호. 세션 자동화가 초기화를 기다리는 데 쓴다.</summary>
+    private readonly TaskCompletionSource<CoreWebView2?> _coreTcs =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private BrowserAutomationEngine? _automation;
+
+    private BrowserAutomationEngine Automation => _automation ??= new BrowserAutomationEngine(() => _coreTcs.Task);
 
     /// <summary>설정/MCP 오버레이가 열릴 때 — 같은 화면을 가리지 않도록 잠시 숨긴다.</summary>
     public static void HideForOverlay()
@@ -254,9 +262,12 @@ public partial class MiniBrowserWindow : Window
 
             NavigateCore(_pendingUrl ?? SettingsService.LoadBrowserHomeUrl());
             _pendingUrl = null;
+            // 초기 탐색을 건 뒤에 알린다 — 자동화 명령이 홈 로드와 겹쳐 엉뚱한 URL 을 잡지 않게.
+            _coreTcs.TrySetResult(core);
         }
         catch (Exception ex)
         {
+            _coreTcs.TrySetResult(null);
             BrowserHost.Children.Clear();
             BrowserHost.Children.Add(new TextBlock
             {
@@ -431,26 +442,63 @@ public partial class MiniBrowserWindow : Window
         if (e.Key != Key.Enter) return;
         var input = AddressBox.Text.Trim();
         if (input.Length == 0) return;
-        NavigateCore(ToNavigationTarget(input));
+        NavigateCore(BrowserAutomationEngine.ToNavigationTarget(input));
         _view.Focus();
         e.Handled = true;
     }
 
-    /// <summary>입력이 URL이면 그대로 이동, 아니면 구글 검색(내장 브라우저와 동일 규칙).</summary>
-    private static string ToNavigationTarget(string input)
+    // ── 세션 자동화(MCP 브라우저 도구) API ──────────────────────────
+    // 실제 동작은 탭 브라우저와 같은 공용 엔진이 맡는다. 미니 창은 가상 히스토리가 없어 뒤로 가기도
+    // WebView2 자체 스택을 그대로 쓴다.
+
+    /// <summary>자동화 명령을 받을 미니 브라우저를 준비한다. 닫아 둔(숨긴) 상태면 다시 띄운다.</summary>
+    public static async Task<MiniBrowserWindow> EnsureForAutomationAsync(Window? owner)
     {
-        if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return input;
+        if (_instance is not { IsLoaded: true, IsVisible: true })
+        {
+            ShowOrActivate(owner);
+            if (_instance == null) throw new InvalidOperationException("미니 브라우저 창을 열 수 없습니다.");
+        }
 
-        bool looksLikeDomain = !input.Contains(' ')
-            && input.Contains('.')
-            && Uri.TryCreate("https://" + input, UriKind.Absolute, out var u)
-            && u.Host.Contains('.');
-        if (looksLikeDomain) return "https://" + input;
-
-        return "https://www.google.com/search?q=" + Uri.EscapeDataString(input);
+        var win = _instance;
+        if (await win._coreTcs.Task == null)
+            throw new InvalidOperationException("미니 브라우저의 WebView2 를 시작할 수 없습니다(런타임 미설치 가능).");
+        return win;
     }
+
+    public Task<string> AutomationNavigateAsync(string urlOrQuery, int timeoutMs = 30000)
+        => Automation.NavigateAsync(urlOrQuery, timeoutMs);
+
+    public Task<string> AutomationCurrentUrlAsync() => Automation.CurrentUrlAsync();
+
+    public Task<string> AutomationTitleAsync() => Automation.TitleAsync();
+
+    public Task<string> AutomationReadTextAsync(int maxChars = 20000) => Automation.ReadTextAsync(maxChars);
+
+    public Task<string> AutomationLinksAsync(int max = 50) => Automation.LinksAsync(max);
+
+    public Task<string> AutomationClickAsync(string selectorOrText, int timeoutMs = 3000)
+        => Automation.ClickAsync(selectorOrText, timeoutMs);
+
+    public Task<string> AutomationWaitForSelectorAsync(string selector, int timeoutMs = 10000)
+        => Automation.WaitForSelectorAsync(selector, timeoutMs);
+
+    public Task<string> AutomationPressKeyAsync(string key, bool ctrl = false, bool shift = false, bool alt = false)
+        => Automation.PressKeyAsync(key, ctrl, shift, alt);
+
+    public Task<string> AutomationFillAsync(string selector, string value, bool submit)
+        => Automation.FillAsync(selector, value, submit);
+
+    public Task<string> AutomationWaitForTextAsync(string text, int timeoutMs = 15000)
+        => Automation.WaitForTextAsync(text, timeoutMs);
+
+    public Task<string> AutomationEvalAsync(string script) => Automation.EvalAsync(script);
+
+    public Task<byte[]> AutomationCaptureAsync() => Automation.CaptureAsync();
+
+    public Task<string> AutomationBackAsync() => Automation.GoBackAsync();
+
+    public Task<string> AutomationReloadAsync() => Automation.ReloadAsync();
 
     /// <summary>주소 텍스트와 뒤로/앞으로 버튼 활성 상태를 현재 이동 위치에 맞춘다.
     /// 사용자가 주소창을 편집 중이면 입력을 덮지 않는다.</summary>
@@ -528,6 +576,7 @@ public partial class MiniBrowserWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        _coreTcs.TrySetResult(null);   // 코어를 기다리던 자동화 호출이 매달리지 않게
         if (ReferenceEquals(_instance, this)) _instance = null;
         App.ThemeChanged -= _themeChangedHandler;
         try { SettingsService.BrowserThemeChanged -= _browserThemeChangedHandler; } catch { }

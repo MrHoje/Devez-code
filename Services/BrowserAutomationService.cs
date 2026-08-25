@@ -41,6 +41,9 @@ public static class BrowserAutomationService
                 case "new_tab":
                     await OnUiAsync(() => window.CreateAutomationBrowserAsync(roomId));
                     return "새 전용 브라우저 탭을 만들었습니다. 이전 작업을 계속하려면 browser_open 등을 다시 호출하세요.";
+                case "use_mini":
+                    await OnUiAsync(() => window.UseMiniBrowserAsync(roomId));
+                    return "미니 브라우저 창을 이 세션에 연결했습니다. 이후 브라우저 도구는 모두 미니 창에 적용됩니다.";
             }
 
             var browser = await OnUiAsync(() => window.EnsureAutomationBrowserAsync(roomId));
@@ -61,7 +64,7 @@ public static class BrowserAutomationService
         => args[key]?.GetValue<string>()
            ?? throw new ArgumentException($"'{key}' 인자가 필요합니다.");
 
-    private static Task<string> RunAsync(BrowserHostView b, string command, JsonObject args)
+    private static Task<string> RunAsync(IAutomationBrowser b, string command, JsonObject args)
     {
         string Str(string key, string? fallback = null)
             => args[key]?.GetValue<string>() ?? fallback ?? throw new ArgumentException($"'{key}' 인자가 필요합니다.");
@@ -90,9 +93,9 @@ public static class BrowserAutomationService
         };
     }
 
-    private static async Task<string> CurrentAsync(BrowserHostView b)
+    private static async Task<string> CurrentAsync(IAutomationBrowser b)
         => $"{await b.AutomationTitleAsync()}\n{await b.AutomationCurrentUrlAsync()}";
 
-    private static async Task<string> ScreenshotAsync(BrowserHostView b)
+    private static async Task<string> ScreenshotAsync(IAutomationBrowser b)
         => Convert.ToBase64String(await b.AutomationCaptureAsync());
 }

@@ -11,12 +11,18 @@ namespace DevezCode;
 /// 세션이 MCP 브라우저 도구를 호출할 때만 탭이 생기고, 화면에는 자동 전환하지 않는다(백그라운드 유지).</summary>
 public partial class MainWindow
 {
+    /// <summary>미니 브라우저 창을 점유한 세션(roomId). 창이 하나뿐이라 한 세션만 잡을 수 있다.
+    /// 앱을 껐다 켜면 초기화된다(미니 창 자체가 세션과 함께 영속되지 않는다).</summary>
+    private string? _miniAutomationRoomId;
 
-    /// <summary>roomId 세션에 연결된 브라우저 탭을 반환한다.
+    /// <summary>roomId 세션에 연결된 자동화 대상을 반환한다. 미니 브라우저를 잡아 둔 세션은 그쪽이 우선이다.
     /// 일반 브라우저 탭이 남아 있으면 임의로 고르지 않고, 에이전트가 사용자에게 선택을 물어보게 한다.</summary>
-    public async Task<BrowserHostView> EnsureAutomationBrowserAsync(string roomId)
+    public async Task<IAutomationBrowser> EnsureAutomationBrowserAsync(string roomId)
     {
         RequireSession(roomId);
+        if (_miniAutomationRoomId == roomId)
+            return await MiniBrowserWindow.EnsureForAutomationAsync(this);
+
         var assigned = FindAutomationBrowserTab(roomId);
         if (assigned != null) return await PrepareAutomationBrowserAsync(assigned);
 
@@ -37,10 +43,31 @@ public partial class MainWindow
             : FormatBrowserChoices(choices);
     }
 
+    /// <summary>미니 브라우저 창을 현재 세션의 자동화 대상으로 연결한다(창이 닫혀 있으면 다시 띄운다).
+    /// 창이 하나뿐이라 다른 세션이 이미 잡고 있으면 거절한다.</summary>
+    public async Task<IAutomationBrowser> UseMiniBrowserAsync(string roomId)
+    {
+        RequireSession(roomId);
+        if (_miniAutomationRoomId is { Length: > 0 } owner && owner != roomId)
+        {
+            // 세션이 이미 사라졌다면 남은 점유는 정리하고 넘겨준다.
+            if (FindSessionByRoomId(owner) != null)
+                throw new InvalidOperationException(
+                    "미니 브라우저는 다른 세션이 사용 중입니다. 그 세션을 닫거나 전용 브라우저 탭을 사용하세요.");
+            _miniAutomationRoomId = null;
+        }
+
+        var browser = await MiniBrowserWindow.EnsureForAutomationAsync(this);
+        _miniAutomationRoomId = roomId;
+        DiagLog.Write($"UseMiniBrowser bind room={roomId}");
+        return browser;
+    }
+
     /// <summary>사용자가 명시적으로 고른 일반 브라우저 탭을 현재 세션의 자동화 탭으로 연결한다.</summary>
     public async Task<BrowserHostView> UseAutomationBrowserTabAsync(string roomId, string tabId)
     {
         RequireSession(roomId);
+        if (_miniAutomationRoomId == roomId) _miniAutomationRoomId = null;   // 탭을 고르면 미니 점유는 해제
         if (string.IsNullOrWhiteSpace(tabId)) throw new ArgumentException("tabId가 필요합니다.");
 
         var tab = _projects.SelectMany(p => p.Tabs.OfType<BrowserTabItem>())
@@ -65,6 +92,7 @@ public partial class MainWindow
     public async Task<BrowserHostView> CreateAutomationBrowserAsync(string roomId)
     {
         var (proj, session) = RequireSession(roomId);
+        if (_miniAutomationRoomId == roomId) _miniAutomationRoomId = null;   // 새 탭을 고르면 미니 점유는 해제
         var assigned = FindAutomationBrowserTab(roomId);
         if (assigned != null) return await PrepareAutomationBrowserAsync(assigned);
 
@@ -156,6 +184,8 @@ public partial class MainWindow
     {
         var removed = roomIds.ToHashSet(StringComparer.Ordinal);
         if (removed.Count == 0) return;
+        if (_miniAutomationRoomId != null && removed.Contains(_miniAutomationRoomId))
+            _miniAutomationRoomId = null;
         foreach (var browser in _projects.Concat(_archivedProjects)
                      .SelectMany(project => project.Tabs.OfType<BrowserTabItem>()))
             if (browser.AutomationRoomId != null && removed.Contains(browser.AutomationRoomId))
@@ -164,7 +194,8 @@ public partial class MainWindow
 
     private static string BuildSelectionRequiredMessage(IReadOnlyList<(ProjectItem Project, BrowserTabItem Tab)> choices)
         => "브라우저 탭 선택이 필요합니다. 아래 열린 탭을 사용할지 새 전용 탭을 만들지 사용자에게 물어보세요. " +
-           "사용자가 기존 탭을 고르면 browser_use_tab에 해당 tabId를, 새 탭을 고르면 browser_new_tab을 호출하세요.\n\n" +
+           "사용자가 기존 탭을 고르면 browser_use_tab에 해당 tabId를, 새 탭을 고르면 browser_new_tab을 호출하세요. " +
+           "사용자가 미니 브라우저(작은 떠 있는 창)를 쓰라고 하면 browser_use_mini를 호출하세요.\n\n" +
            FormatBrowserChoices(choices);
 
     private static string FormatBrowserChoices(IReadOnlyList<(ProjectItem Project, BrowserTabItem Tab)> choices)
