@@ -260,6 +260,10 @@ public static class BrowserMcpInstaller
         const fail = (id, code, message) => write({ jsonrpc: '2.0', id, error: { code, message } });
 
         async function callTool(id, params) {
+          if (!ROOM) {
+            ok(id, { content: [{ type: 'text', text: '오류: DevezCode 세션 안에서만 사용할 수 있는 도구입니다.' }], isError: true });
+            return;
+          }
           const def = TOOLS.find(t => t.name === (params && params.name));
           if (!def) { fail(id, -32602, '알 수 없는 도구: ' + (params && params.name)); return; }
           try {
@@ -288,7 +292,11 @@ public static class BrowserMcpInstaller
               return;
             case 'ping': ok(id, {}); return;
             case 'tools/list':
-              ok(id, { tools: TOOLS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
+              // DevezCode 세션 밖(외부 터미널에서 직접 실행 등)에서는 도구를 아예 노출하지 않는다 —
+              // 어느 방인지 알 수 없어 호출해도 오류로 끝나므로, 목록에 띄워 혼동을 주지 않는다.
+              ok(id, { tools: ROOM
+                ? TOOLS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))
+                : [] });
               return;
             case 'tools/call': await callTool(id, params); return;
             default:
