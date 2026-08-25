@@ -30,7 +30,7 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
     private const double CornerRadiusDip = 8;
 
     /// <summary>미니 창은 좁아서 웹 화면을 조금 축소해 연다.</summary>
-    private const double InitialZoomFactor = 0.8;
+    private const double InitialZoomFactor = 0.9;
 
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUND = 2;
