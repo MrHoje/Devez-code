@@ -163,6 +163,9 @@ public partial class MainWindow
     {
         if (!IsLoaded)
             throw new InvalidOperationException("앱이 아직 초기화 중입니다. 잠시 후 다시 시도하세요.");
+        // 종료 절차가 시작된 뒤에는 브라우저를 새로 띄우지 않는다 — 종료 안내 위로 창이 떠 남는다.
+        if (_shuttingDown)
+            throw new InvalidOperationException("DevezCode 가 종료 중이라 브라우저를 사용할 수 없습니다.");
         return FindSessionByRoomId(roomId)
             ?? throw new InvalidOperationException($"세션을 찾을 수 없습니다(roomId={roomId}).");
     }

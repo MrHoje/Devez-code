@@ -300,12 +300,16 @@ public sealed class BrowserAutomationEngine
         catch { return raw; }
     }
 
-    /// <summary>현재 화면 PNG 캡처(base64 로 브리지가 전달).</summary>
+    /// <summary>현재 화면 PNG 캡처(base64 로 브리지가 전달).
+    /// <para>숨겨지거나 최소화된 창의 캡처는 완료되지 않아 호출자가 매달린다(실측). 대상 창이 명령 도중
+    /// 가려지는 경합까지 막을 수는 없으므로 시간 제한을 둔다. 제한에 걸리면 스트림을 닫지 않고 버린다 —
+    /// 뒤늦게 끝난 캡처가 닫힌 스트림에 쓰다 예외를 내지 않게 하기 위해서다(관리 메모리라 GC 가 회수).</para></summary>
     public async Task<byte[]> CaptureAsync()
     {
         var core = await RequireCoreAsync();
-        using var ms = new MemoryStream();
-        await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+        var ms = new MemoryStream();
+        await WaitOrTimeoutAsync(
+            core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms), 15000, "화면 캡처");
         return ms.ToArray();
     }
 
