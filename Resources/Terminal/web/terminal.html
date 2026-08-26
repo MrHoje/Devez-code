@@ -630,12 +630,15 @@
     } catch (e) { return false; }
   }
 
-  // 로컬 스크롤백은 브라우저의 픽셀 델타를 그대로 쓰되, CLI/TUI 로 전달되는 휠은 3줄 높이마다
-  // 한 번만 보낸다. xterm 기본 경로는 트랙패드의 작은 wheel 이벤트를 각각 앱 휠/방향키로 바꿔
-  // 관성 구간에서 세션별 이동량이 크게 달라진다.
-  const TERMINAL_WHEEL_FALLBACK_STEP_PX = 48;
-  // 휠 이벤트 하나가 만들 수 있는 CLI 휠 보고 수 상한(폭주 차단).
-  const TERMINAL_WHEEL_REPORT_MAX = 10;
+  // 휠 정책의 단일 기준 — 홈 있는 휠 한 칸 = 정확히 3줄. 로컬 스크롤백/앱 휠 보고/방향키 폴백이
+  // 모두 같은 줄 수를 쓴다. xterm 기본 경로는 픽셀 델타(한 칸 100px) ÷ 셀 높이로 환산해 한 칸이
+  // 5줄 이상 튀고, 마우스 모드 on/off 에 따라 이동량이 갈린다.
+  const TERMINAL_WHEEL_LINES_PER_NOTCH = 3;
+  // 휠 이벤트 하나가 만들 수 있는 줄 이동 상한(폭주 차단). 한 칸 3줄 기준 약 20칸.
+  const TERMINAL_WHEEL_LINE_MAX = 60;
+  // 마우스 모드가 켜진 TUI 는 휠 보고 1건에 스스로 몇 줄을 움직인다 — 그 값이 CLI 마다 다르다.
+  // 한 칸 3줄을 맞추려면 보고 수를 3 ÷ 이 값으로 정해야 한다(1 = 보고 1건이 1줄).
+  const TERMINAL_WHEEL_APP_LINES_PER_REPORT = { claude: 1, codex: 3, devezvibe: 3, gajae: 3 };
   function terminalCellHeight(entry) {
     const screen = entry.term.element && entry.term.element.querySelector('.xterm-screen');
     return screen && entry.term.rows > 0 ? screen.clientHeight / entry.term.rows : 16;
@@ -647,34 +650,32 @@
     else if (ev.deltaMode === 2) amount *= cell * entry.term.rows;
     return amount;
   }
-  // 홈 있는 휠 한 칸이 몇 줄인지 — xterm 의 로컬 스크롤·방향키 변환과 같은 기준(픽셀 ÷ 셀 높이,
-  // 잔여 이월)으로 계산한다. 방향이 바뀌면 이월분은 버린다.
-  function terminalWheelLines(entry, ev) {
+  // 이벤트 하나의 이동량을 '줄' 단위 실수로 환산한다(+ = 아래). wheelDelta 는 Chromium 이 채우는
+  // 휠 칸 수 × 120 이라 트랙패드의 소수 칸까지 그대로 담긴다 — 이게 있으면 항상 이 값을 쓴다.
+  function terminalWheelLineDelta(entry, ev) {
+    const legacy = Number(ev.wheelDelta);
+    if (Number.isFinite(legacy) && legacy !== 0)
+      return -legacy / 120 * TERMINAL_WHEEL_LINES_PER_NOTCH;
+    // legacy 값이 없는 폴백: 일반 마우스 기본 deltaY(100px 배수)는 칸으로, 그 밖은 픽셀÷셀 높이로.
+    if (ev.deltaMode === 0 && Math.abs(ev.deltaY) >= 80
+        && Math.abs(Math.abs(ev.deltaY) % 100) < 0.01)
+      return ev.deltaY / 100 * TERMINAL_WHEEL_LINES_PER_NOTCH;
     const cell = terminalCellHeight(entry);
     const px = terminalWheelPixels(entry, ev);
-    if (!(cell > 0) || !Number.isFinite(px) || px === 0) return 0;
-    const carry = (entry._wheelLineCarry && Math.sign(entry._wheelLineCarry) === Math.sign(px))
-      ? entry._wheelLineCarry : 0;
-    const acc = carry + px / cell;
-    entry._wheelLineCarry = acc % 1;
-    return Math.min(Math.floor(Math.abs(acc)), TERMINAL_WHEEL_REPORT_MAX);
+    if (!(cell > 0) || !Number.isFinite(px)) return 0;
+    return px / cell;
   }
-
-  function terminalWheelSample(entry, ev) {
-    const legacy = Number(ev.wheelDelta);
-    if (Number.isFinite(legacy) && legacy !== 0) {
-      return {
-        amount: -legacy, step: 120,
-        detented: Math.abs(legacy) % 120 === 0
-      };
-    }
-    const pixels = terminalWheelPixels(entry, ev);
-    return {
-      amount: pixels, step: TERMINAL_WHEEL_FALLBACK_STEP_PX,
-      // WebView2 에서 legacy 값이 없는 경우의 보수적 폴백. 일반 마우스 기본 deltaY 는 100px 이다.
-      detented: ev.deltaMode === 0 && Math.abs(ev.deltaY) >= 80
-        && Math.abs(Math.abs(ev.deltaY) % 100) < 0.01
-    };
+  // 정수 줄만 실행하고 소수 잔여는 이월한다. 시간 간격으로는 잔여를 버리지 않으므로(방향 전환 때만
+  // 버린다) 느리게 굴린 휠도 언젠가 반드시 반영된다 = 휠이 중간에 씹히지 않는다.
+  function terminalWheelLines(entry, ev) {
+    const lines = terminalWheelLineDelta(entry, ev);
+    if (!Number.isFinite(lines) || lines === 0) return 0;
+    const carry = (entry._wheelLineCarry && Math.sign(entry._wheelLineCarry) === Math.sign(lines))
+      ? entry._wheelLineCarry : 0;
+    const acc = carry + lines;
+    const whole = acc < 0 ? Math.ceil(acc) : Math.floor(acc);
+    entry._wheelLineCarry = acc - whole;
+    return Math.max(-TERMINAL_WHEEL_LINE_MAX, Math.min(TERMINAL_WHEEL_LINE_MAX, whole));
   }
 
   function terminalWheelProtocol(entry) {
@@ -718,79 +719,51 @@
   function handleTerminalWheel(entry, ev) {
     // Ctrl+휠은 위의 capture 핸들러가 글꼴 크기로 처리한다. xterm 스크롤까지 중복 실행하지 않는다.
     if (ev.ctrlKey && !ev.altKey && !ev.shiftKey) {
-      entry._wheelUnits = 0;
-      entry._wheelStep = 0;
+      entry._wheelLineCarry = 0;
       return false;
     }
     if (ev.deltaY === 0) return true;
     if (ev.shiftKey) {
-      entry._wheelUnits = 0;
-      entry._wheelStep = 0;
+      entry._wheelLineCarry = 0;
       return true;
     }
 
+    // 모든 경로(로컬 스크롤백 / 앱 휠 보고 / 방향키)가 같은 줄 수를 쓴다 — 마우스 모드 on/off 나
+    // 버퍼 종류에 따라 한 칸의 이동량이 갈리지 않는다.
+    const lines = terminalWheelLines(entry, ev);
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (lines === 0) return false; // 한 줄 미만은 잔여로 이월 — 다음 이벤트에서 이어진다
+    const dir = lines < 0 ? -1 : 1;
+    const count = Math.abs(lines);
+
     const svc = terminalWheelProtocol(entry);
+    if (svc) {
+      // 보고 1건이 앱에서 몇 줄이 되는지로 나눠 보고 수를 정한다. 한 칸에 보고를 줄 수만큼(3건)
+      // 보내면 이미 보고당 3줄을 움직이는 CLI(devezvibe/codex)에서 10줄 가까이 튄다.
+      const perReport = TERMINAL_WHEEL_APP_LINES_PER_REPORT[entry.agent] || 1;
+      const reports = Math.max(1, Math.round(count / perReport));
+      if (!sendTerminalWheelReport(entry, ev, dir)) return true; // 보고 실패 — xterm 기본에 맡김
+      for (let i = 1; i < reports; i++) sendTerminalWheelReport(entry, ev, dir);
+      return false;
+    }
+
     const coreBuffer = entry.term._core && entry.term._core.buffer;
     const buffer = entry.term.buffer.active;
     const hasScrollback = coreBuffer && typeof coreBuffer.hasScrollback === 'boolean'
       ? coreBuffer.hasScrollback : buffer.type === 'normal' && buffer.baseY > 0;
-    // 스크롤백이 있는 일반 버퍼는 xterm 의 픽셀 스크롤이 이미 정확하므로 그대로 둔다.
-    if (!svc && hasScrollback) {
-      entry._wheelUnits = 0;
-      entry._wheelStep = 0;
-      return true;
-    }
-    const sample = terminalWheelSample(entry, ev);
-    // 홈이 있는 마우스 휠은 xterm 의 기존 세션별 처리 경로를 그대로 보존한다.
-    if (sample.detented) {
-      entry._wheelUnits = 0;
-      entry._wheelStep = 0;
-      entry._wheelAt = performance.now();
-      // 단, 마우스 프로토콜이 켜진 방(claude 등 alt-buffer TUI)에서 xterm 은 휠 이벤트당 보고를
-      // 1건만 보내 한 칸이 1줄로 줄어든다. 같은 마우스인데 앱의 마우스 모드 on/off 에 따라 이동량이
-      // 1줄 ↔ 여러 줄로 갈리므로, 보고를 줄 수만큼 반복해 로컬 스크롤과 이동량을 맞춘다.
-      if (svc) {
-        const lines = terminalWheelLines(entry, ev);
-        if (lines > 0) {
-          const dir = ev.deltaY < 0 ? -1 : 1;
-          if (!sendTerminalWheelReport(entry, ev, dir)) return true; // 보고 실패 — xterm 기본에 맡김
-          for (let i = 1; i < lines; i++) sendTerminalWheelReport(entry, ev, dir);
-          ev.preventDefault();
-          ev.stopPropagation();
-          return false;
-        }
-      }
-      return true;
+    if (hasScrollback) {
+      try { entry.term.scrollLines(lines); } catch (e) { return true; }
+      return false;
     }
 
-    ev.preventDefault();
-    ev.stopPropagation();
-    const now = performance.now();
-    if (!Number.isFinite(sample.amount) || sample.amount === 0) return false;
-    if (!entry._wheelAt || now - entry._wheelAt > 180
-        || entry._wheelStep !== sample.step
-        || (entry._wheelUnits && Math.sign(entry._wheelUnits) !== Math.sign(sample.amount)))
-      entry._wheelUnits = 0;
-    entry._wheelAt = now;
-    entry._wheelStep = sample.step;
-    entry._wheelUnits = (entry._wheelUnits || 0) + sample.amount;
-    if (Math.abs(entry._wheelUnits) < sample.step) return false;
-
-    const dir = entry._wheelUnits < 0 ? -1 : 1;
-    // DOM 이벤트 하나가 여러 CLI 휠 동작으로 폭증하지 않게 초과분은 한 단계 미만만 보존한다.
-    entry._wheelUnits = Math.max(-sample.step + 1,
-      Math.min(sample.step - 1, entry._wheelUnits - dir * sample.step));
-
-    if (svc) {
-      // 예기치 않은 보고 실패 시 현재 이벤트는 xterm 기본 처리로 넘긴다.
-      if (!sendTerminalWheelReport(entry, ev, dir)) return true;
-    } else {
-      try {
-        const core = entry.term._core;
-        const appCursor = core && core.coreService && core.coreService.decPrivateModes.applicationCursorKeys;
-        entry.term.input('\x1b' + (appCursor ? 'O' : '[') + (dir < 0 ? 'A' : 'B'), true);
-      } catch (e) { return true; }
-    }
+    // 스크롤백 없는 alt 버퍼 + 마우스 모드 off → 방향키로 전달한다.
+    try {
+      const core = entry.term._core;
+      const appCursor = core && core.coreService && core.coreService.decPrivateModes.applicationCursorKeys;
+      const key = '\x1b' + (appCursor ? 'O' : '[') + (dir < 0 ? 'A' : 'B');
+      for (let i = 0; i < count; i++) entry.term.input(key, true);
+    } catch (e) { return true; }
     return false;
   }
   // 행별 '보이지 않는 글자' 판별 맵 — 버퍼에 글자는 있는데(gap 작음) 화면이 비어 보이는 모순의
@@ -2558,6 +2531,11 @@
       post({ type: 'action', name: e.deltaY < 0 ? 'fontInc' : 'fontDec' });
       return;
     }
+    // 세로 휠은 handleTerminalWheel 이 한 칸=3줄로 전부 처리한다. 여기서 미리 기본 동작을 막아
+    // xterm6 뷰포트(vscode 스크롤러블: 한 칸 50px)가 자기 몫을 겹쳐 스크롤하는 것을 없앤다 —
+    // 이 캡처 리스너는 xterm 의 어떤 리스너보다 먼저 실행되므로 등록 순서에 의존하지 않는다.
+    // (Shift+휠은 xterm 기본 처리에 맡기므로 건드리지 않는다.)
+    if (!e.shiftKey && e.deltaY !== 0) e.preventDefault();
     // 사용자가 휠로 직접 스크롤 → 프로그램적 스크롤 억제(_scrollSuppress)를 즉시 해제.
     // (/model·/effort 후 남은 잔여 suppress 카운트가 사용자의 스크롤을 되돌리는 것 방지.)
     _scrollSuppress = 0;
@@ -2575,7 +2553,7 @@
         });
       }
     }
-    // 일반 휠은 xterm 기본 동작(스크롤백 스크롤)에 맡긴다. gjc 는 풀 재페인트의 스크롤백
+    // 일반 휠의 실제 이동은 handleTerminalWheel(한 칸 3줄)이 담당한다. gjc 는 풀 재페인트의 스크롤백
     // 클리어(CSI 3 J)를 파서에서 삼켜 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.
 
     // 아래로 굴려 바닥 근처까지 내려오면 ybase 로 스냅 — idle 상태에서 위로 올렸다 내려올 때
