@@ -103,7 +103,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.1", "2026-08-25", true, new[]
+          ("v1.26.2", "2026-08-26", true, new[]
+          {
+              "터미널에서 마우스 휠 한 칸이 화면을 3줄만 스크롤하도록 이동량을 맞췄습니다.",
+              "세션 종류에 따라 휠 한 칸이 10줄 넘게 스크롤되던 문제를 수정했습니다.",
+              "휠을 천천히 굴릴 때 일부 입력이 무시되던 문제를 수정했습니다.",
+          }),
+          ("v1.26.1", "2026-08-25", false, new[]
           {
               "세션을 삭제할 때 삭제하지 않은 다른 Devez Vibe 세션의 대화 기록이 함께 지워질 수 있던 문제를 수정했습니다.",
           }),
