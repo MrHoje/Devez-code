@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.3", "2026-08-27", true, new[]
+          ("v1.26.4", "2026-08-27", true, new[]
+          {
+              "입력창 내용을 전체 선택한 상태에서 한글을 입력할 때, 기존 내용이 바로 지워지지 않고 조합 글자가 겹쳐 보이던 문제를 수정했습니다.",
+          }),
+          ("v1.26.3", "2026-08-27", false, new[]
           {
               "한글 입력 중 Ctrl+백스페이스로 단어를 지울 때 마지막 글자가 잠깐 남아 보이던 문제를 수정했습니다.",
               "세션 화면이 여러 조각으로 나뉘어 그려지면서 글자가 깜빡이던 현상을 줄였습니다.",

@@ -2080,7 +2080,7 @@
       // 조합뷰만 오른쪽에 겹쳐 보이다가, 한참 뒤 확정 시점에야 지워진다. 선택 삭제를
       // 여기서 대신 보내면 확정 글자는 비워진 입력창에 들어간다. 플래그는 CLI 가
       // devez-select-v1 로 다시 알려 준다.
-      if (entry && entry.devezComposerSelectAll) {
+      if (agent === 'devezvibe' && entry && entry.devezComposerSelectAll) {
         entry.devezComposerSelectAll = false;
         post({ type: 'input', roomId: roomId, data: '\x7f' });
       }
@@ -2754,7 +2754,7 @@
 
     term.open(el);
 
-    const entry = { term, fit, el, webgl: null, engine6: !!use6, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
+    const entry = { term, fit, el, webgl: null, engine6: !!use6, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map(), devezComposerSelectAll: false };
     terms[roomId] = entry;
     // Claude 2.1.22x 는 시작 시 XTVERSION(CSI > 0 q) 응답 여부로 입력 증분 렌더와
     // 동기화 출력(?2026)을 결정한다. xterm 5/6 은 이 응답이 없어 Backspace 연타와 응답 출력이
@@ -2791,7 +2791,9 @@
         // CLI 는 "조합이 시작됐다"는 사실 자체를 모른다 → 선택이 그대로 남고 조합뷰만
         // 오른쪽에 겹쳐 보인다. 이 플래그를 알고 있으면 compositionstart 에서 호스트가
         // 선택 삭제를 대신 보내 준다(beginComposition 참고).
-        const select = /^devez-select-v1;([01])$/.exec(data || '');
+        const select = agent === 'devezvibe'
+          ? /^devez-select-v1;([01])$/.exec(data || '')
+          : null;
         if (select) {
           entry.devezComposerSelectAll = select[1] === '1';
           return true;
