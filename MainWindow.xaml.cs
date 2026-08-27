@@ -7943,8 +7943,11 @@ public partial class MainWindow : Window
         // 테두리 더블클릭의 OS 수직 최대화 등 기타 NC 동작은 보존).
         else if (msg == WM_NCLBUTTONDBLCLK && (_useFullScreen || wParam.ToInt32() == HTCAPTION))
         { ToggleMaximizeOrFullScreen(); handled = true; }
-        // 전체화면 중 캡션 누름: down 에서 바로 처리하지 않고 캡처 후 드래그/클릭/더블클릭을 구분.
-        else if (msg == WM_NCLBUTTONDOWN && wParam.ToInt32() == HTCAPTION && _inFullScreen)
+        // 전체화면·최대화 중 캡션 누름: down 에서 바로 처리하지 않고 캡처 후 드래그/클릭/더블클릭을 구분.
+        // 최대화까지 가로채는 이유: OS 기본 캡션 드래그 복원은 DWM 애니메이션 없이 즉시 축소된다 —
+        // WindowState 를 우리가 바꿔야 복원 애니메이션이 재생된다(EnableDwmTransitions 로 살려 둔 경로).
+        else if (msg == WM_NCLBUTTONDOWN && wParam.ToInt32() == HTCAPTION
+                 && (_inFullScreen || WindowState == WindowState.Maximized))
         {
             handled = true;
             int sx = (short)(lParam.ToInt32() & 0xFFFF);
@@ -7964,8 +7967,9 @@ public partial class MainWindow : Window
                 SetCapture(_mainHwnd);
             }
         }
-        // 캡처 중 충분히 움직이면 드래그로 판정 → 축소하고 수동 드래그 상태로 전환(캡처 유지).
-        else if (msg == WM_MOUSEMOVE && _fsCapPending && _inFullScreen)
+        // 캡처 중 충분히 움직이면 드래그로 판정 → 축소하고 드래그로 전환.
+        // 전체화면은 수동 추종(캡처 유지), 최대화는 복원 애니메이션 후 OS 이동 루프에 인계.
+        else if (msg == WM_MOUSEMOVE && _fsCapPending)
         {
             GetCursorPos(out var p);
             if (Math.Abs(p.X - _fsCapDownPt.X) > GetSystemMetrics(SM_CXDRAG)
@@ -7973,7 +7977,9 @@ public partial class MainWindow : Window
             {
                 _fsCapPending = false; _fsCapDownTick = 0;
                 handled = true;
-                BeginDragFromFullScreen(p.X, p.Y);
+                if (_inFullScreen) BeginDragFromFullScreen(p.X, p.Y);
+                else if (WindowState == WindowState.Maximized) BeginDragFromMaximized(p.X, p.Y);
+                else ReleaseCapture();   // 누른 뒤 상태가 바뀌었으면 캡처만 정리
             }
         }
         // 수동 드래그 중: 매 이동마다 그랩 오프셋을 유지하며 직접 이동(리사이즈 없음) — 커서에 정확히 붙는다.
@@ -8052,6 +8058,49 @@ public partial class MainWindow : Window
         _fsDragging = true;
         // 캡처는 유지(ReleaseCapture 안 함) — WM_LBUTTONUP 까지 계속 이 창으로 마우스 메시지를 받아야 함.
     }
+
+    /// <summary>최대화 중 캡션 드래그 시작 — WindowState 를 Normal 로 바꿔 DWM 복원 애니메이션을
+    /// 살린 뒤(보더리스 창도 EnableDwmTransitions 의 WS_CAPTION 부여로 애니메이션이 살아 있다),
+    /// 잡은 지점이 복원된 창의 같은 자리(가로는 창폭 대비 비율, 세로는 캡션 상단 기준 절대 오프셋)에
+    /// 오도록 재배치하고 OS 이동 루프(SC_MOVE)에 인계한다 — 인계해야 끌어서 좌우·상단 스냅이
+    /// 그대로 동작한다(수동 SetWindowPos 추종은 스냅을 잃는다).</summary>
+    private void BeginDragFromMaximized(int screenPxX, int screenPxY)
+    {
+        if (_inFullScreen || WindowState != WindowState.Maximized) { ReleaseCapture(); return; }
+
+        // 복원될 창모드 폭. 최대화 중에만 RestoreBounds 가 일반 크기를 담는다 — 시작부터 최대화로
+        // 복원된 직후엔 이력이 없어 Empty → 폭 0 으로 좌표가 붕괴하는 것을 막는 폴백.
+        var restore = RestoreBounds;
+        double rw = IsValidBounds(restore) ? restore.Width
+                  : (IsFinite(Width) && Width > 0 ? Width : Math.Max(MinWidth, 960));
+
+        // 최대화 창 rect(=작업영역) 기준 커서의 가로 비율과 캡션 상단 기준 세로 오프셋(물리 px).
+        // 세로는 캡션 높이가 최대화·창모드 동일하므로 스케일 없이 보존해야 커서가 같은 지점에 붙는다.
+        double ratioX = 0.5;
+        int yOffsetPhysical = 0;
+        var mon = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
+        if (mon != IntPtr.Zero)
+        {
+            var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (GetMonitorInfo(mon, ref info))
+            {
+                double workW = info.rcWork.Right - info.rcWork.Left;
+                if (workW > 0) ratioX = (_fsCapDownPt.X - info.rcWork.Left) / workW;
+                yOffsetPhysical = _fsCapDownPt.Y - info.rcWork.Top;
+            }
+        }
+
+        WindowState = WindowState.Normal;   // 여기서 DWM 복원 애니메이션이 재생된다
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        Left = screenPxX / dpi.DpiScaleX - rw * Math.Clamp(ratioX, 0, 1);
+        Top  = screenPxY / dpi.DpiScaleY - yOffsetPhysical / dpi.DpiScaleY;
+
+        ReleaseCapture();
+        SendMessage(_mainHwnd, WM_SYSCOMMAND, (IntPtr)(SC_MOVE | HTCAPTION), IntPtr.Zero);
+    }
+
+    private const int SC_MOVE = 0xF010;
 
     private const uint SWP_NOZORDER = 0x0004, SWP_NOSIZE = 0x0001, SWP_NOACTIVATE = 0x0010;
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
