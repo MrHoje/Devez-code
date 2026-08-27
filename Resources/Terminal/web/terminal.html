@@ -1379,7 +1379,7 @@
   }
 
   // 방(세션)별로 1회 호출 — 모든 IME 상태는 이 클로저 안에 격리된다(방 간 오염 불가).
-  function setupImeCaretFix(term, el, agent, roomId) {
+  function setupImeCaretFix(term, el, agent, roomId, entry) {
     const ta = el.querySelector('.xterm-helper-textarea'); // IME 조합이 실제로 일어나는 숨은 textarea
     if (!ta) return;
     // B형(hw커서형): 입력 캐럿 = 논리 커서. 조합 중 리페인트가 커서를 viewport 밖/statusLine
@@ -2075,6 +2075,15 @@
 
     function beginComposition() {
       isImeComposing = true;
+      // 컴포저가 전체선택(Ctrl+A)된 상태에서 조합이 시작되면 — CLI 는 조합의 시작을
+      // 볼 수 없다(확정 전까지 PTY 로 아무것도 안 간다). 그대로 두면 선택은 남고
+      // 조합뷰만 오른쪽에 겹쳐 보이다가, 한참 뒤 확정 시점에야 지워진다. 선택 삭제를
+      // 여기서 대신 보내면 확정 글자는 비워진 입력창에 들어간다. 플래그는 CLI 가
+      // devez-select-v1 로 다시 알려 준다.
+      if (entry && entry.devezComposerSelectAll) {
+        entry.devezComposerSelectAll = false;
+        post({ type: 'input', roomId: roomId, data: '\x7f' });
+      }
       sendImeProbe();
       frozenImeCaret = null;              // 새 조합 — 앵커를 새로 잡는다(직전 동결분 폐기)
       if (pinsLogicalCaret) hideHwCursor(); // B형: 조합 동안 블록커서 깜빡임 제거(A형과 동일 UX)
@@ -2778,6 +2787,15 @@
           entry.devezCopyRows.clear();
           return true;
         }
+        // 컴포저 전체선택(Ctrl+A) 여부. IME 조합 문자열은 확정 전까지 PTY 로 가지 않아
+        // CLI 는 "조합이 시작됐다"는 사실 자체를 모른다 → 선택이 그대로 남고 조합뷰만
+        // 오른쪽에 겹쳐 보인다. 이 플래그를 알고 있으면 compositionstart 에서 호스트가
+        // 선택 삭제를 대신 보내 준다(beginComposition 참고).
+        const select = /^devez-select-v1;([01])$/.exec(data || '');
+        if (select) {
+          entry.devezComposerSelectAll = select[1] === '1';
+          return true;
+        }
         const match = /^devez-copy-v1;(\d+);([01]);(\d+)$/.exec(data || '');
         if (!match) return false;
         const buffer = term.buffer.active;
@@ -3003,7 +3021,7 @@
     ro.observe(el);
     entry.ro = ro;
 
-    setupImeCaretFix(term, el, agent, roomId);
+    setupImeCaretFix(term, el, agent, roomId, entry);
     term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
 
     // 마지막 비어있지 않은 선택을 기억(텍스트+시각) — gjc 재페인트가 선택을 지운 직후의
