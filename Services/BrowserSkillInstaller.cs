@@ -1,48 +1,85 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
 namespace DevezCode.Services;
 
 /// <summary>세션이 슬래시로 부를 수 있는 미니 브라우저 제어 스킬 문서의 설치·제거 담당.
-/// <para>claude 계열(Claude Agent SDK 를 쓰는 devezVibe 포함)이 공용으로 읽는 전역 스킬 폴더에
-/// 앱이 직접 쓴다(항상 최신으로 덮어씀). 브라우저 MCP 설정을 끄면 함께 지운다.</para>
+/// <para>claude, codex, opencode 가 각각 읽는 전역 스킬 폴더에 앱이 직접 쓴다(항상 최신으로 덮어씀).
+/// 브라우저 MCP 설정을 끄면 세 곳에서 함께 지운다.</para>
 /// <para>전역 폴더라 DevezCode 밖 터미널에서도 이름은 보인다. 그 경우 브라우저 도구가 없으므로
 /// 스킬 본문이 "앱 안에서만 동작한다"고 알리고 끝내도록 적어 둔다.</para></summary>
 public static class BrowserSkillInstaller
 {
     private const string SkillName = "devez-mini-browser";
 
-    public static string SkillDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "skills", SkillName);
+    private static string UserProfile =>
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-    public static string SkillPath => Path.Combine(SkillDir, "SKILL.md");
+    /// <summary>codex 홈(CODEX_HOME 우선). CodexHookInstaller 와 같은 규칙.</summary>
+    private static string CodexHome
+    {
+        get
+        {
+            var configured = Environment.GetEnvironmentVariable("CODEX_HOME");
+            return string.IsNullOrWhiteSpace(configured)
+                ? Path.Combine(UserProfile, ".codex")
+                : Path.GetFullPath(Environment.ExpandEnvironmentVariables(configured));
+        }
+    }
+
+    /// <summary>opencode 설정 폴더(XDG_CONFIG_HOME 우선). OpenCodePluginInstaller 와 같은 규칙.</summary>
+    private static string OpenCodeConfigDir
+    {
+        get
+        {
+            var xdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+            var configHome = string.IsNullOrEmpty(xdg) ? Path.Combine(UserProfile, ".config") : xdg;
+            return Path.Combine(configHome, "opencode");
+        }
+    }
+
+    /// <summary>스킬 문서를 깔 에이전트별 폴더. 하나가 실패해도 나머지는 계속 진행한다.</summary>
+    public static IEnumerable<string> SkillDirs
+    {
+        get
+        {
+            yield return Path.Combine(UserProfile, ".claude", "skills", SkillName);
+            yield return Path.Combine(CodexHome, "skills", SkillName);
+            yield return Path.Combine(OpenCodeConfigDir, "skills", SkillName);
+        }
+    }
 
     /// <summary>브라우저 MCP 사용 여부에 맞춰 스킬을 깔거나 지운다. 브리지 스크립트와 같은 시점에 호출.</summary>
     public static void Sync(bool enabled)
     {
-        try
+        var content = enabled ? Content() : null;
+        foreach (var dir in SkillDirs)
         {
-            if (enabled) Write();
-            else Remove();
-        }
-        catch (Exception ex)
-        {
-            DiagLog.Write("BrowserSkillInstaller sync failed: " + ex.Message);
+            try
+            {
+                if (content != null) Write(dir, content);
+                else Remove(dir);
+            }
+            catch (Exception ex)
+            {
+                DiagLog.Write($"BrowserSkillInstaller sync failed ({dir}): " + ex.Message);
+            }
         }
     }
 
-    private static void Write()
+    private static void Write(string dir, string content)
     {
-        Directory.CreateDirectory(SkillDir);
-        var content = Content();
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "SKILL.md");
         // 내용이 같으면 건드리지 않는다(에이전트가 감시 중인 파일의 불필요한 mtime 변경 방지).
-        if (File.Exists(SkillPath) && File.ReadAllText(SkillPath) == content) return;
-        File.WriteAllText(SkillPath, content, new UTF8Encoding(false));
+        if (File.Exists(path) && File.ReadAllText(path) == content) return;
+        File.WriteAllText(path, content, new UTF8Encoding(false));
     }
 
-    private static void Remove()
+    private static void Remove(string dir)
     {
-        if (Directory.Exists(SkillDir)) Directory.Delete(SkillDir, recursive: true);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
     }
 
     private static string Content() => """
