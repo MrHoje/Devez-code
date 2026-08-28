@@ -52,6 +52,7 @@ $focusTerminalSource = Get-SourceSlice $terminalSource 'public void FocusTermina
 $cancelFocusSource = Get-SourceSlice $terminalSource 'public void CancelPendingFocusTransfer()' 'private void StopFocusBounceTimer()' 'Could not isolate focus cancellation.'
 $acceptNativeSource = Get-SourceSlice $terminalSource 'private void AcceptNativeTerminalFocus()' 'private void ApplyTerminalFocus(' 'Could not isolate native focus acceptance.'
 $applyFocusSource = Get-SourceSlice $terminalSource 'private void ApplyTerminalFocus(' 'private async Task InitWebViewAsync()' 'Could not isolate terminal focus application.'
+$focusBridgeSource = Get-SourceSlice $terminalHtml "case 'focus': {" "case 'imeAbort':" 'Could not isolate JavaScript terminal focus bridge.'
 $pageReadySource = Get-SourceSlice $terminalSource 'private void OnPageReady()' 'private void ApplyTerminalFontFamily()' 'Could not isolate page-ready replay.'
 $showFileDropSource = Get-SourceSlice $paneSource 'public void ShowFileDropOverlay()' 'private void HideFileDropOverlay(' 'Could not isolate file-drop overlay.'
 $suspendOnlySource = Get-SourceSlice $paneSource 'public async Task SuspendTerminalOnlyAsync(' 'public async Task PrepareShutdownSnapshotAsync()' 'Could not isolate terminal-only suspension.'
@@ -104,7 +105,9 @@ Assert-Match $terminalHtml "document\.addEventListener\('keydown', function \(\)
 Assert-Match $terminalHtml "document\.addEventListener\('compositionstart', function \(\) \{ post\(\{ type: 'inputIntent' \}\); \}, true\);" 'IME composition start must supersede a pending navigation.'
 Assert-Match $terminalHtml "case 'imeAbort':[\s\S]*?clearPendingComposeState\(\);[\s\S]*?_abortIme\(\);" 'Modal boundaries must clear pending composition state.'
 Assert-Match $terminalHtml "el\._abortIme = function \(\)[\s\S]*?ta\.value = '';[\s\S]*?CompositionEvent\('compositionend', \{ data: '' \}\)[\s\S]*?ta\.blur\(\);[\s\S]*?clearImeAfterBlur\('modal'\);" 'Modal abort must end xterm composition before blur without submitting unfinished text.'
-Assert-Match $terminalHtml "case 'focus':[\s\S]*?if \(!composing\) active\.blur\(\);[\s\S]*?requestAnimationFrame\(applyFocus\);" 'Focus restoration must not blur a composing textarea.'
+Assert-Match $focusBridgeSource 'let retries = 40;' 'Window activation focus recovery must outlast delayed WebView2 document activation.'
+Assert-Order $focusBridgeSource 'if (!document.hasFocus())' 'const active = document.activeElement;' 'Focus restoration must not blur the helper textarea before the WebView document is active.'
+Assert-Order $focusBridgeSource 'if (!composing) active.blur();' 't.term.focus();' 'Focus restoration must preserve composition and then restore the active terminal textarea.'
 
 # Workspace pane: all active native surfaces report focus and suspension owns its exact surface.
 Assert-Match $paneSource 'forceImeReattach \|= _termParked;' 'Returning from another embedded surface must force IME reattachment.'

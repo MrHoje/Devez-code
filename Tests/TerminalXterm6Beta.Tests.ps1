@@ -3,6 +3,14 @@ $ErrorActionPreference = 'Stop'
 $webRoot = Join-Path $PSScriptRoot '..\Resources\Terminal\web'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $terminalSource = [System.IO.File]::ReadAllText((Join-Path $webRoot 'terminal.html'), $utf8)
+$sessionManagerSource = [System.IO.File]::ReadAllText(
+    (Join-Path $PSScriptRoot '..\Services\Terminal\TerminalSessionManager.cs'), $utf8)
+if ($sessionManagerSource -notmatch 'TryBuildDevezVibeDirectLaunch[\s\S]*?const string widthProfile = "set \\"DEVEZCODE_TERM_WIDTH_PROFILE=xterm6-unicode6\\"\\r\\n";') {
+    throw 'The internal dvz launch command does not set the xterm width profile.'
+}
+if ($sessionManagerSource -match 'Environment\.SetEnvironmentVariable\("DEVEZCODE_TERM_WIDTH_PROFILE"') {
+    throw 'The dvz xterm width profile must not use process-global environment mutation.'
+}
 $scrollbarStartMarker = '/* BEGIN xterm6-scrollbar-hide */'
 $scrollbarEndMarker = '/* END xterm6-scrollbar-hide */'
 $scrollbarStart = $terminalSource.IndexOf($scrollbarStartMarker)
