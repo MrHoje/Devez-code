@@ -2863,8 +2863,28 @@
         provideLinks: function (line, callback) {
           // link provider의 line은 1-기준, 공개 buffer API의 getLine은 0-기준.
           var bufferLine = term.buffer.active.getLine(line - 1);
-          var text = bufferLine?.translateToString();
-          if (!text) { callback(undefined); return; }
+          if (!bufferLine) { callback(undefined); return; }
+          // translateToString의 문자 인덱스는 한글 등 2칸(wide) 문자 앞에서는 버퍼 컬럼과
+          // 어긋난다(wide 1문자 = 2컬럼). 셀을 직접 순회해 문자→컬럼 매핑을 만들어야
+          // 링크 밑줄·클릭 영역이 앞선 한글 수만큼 왼쪽으로 밀리지 않는다.
+          var text = '';
+          var colAt = [];
+          for (var bx = 0; bx < bufferLine.length; bx++) {
+            var bcell = bufferLine.getCell(bx);
+            if (!bcell || bcell.getWidth() === 0) continue;
+            var bch = bcell.getChars() || ' ';
+            for (var bk = 0; bk < bch.length; bk++) colAt.push(bx);
+            text += bch;
+          }
+          if (!text.trim()) { callback(undefined); return; }
+          function colOf(index) {
+            return index < colAt.length ? colAt[index] : (colAt.length ? colAt[colAt.length - 1] + 1 : 0);
+          }
+          function lastColOf(endExclusive) {
+            var col = colAt[Math.min(endExclusive, colAt.length) - 1];
+            var cell = bufferLine.getCell(col);
+            return col + Math.max(1, cell ? cell.getWidth() : 1) - 1;
+          }
 
           var urlRe = /https?:\/\/[^\s<>"'`]+/gi;
           var sourceLocationRe = /((?:[A-Za-z]:[\\/]|\.{1,2}[\\/])[^:\s<>"'`]+|[\w\-.]*(?:[\/\\][\w\-.]+)+\.[\w-]+):(\d+)(?::(\d+))?/g;
@@ -2887,10 +2907,11 @@
             }
             return false;
           }
-          function addPathLink(path, startCol, sourceLine, sourceColumn, displayText) {
+          function addPathLink(path, startIndex, sourceLine, sourceColumn, displayText) {
             if (!path) return;
             var label = displayText || path;
-            var endCol = startCol + label.length - 1;
+            var startCol = colOf(startIndex);
+            var endCol = lastColOf(startIndex + label.length);
             if (overlapsExisting(startCol, endCol)) return;
             links.push({
               range: {
@@ -2907,10 +2928,10 @@
           while ((match = urlRe.exec(text)) !== null) {
             let url = match[0].replace(/[),.;:!?]+$/, '');
             if (!url) continue;
-            let startCol = match.index;
-            let endCol = match.index + url.length - 1;
+            let startCol = colOf(match.index);
+            let endCol = lastColOf(match.index + url.length);
             // OSC 8이면 xterm 내장 provider(linkHandler)가 담당. 아래 일반 provider를 더하면 중복 열린다.
-            if (hasOscLink(startCol, url.length)) continue;
+            if (hasOscLink(startCol, endCol - startCol + 1)) continue;
             if (overlapsExisting(startCol, endCol)) continue;
             links.push({
               range: {
@@ -2939,8 +2960,8 @@
           }
           while ((match = relativePathRe.exec(text)) !== null) {
             let path = match[1].replace(/[),.;:!?]+$/, '');
-            let startCol = match.index + match[0].length - match[1].length;
-            addPathLink(path, startCol);
+            let startIndex = match.index + match[0].length - match[1].length;
+            addPathLink(path, startIndex);
           }
           while ((match = filePathRe.exec(text)) !== null) {
             let path = match[0];
