@@ -818,9 +818,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     break;
                 case "interact":
                     // 실제 터미널 표면 클릭은 Windows가 Chromium HWND로 직접 포커스를 옮긴 경로다.
-                    // 대기 중인 프로그램적 바운스가 60ms 뒤 다시 blur→focus 해 조합을 끊지 않게 취소한다.
-                    AcceptNativeTerminalFocus();
+                    // 셸에 클릭을 먼저 알려 기존 복귀 예약과 다른 패널의 포커스 세대를 무효화한 다음,
+                    // 이 클릭의 복구 예약을 마지막 세대로 만든다. 반대 순서면 FocusRequested가 방금 만든
+                    // 60ms 예약까지 즉시 무효화해, 탭을 바꾸기 전까지 입력이 돌아오지 않는다.
                     UserInteracted?.Invoke();
+                    AcceptNativeTerminalFocus();
                     if (_activeRoomId != null) SessionActivity?.Invoke(_activeRoomId);
                     break;
                 case "inputIntent":

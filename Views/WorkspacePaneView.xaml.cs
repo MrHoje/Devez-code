@@ -161,8 +161,8 @@ public partial class WorkspacePaneView : UserControl
         _terminal.DevezVibeUpdateRequested += () => DevezVibeUpdateRequested?.Invoke();
         _terminal.UserInteracted += () =>
         {
-            // TerminalHostView가 자체 60ms 예약을 먼저 취소한 뒤 셸 예약도 무효화한다.
-            // 실제 표면 클릭이 항상 프로그램적 복귀보다 우선해야 조합 중 재포커스를 막을 수 있다.
+            // 셸·패널의 기존 예약과 포커스 세대를 먼저 무효화한다. 이 콜백이 끝난 뒤
+            // TerminalHostView가 실제 표면 클릭을 최신 60ms 복구 요청으로 확정한다.
             NativeTerminalInteracted?.Invoke(this);
             FocusRequested?.Invoke(this);
         };
