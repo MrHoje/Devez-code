@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.4", "2026-08-27", true, new[]
+          ("v1.26.5", "2026-08-27", true, new[]
+          {
+              "미니 브라우저 제어 스킬이 Claude 세션에서만 보이던 문제를 수정해, Codex와 OpenCode 세션에서도 사용할 수 있게 했습니다.",
+          }),
+          ("v1.26.4", "2026-08-27", false, new[]
           {
               "입력창 내용을 전체 선택한 상태에서 한글을 입력할 때, 기존 내용이 바로 지워지지 않고 조합 글자가 겹쳐 보이던 문제를 수정했습니다.",
           }),
