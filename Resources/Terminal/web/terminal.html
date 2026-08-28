@@ -1378,6 +1378,13 @@
     return w;
   }
 
+  // 모바일 원격 키보드는 한글 확정을 composition* 없이 input(insertText)로만 보내기도 한다.
+  // 그 경로만 좁게 식별해 일반 영문 keydown/keypress 중복 방지 계약은 건드리지 않는다.
+  function containsHangulText(s) {
+    return typeof s === 'string' &&
+      /[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]/.test(s);
+  }
+
   // 방(세션)별로 1회 호출 — 모든 IME 상태는 이 클로저 안에 격리된다(방 간 오염 불가).
   function setupImeCaretFix(term, el, agent, roomId, entry) {
     const ta = el.querySelector('.xterm-helper-textarea'); // IME 조합이 실제로 일어나는 숨은 textarea
@@ -2222,6 +2229,50 @@
     const deterministicImeCommit = !!(imeHelper && imeHelper._compositionView &&
       imeHelper._coreService && typeof imeHelper._finalizeComposition === 'function');
     if (deterministicImeCommit) {
+      // 원격 데스크톱의 모바일 키보드는 빠른 한글 입력을
+      // input(insertText) → keydown(229) 순서로 보내면서 composition 이벤트를 생략할 수 있다.
+      // xterm의 기본 _inputEvent는 직전 keydown의 해제보다 다음 input이 먼저 오면
+      // _keyDownSeen 조건으로 그 확정 문자를 버린다. 한글 비조합 insertText는 e.data 자체가
+      // 확정 원본이므로 즉시 전송하고, 뒤따르는 229 폴백은 아래 no-op으로 계속 막는다.
+      // 정상 compositionend 뒤에도 같은 insertText가 올 수 있으므로 같은 이벤트 루프 안의
+      // 확정 문자열을 토큰으로 기억해 그 input 한 번만 소거한다.
+      const compositionInputDedup = [];
+      function rememberCompositionInput(data) {
+        const token = { data: data };
+        compositionInputDedup.push(token);
+        setTimeout(function () {
+          const index = compositionInputDedup.indexOf(token);
+          if (index >= 0) compositionInputDedup.splice(index, 1);
+        }, 0);
+      }
+      function consumeCompositionInput(data) {
+        for (let i = 0; i < compositionInputDedup.length; i++) {
+          if (compositionInputDedup[i].data !== data) continue;
+          compositionInputDedup.splice(i, 1);
+          return true;
+        }
+        return false;
+      }
+      const originalImeInputEvent = typeof imeCore._inputEvent === 'function'
+        ? imeCore._inputEvent.bind(imeCore) : null;
+      if (originalImeInputEvent) {
+        imeCore._inputEvent = function (e) {
+          const data = e && e.data;
+          if (e && e.inputType === 'insertText' && containsHangulText(data) &&
+              !imeHelper._isComposing && !imeHelper._isSendingComposition) {
+            if (consumeCompositionInput(data)) {
+              imeDiag('commit-send(insertText) dedup "' + data + '"');
+              return false;
+            }
+            imeCore._unprocessedDeadKey = false;
+            imeHelper._coreService.triggerDataEvent(data, true);
+            imeDiag('commit-send(insertText) "' + data + '"');
+            return true;
+          }
+          return originalImeInputEvent(e);
+        };
+      }
+
       function takePendingImeCommit() {
         if (pendingImeCommitTimer) {
           clearTimeout(pendingImeCommitTimer);
@@ -2269,6 +2320,7 @@
       ta.addEventListener('compositionend', function (e) {
         const data = (e && e.data) || '';
         if (!data) return; // 조합 취소/합성 리셋(resetImeNow) — 보낼 게 없다
+        rememberCompositionInput(data);
         if (keydownCommitSent && keydownCommitSent.data === data &&
             Date.now() - keydownCommitSent.at < 200) {
           keydownCommitSent = null; // 키 확정이 이미 보냈다 — 중복 전송 금지
