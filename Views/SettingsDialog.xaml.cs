@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.12", "2026-08-29", true, new[]
+          ("v1.26.13", "2026-08-29", true, new[]
+          {
+              "다른 프로세스에서 돌아온 뒤 터미널을 눌러도 입력되지 않아 세션 탭을 바꿔야 했던 문제를 추가로 수정했습니다.",
+          }),
+          ("v1.26.12", "2026-08-29", false, new[]
           {
               "다른 프로세스에서 돌아온 뒤 터미널을 클릭해도 탭을 바꾸기 전까지 입력되지 않던 문제를 수정했습니다.",
           }),
