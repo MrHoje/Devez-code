@@ -940,13 +940,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     // 결과 post 만 UI 스레드로 되돌린다(붙여넣기는 사용자 조작이라 약간의 비동기 무해).
                     RunClipboardSta(() =>
                     {
-                        var (imagePath, text) = ReadClipboardForPaste();
+                        var (imagePath, text, plainText) = ReadClipboardForPaste();
                         Dispatcher.BeginInvoke(() =>
                         {
                             if (imagePath != null)
                                 PostJson(new { type = "paste", roomId, data = imagePath });
                             else if (!string.IsNullOrEmpty(text))
-                                PostJson(new { type = "paste", roomId, data = text });
+                                // srcText: FileDrop 경로 텍스트·이미지 경로가 아닌 '클립보드 텍스트 원본'임을
+                                // JS 에 알린다(devezvibe 취약 이모지 Ctrl+V 우회의 전제 조건).
+                                PostJson(new { type = "paste", roomId, data = text, srcText = plainText });
                         });
                     });
                     break;
@@ -2099,14 +2101,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 2회씩 열어 클립보드 매니저·백신·RDP 리디렉션이 물린 PC 에서 두 번째 열기가 실패 → 빈값 →
     /// Ctrl+V 먹통이 잦았다. 열기 횟수를 절반으로 줄이고 재시도를 넉넉히(STA 스레드라 대기 무해).
     /// 이미지면 (파일경로, null), 텍스트면 (null, 텍스트), 없으면 (null, null).</summary>
-    private static (string? imagePath, string? text) ReadClipboardForPaste()
+    private static (string? imagePath, string? text, bool plainText) ReadClipboardForPaste()
     {
         for (int i = 0; i < 8; i++)
         {
             try
             {
                 var data = System.Windows.Clipboard.GetDataObject();
-                if (data == null) return (null, null);
+                if (data == null) return (null, null, false);
 
                 // 탐색기/바탕화면에서 '파일 자체'를 복사한 경우. 이미지 파일도 Bitmap보다 이 형식을
                 // 우선해 원본 파일 경로로 붙여넣는다. 제출은 하지 않고 다음 입력을 위한 공백만 붙인다.
@@ -2114,7 +2116,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     data.GetData(System.Windows.DataFormats.FileDrop) is string[] files)
                 {
                     var fileText = FormatFilePathsForInput(files);
-                    if (fileText.Length > 0) return (null, fileText);
+                    if (fileText.Length > 0) return (null, fileText, false);
                 }
 
                 // 이미지 우선(claude 이미지 첨부) — 저장 성공 시 파일 경로 반환.
@@ -2132,21 +2134,21 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                         if (bmp != null)
                         {
                             var path = SaveBitmap(bmp);
-                            if (path != null) return (path, null);
+                            if (path != null) return (path, null, false);
                         }
                     }
                 }
 
                 if (data.GetDataPresent(System.Windows.DataFormats.UnicodeText))
-                    return (null, data.GetData(System.Windows.DataFormats.UnicodeText) as string ?? "");
+                    return (null, data.GetData(System.Windows.DataFormats.UnicodeText) as string ?? "", true);
                 if (data.GetDataPresent(System.Windows.DataFormats.Text))
-                    return (null, data.GetData(System.Windows.DataFormats.Text) as string ?? "");
+                    return (null, data.GetData(System.Windows.DataFormats.Text) as string ?? "", true);
 
-                return (null, null); // 열기는 됐으나 텍스트·이미지 없음 → 재시도 불필요
+                return (null, null, false); // 열기는 됐으나 텍스트·이미지 없음 → 재시도 불필요
             }
             catch { System.Threading.Thread.Sleep(30); } // 경합 — 잠깐 뒤 재시도
         }
-        return (null, null);
+        return (null, null, false);
     }
 
     private const uint CF_DIB = 8;

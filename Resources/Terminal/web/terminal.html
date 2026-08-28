@@ -4113,6 +4113,18 @@
         const t = terms[msg.roomId || activeRoomId];
         if (!t || t.dead || t.external) break;
         const data = msg.data || '';
+        // Devez Vibe(dvz) 취약 이모지 우회: 서로게이트 쌍·ZWJ(U+200D)·변형선택자(U+FE0E/FE0F)는
+        // ConPTY 가 붙여넣기 텍스트를 키 레코드로 재합성하는 과정에서 유실된다(dvz 소스의
+        // paste_clipboard_text_shortcut 주석과 동일 현상 — 외부 터미널에서는 dvz 가 Ctrl+V 를 직접
+        // 받아 클립보드를 스스로 읽어 회피하는데, 우리는 Ctrl+V 를 가로채므로 그 경로가 죽는다).
+        // 클립보드 '텍스트 원본'(srcText)이고 취약 문자를 포함할 때만 텍스트 대신 Ctrl+V(\x16)를
+        // 전달해 dvz 가 같은 클립보드를 직접 읽게 한다. 이미지 경로·FileDrop 경로 텍스트(srcText
+        // 아님)와 일반 텍스트는 기존 bracketed paste 경로를 유지한다.
+        if (t.agent === 'devezvibe' && msg.srcText && !msg.force
+            && /[\u200D\uFE0E\uFE0F\uD800-\uDFFF]/.test(data)) {
+          post({ type: 'input', roomId: (msg.roomId || activeRoomId), data: '\x16' });
+          break;
+        }
         // 맨 셸(cmd) 프롬프트에 개행 포함 텍스트를 붙여넣으면 줄마다 명령으로 즉시 실행돼
         // '>'·'=>' 등이 예상치 못한 파일을 만든다. "지금 에이전트가 아니라 맨 셸인가"를 두 신호로 판정:
         //  - bracketed paste(?2004h) OFF: 에이전트(claude/codex/gjc/opencode 등)는 켜고 cmd 는 안 켬.
