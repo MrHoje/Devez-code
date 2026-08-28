@@ -103,7 +103,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.10", "2026-08-29", true, new[]
+          ("v1.26.11", "2026-08-29", true, new[]
+          {
+              "작업표시줄에서 다른 앱으로 전환했다 돌아오면 Devez Vibe 컴포저가 외곽선 커서로 멈추고 입력되지 않던 문제를 수정했습니다.",
+              "Devez Vibe와 터미널의 특수문자 셀 폭을 일치시켜 일반 출력과 컴포저의 글자 겹침·줄바꿈·세로줄 어긋남을 수정했습니다.",
+              "본문 없는 응답 조각이 빈 불릿으로 남던 문제를 수정했습니다.",
+          }),
+          ("v1.26.10", "2026-08-29", false, new[]
           {
               "한글 입력 중 반복되던 고비용 IME 진단 기록과 화면 상태 조사를 중단해 미세 끊김을 줄였습니다.",
           }),
