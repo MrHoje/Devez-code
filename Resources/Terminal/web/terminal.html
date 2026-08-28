@@ -2199,18 +2199,46 @@
     // (Enter 등)나 새 조합이 끼면 되읽은 문자열이 비거나 어긋난다 → 확정 글자 유실·중복
     // (2026-08-28 diag 실측: commit "제","가" 이벤트는 정상인데 dvz 커서가 전진하지 않음.
     //  ConPTY+crossterm 은 하네스 실측으로 무죄 — 유실은 이 웹 레이어가 유일한 구간).
-    // 확정 문자열의 원본은 compositionend 의 e.data 다. 타이머·textarea 되읽기를 버리고
-    // e.data 를 그 자리에서 보내며, xterm 의 지연 전송·229 폴백 diff 전송은 무력화한다.
+    // 확정 문자열의 원본은 compositionend 의 e.data 다. textarea 되읽기를 버리고
+    // e.data 를 즉시 복사하되, 같은 이벤트 밀림에서 연속 확정된 음절은 0ms 큐 하나로
+    // 묶어 보낸다. 음절마다 동기 전송하면 dvz 전체 컴포저 리페인트도 같이 몰려
+    // 유실·중복은 없어도 입력이 미세하게 끊겨 보인다. 다음 일반 키 입력이 먼저 나가려
+    // 하면 term.onData 가 대기 중인 확정값을 앞에 붙여 순서를 보존한다. xterm 의 textarea
+    // 지연 전송·229 폴백 diff 전송은 무력화한다.
     // 키 확정(스페이스/화살표가 조합을 끊는 경우)은 xterm 원본과 같은 동기 전송을 유지해
     // "글자 → 키" 순서를 보존하고, 직후 compositionend 가 같은 문자열을 다시 보내지 않게
     // 1회 소거한다. 한글·일어·중국어 IME 는 모두 composition 이벤트를 발화하므로 229 폴백
     // 무력화의 영향이 없다. 헬퍼 내부 접근이 실패하면(향후 번들 교체) 원래 경로를 그대로 둔다.
     let keydownCommitSent = null; // { data, at } — 키 확정이 방금 보낸 문자열(1회 소거용)
+    let pendingImeCommitData = '';
+    let pendingImeCommitTimer = 0;
     const imeCore = (agent === 'devezvibe' || agent === 'codex') && term._core;
     const imeHelper = imeCore && imeCore._compositionHelper;
     const deterministicImeCommit = !!(imeHelper && imeHelper._compositionView &&
       imeHelper._coreService && typeof imeHelper._finalizeComposition === 'function');
     if (deterministicImeCommit) {
+      function takePendingImeCommit() {
+        if (pendingImeCommitTimer) {
+          clearTimeout(pendingImeCommitTimer);
+          pendingImeCommitTimer = 0;
+        }
+        const data = pendingImeCommitData;
+        pendingImeCommitData = '';
+        return data;
+      }
+      function flushPendingImeCommit() {
+        pendingImeCommitTimer = 0;
+        const data = pendingImeCommitData;
+        pendingImeCommitData = '';
+        if (data) imeHelper._coreService.triggerDataEvent(data, true);
+      }
+      function queueImeCommit(data) {
+        pendingImeCommitData += data;
+        if (!pendingImeCommitTimer) pendingImeCommitTimer = setTimeout(flushPendingImeCommit, 0);
+      }
+      // compositionend 직후 Space/Enter 등 일반 키가 이 타이머보다 먼저
+      // onData 에 도달하면 확정 문자열을 그 키 앞에 합친다.
+      entry._takePendingImeCommit = takePendingImeCommit;
       imeHelper._finalizeComposition = function (waitForPropagation) {
         this._compositionView.classList.remove('active');
         this._isComposing = false;
@@ -2230,7 +2258,7 @@
             imeDiag('commit-send(keydown) "' + data + '"');
           }
         }
-        // 지연 분기는 전송하지 않는다 — compositionend 리스너가 e.data 로 보낸다.
+        // 지연 분기는 전송하지 않는다 — compositionend 리스너가 e.data 를 큐에 넣는다.
       };
       imeHelper._handleAnyTextareaChanges = function () {};
       ta.addEventListener('compositionend', function (e) {
@@ -2243,7 +2271,7 @@
           return;
         }
         keydownCommitSent = null;
-        imeHelper._coreService.triggerDataEvent(data, true);
+        queueImeCommit(data);
       });
     }
 
@@ -3123,6 +3151,12 @@
       if (entry.dead) {
         if (data === '\r') post({ type: 'restart', roomId: roomId }); // Enter로 재시작
         return;
+      }
+      // 조합 확정 e.data 배치가 0ms 플러시를 기다리는 사이 일반 키가
+      // 먼저 나왔으면, 확정 문자열을 앞에 붙여 PTY 입력 순서를 유지한다.
+      if (entry._takePendingImeCommit) {
+        const pendingIme = entry._takePendingImeCommit();
+        if (pendingIme) data = pendingIme + data;
       }
       // 우클릭은 호스트에서 복사/붙여넣기로 처리한다. 마우스 트래킹(TUI) 모드에선 xterm 이
       // 우버튼 SGR 리포트(ESC[<2..M/m)도 PTY 로 보내는데, claude 등 TUI 가 이를 받아 자체
