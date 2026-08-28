@@ -509,7 +509,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 겹치면 마지막 요청 하나만 남기고, 직접 터미널 클릭이나 화면 주차가 오면 예약을 취소한다.
     /// 계측·판독: .knowledge/ime-모니터좌상단-조합창-고착.md</summary>
     public void FocusTerminal(bool forceImeReattach = false,
-        [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+        [System.Runtime.CompilerServices.CallerMemberName] string caller = "",
+        bool nativeFocusIntent = false)
     {
         if (_disposed) return;
 
@@ -553,7 +554,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         DevezCode.Services.DiagLog.Write(
             $"[ime focus-path] from={caller} room={room} force={(forceImeReattach ? 1 : 0)} " +
             $"hostChanged={(hostChanged ? 1 : 0)} chromium={(chromiumFocused ? 1 : 0)} " +
-            $"bounce={(bounce ? 1 : 0)} request={request} epoch={globalRequest}");
+            $"bounce={(bounce ? 1 : 0)} native={(nativeFocusIntent ? 1 : 0)} " +
+            $"request={request} epoch={globalRequest}");
 
         var owner = Window.GetWindow(this);
         if (owner is { IsActive: false })
@@ -614,7 +616,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         }
 
         // 2단계 — 한 박자 뒤 WebView2 로 전달. 최신 요청만 실행하며, 그 사이 사용자가 입력 컨트롤이나
-        // 다른 화면으로 이동했으면 포커스를 빼앗지 않는다. 재부착 요구는 다음 복귀 때까지 보존한다.
+        // 다른 화면으로 이동했으면 포커스를 빼앗지 않는다. 단 WebView2 네이티브 클릭은 WPF의
+        // Keyboard.FocusedElement/IsKeyboardFocusWithin을 갱신하지 않는 경우가 있어, 그 클릭에서 다시
+        // 세운 요청은 오래된 WPF 포커스만으로 폐기하지 않는다. 재부착 요구는 다음 복귀까지 보존한다.
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
         _focusBounceTimer = timer;
         timer.Tick += (_, _) =>
@@ -627,7 +631,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             if (owner is { IsActive: false }) return;
             if (!IsVisible || _webView is not { IsVisible: true }) return;
             var focusedElement = System.Windows.Input.Keyboard.FocusedElement;
-            if (focusedElement != null && !ReferenceEquals(focusedElement, owner)
+            if (!nativeFocusIntent && focusedElement != null && !ReferenceEquals(focusedElement, owner)
                 && !IsKeyboardFocusWithin) return;
 
             _imeReattachPending = false;
@@ -682,7 +686,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 가드(페이지 준비·가시성·창 활성)는 FocusTerminal 이 갖고 있고, 걸리면 sticky 경계가 남는다.
         if (reattachBoundary)
         {
-            FocusTerminal(forceImeReattach: true);
+            // 이 콜백 자체가 사용자가 현재 WebView2 표면을 눌렀다는 확정 신호다. HwndHost 포커스는
+            // WPF 상태에 반영되지 않을 수 있으므로 60ms 뒤 오래된 WPF 요소를 근거로 취소하지 않는다.
+            FocusTerminal(forceImeReattach: true, nativeFocusIntent: true);
             return;
         }
 
