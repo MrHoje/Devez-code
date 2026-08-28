@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -636,6 +636,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         timer.Start();
     }
 
+    /// <summary>다른 최상위 창(미니 브라우저 등)·소유 모달로 나가는 경계. 복귀 스케줄러가 조기 반환하거나
+    /// 사용자가 복귀 직후 터미널을 직접 클릭해도 재부착 요구가 사라지지 않도록 호스트에 직접 남긴다.</summary>
+    public void MarkImeReattachBoundary() => _imeReattachPending = true;
+
     /// <summary>화면 전환이 포커스 예약보다 우선할 때 호출. 강제 재부착 필요 상태는 다음 복귀까지 보존한다.</summary>
     public void CancelPendingFocusTransfer()
     {
@@ -666,18 +670,23 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     private void AcceptNativeTerminalFocus()
     {
-        bool interruptedBounce = _focusBounceTimer != null;
-        _imeReattachPending = false; // 실제 표면 클릭은 검증된 수동 복구 경계다.
+        bool reattachBoundary = _imeReattachPending || _focusBounceTimer != null;
         CancelPendingFocusTransfer();
-        long globalRequest = InvalidateGlobalFocusRequests(); // 다른 패널/하단 셸에 남은 예약도 함께 무효화
         MarkAsFocusedTerminalHost();
 
-        // 외부 앱에서 터미널을 직접 눌러 창을 활성화하면 OnActivated 복귀가 JS mousedown보다
-        // 먼저 owner로 detach할 수 있다. 그 예약을 취소한 직접 클릭이 WebView 포커스도 다시 확정한다.
-        if (!interruptedBounce || !_pageReady || _activeRoomId is not { } room
-            || !IsVisible || _webView is not { IsVisible: true }) return;
-        if (Window.GetWindow(this) is { IsActive: false }) return;
-        ApplyTerminalFocus(room, _focusRequestGeneration, globalRequest);
+        // 미니 브라우저처럼 별도 최상위 창에서 돌아오며 터미널 표면을 곧바로 누른 경로다. 창 활성화가
+        // 시작한 재부착 바운스의 1단계(owner detach)가 이 클릭이 만든 네이티브 포커스를 이미 깨뜨린
+        // 뒤이므로, 여기서 즉시 WebView 로 되돌리면 두 전이가 한 프레임에 붙어 IME 컨텍스트가 이전
+        // 창에 남는다(한/영 전환이 먹지 않고, 빈 영역을 눌렀다 돌아와야 풀리는 증상).
+        // 클릭 시점을 기준으로 경계를 다시 세워 owner → 60ms → WebView 분리를 보장한다.
+        // 가드(페이지 준비·가시성·창 활성)는 FocusTerminal 이 갖고 있고, 걸리면 sticky 경계가 남는다.
+        if (reattachBoundary)
+        {
+            FocusTerminal(forceImeReattach: true);
+            return;
+        }
+
+        InvalidateGlobalFocusRequests(); // 다른 패널/하단 셸에 남은 예약도 함께 무효화
     }
 
     /// <summary>실제 포커스 적용 + 250ms 후 Win32 안착 상태 스냅샷(조합 없이도 stale 관측).</summary>

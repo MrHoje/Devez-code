@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -7430,8 +7430,9 @@ public partial class MainWindow : Window
     internal void PrepareForModalInputBoundary()
     {
         RegisterUserInputIntent();
-        foreach (var pane in _panes) pane.Terminal.AbortIme();
+        foreach (var pane in _panes) { pane.Terminal.AbortIme(); pane.Terminal.MarkImeReattachBoundary(); }
         ShellTerminal.AbortIme();
+        ShellTerminal.MarkImeReattachBoundary();
         _terminalImeReattachPending = true;
         CancelAllPendingTerminalFocusTransfers();
     }

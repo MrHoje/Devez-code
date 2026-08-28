@@ -64,6 +64,7 @@ $onPaneFocusSource = Get-SourceSlice $windowSource 'private void OnPaneFocusRequ
 $splitOpenSource = Get-SourceSlice $windowSource 'private async Task AnimateSplitOpenAsync()' 'private void RestoreSplitState()' 'Could not isolate split-open transition.'
 $splitCloseSource = Get-SourceSlice $windowSource 'private async Task AnimateSplitCloseAsync(bool swapped, bool animate = true)' 'private void UpdatePaneFocusVisual(' 'Could not isolate split-close transition.'
 $fullOverlaySuspendSource = Get-SourceSlice $windowSource 'private async Task<bool> SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)' 'private void ResumeTerminal()' 'Could not isolate full-overlay suspension.'
+$modalBoundarySource = Get-SourceSlice $windowSource 'internal void PrepareForModalInputBoundary()' 'private long CancelAllPendingTerminalFocusTransfers()' 'Could not isolate modal input boundary.'
 $focusSchedulerSource = Get-SourceSlice $windowSource 'internal void ScheduleTerminalFocusRestore(ComboBox? releasedCombo, bool imeBoundary = false)' 'private bool FocusShellTerminal(' 'Could not isolate focus restoration scheduler.'
 $rightTerminalSuspendSource = Get-SourceSlice $windowSource 'private async Task SuspendTerminalOnlyAsync()' 'private void ResumeTerminalOnly()' 'Could not isolate right-overlay terminal suspension.'
 $fullScreenSource = Get-SourceSlice $windowSource 'private async void RunFullScreenTransitionCovered(Action change, bool solidCover = false)' 'private void UpdateFullScreenTopmost()' 'Could not isolate full-screen transition.'
@@ -89,10 +90,13 @@ Assert-NotMatch $terminalSource 'private static extern IntPtr SetFocus\(' 'Raw S
 Assert-Match $focusTerminalSource 'else if \(System\.Windows\.Input\.Keyboard\.FocusedElement is[\s\S]*?TextBoxBase or PasswordBox or ComboBox or MenuItem\)[\s\S]*?Keyboard\.ClearFocus\(\);' 'Ordinary focus must clear only stale WPF input, not an already-focused WebView.'
 Assert-Match $focusTerminalSource 'timer\.Tick \+= [\s\S]*?request != _focusRequestGeneration[\s\S]*?globalRequest != System\.Threading\.Volatile\.Read[\s\S]*?!IsVisible \|\| _webView is not \{ IsVisible: true \}[\s\S]*?focusedElement != null && !ReferenceEquals\(focusedElement, owner\)[\s\S]*?!IsKeyboardFocusWithin[\s\S]*?_imeReattachPending = false;[\s\S]*?ApplyTerminalFocus\(room, request, globalRequest\);' 'The delayed transfer must validate owner, host, epochs, visibility, and newer WPF focus before consuming the boundary.'
 Assert-Match $cancelFocusSource '\+\+_focusRequestGeneration;[\s\S]*?StopFocusBounceTimer\(\);' 'Cancellation must invalidate and stop the owned timer.'
-Assert-Match $acceptNativeSource 'bool interruptedBounce = _focusBounceTimer != null;[\s\S]*?CancelPendingFocusTransfer\(\);[\s\S]*?InvalidateGlobalFocusRequests\(\);[\s\S]*?ApplyTerminalFocus\(room, _focusRequestGeneration, globalRequest\);' 'A direct terminal click must cancel every stale transfer and repair an interrupted owner bounce.'
+Assert-Match $acceptNativeSource 'bool reattachBoundary = _imeReattachPending \|\| _focusBounceTimer != null;[\s\S]*?CancelPendingFocusTransfer\(\);[\s\S]*?if \(reattachBoundary\)[\s\S]*?FocusTerminal\(forceImeReattach: true\);' 'A direct click during a live IME boundary must re-arm the bounce instead of focusing in the same frame.'
+Assert-NotMatch $acceptNativeSource '_imeReattachPending = false;' 'A direct click must not consume a pending IME reattachment boundary.'
 Assert-Match $applyFocusSource 'request != _focusRequestGeneration[\s\S]*?_activeRoomId != room[\s\S]*?globalRequest != System\.Threading\.Volatile\.Read' 'Delayed settle diagnostics must reject stale requests.'
 Assert-Match $terminalSource 'case "inputIntent":\s*InputIntent\?\.Invoke\(\);' 'Native terminal keyboard input must cancel deferred surface changes.'
 Assert-Match $terminalSource 'case "fileDrop":[\s\S]{0,700}?ExternalFileDropReceived\(paths\)' 'Native terminal file drops must be routed to the pane instead of focusing during capture.'
+
+Assert-Match $modalBoundarySource 'pane\.Terminal\.MarkImeReattachBoundary\(\);[\s\S]*?ShellTerminal\.MarkImeReattachBoundary\(\);' 'Leaving for another window or modal must mark every terminal host, not only the window-level flag.'
 
 # JavaScript bridge: native pointer, keyboard, composition, and modal boundaries.
 Assert-Match $terminalHtml "document\.addEventListener\('mousedown',[\s\S]{0,250}?post\(\{ type: 'interact' \}\);" 'Native terminal pointer input must notify the host.'
