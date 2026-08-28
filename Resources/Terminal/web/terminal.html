@@ -1420,9 +1420,13 @@
     // 키로 강제된 것인지 판정하는 근거.
     let lineMutateKeyAt = 0;
 
-    // IME 진단 로그 → C# diag.log (C:\devezLog\diag.log). 조합 이벤트 단위라 저볼륨.
-    // "조합/고스트가 엉뚱한 위치에 표시" 류 간헐 증상의 앵커 결정 근거를 남긴다.
+    // IME 진단 로그 → C# diag.log (C:\devezLog\diag.log). 운영에서는 꺼 둔다.
+    // 조합 음절마다 WebView 메시지→UI 스레드 동기 파일 append가 발생하고, 상태 스냅샷은
+    // getComputedStyle/getBoundingClientRect로 강제 레이아웃까지 일으켜 입력을 미세하게 끊었다.
+    // 새 IME 고착을 수사할 때만 true로 바꿔 임시 빌드하고, 원인 확인 뒤 반드시 false로 복원한다.
+    const imeDiagnostics = false;
     function imeDiag(msg) {
+      if (!imeDiagnostics) return;
       try { post({ type: 'diag', msg: '[ime ' + agent + ' ' + roomId + '] ' + msg }); } catch (e) {}
     }
 
@@ -2056,6 +2060,7 @@
     // 같은 줄에 덧붙여 diag.log 에 남긴다. 판독법: .knowledge/ime-모니터좌상단-조합창-고착.md
     let lastImeProbeAt = 0;
     function sendImeProbe() {
+      if (!imeDiagnostics) return;
       const now = Date.now();
       if (now - lastImeProbeAt < 2000) return; // 음절마다 발화하므로 스로틀(연속 타이핑이면 2초마다 1줄)
       lastImeProbeAt = now;
@@ -2094,7 +2099,7 @@
       // (조합이 60ms 안에 끝나면 apply 의 isImeComposing 가드가 무해하게 흡수)
       setTimeout(apply, 60);
       // 고착 수사 스냅샷 — 조합/pin 이 자리잡은 뒤(120ms) 실제 페인트 상태. 500ms 스로틀(저볼륨).
-      if (pinsLogicalCaret) {
+      if (imeDiagnostics && pinsLogicalCaret) {
         const now = Date.now();
         if (now - lastImeStateDumpAt > 500) {
           lastImeStateDumpAt = now;
