@@ -2192,6 +2192,61 @@
       return devezVibeComposerColsCache;
     }
 
+    // ── 결정적 조합 확정 전송 (xterm 6.1 에이전트 한정, grep: deterministicImeCommit) ──
+    // xterm 6.1 의 compositionend 는 0ms 타이머로 textarea 를 되읽어 확정 문자열을 만든다.
+    // 렌더러가 잠시 멈췄다 몰린 이벤트를 한꺼번에 처리하면(연타 중 순간 멈춤) 그 타이머는
+    // 큐에 쌓인 keydown/keyup 들 "뒤"로 밀리는데, 그 사이 xterm 이 textarea 를 비우는 키
+    // (Enter 등)나 새 조합이 끼면 되읽은 문자열이 비거나 어긋난다 → 확정 글자 유실·중복
+    // (2026-08-28 diag 실측: commit "제","가" 이벤트는 정상인데 dvz 커서가 전진하지 않음.
+    //  ConPTY+crossterm 은 하네스 실측으로 무죄 — 유실은 이 웹 레이어가 유일한 구간).
+    // 확정 문자열의 원본은 compositionend 의 e.data 다. 타이머·textarea 되읽기를 버리고
+    // e.data 를 그 자리에서 보내며, xterm 의 지연 전송·229 폴백 diff 전송은 무력화한다.
+    // 키 확정(스페이스/화살표가 조합을 끊는 경우)은 xterm 원본과 같은 동기 전송을 유지해
+    // "글자 → 키" 순서를 보존하고, 직후 compositionend 가 같은 문자열을 다시 보내지 않게
+    // 1회 소거한다. 한글·일어·중국어 IME 는 모두 composition 이벤트를 발화하므로 229 폴백
+    // 무력화의 영향이 없다. 헬퍼 내부 접근이 실패하면(향후 번들 교체) 원래 경로를 그대로 둔다.
+    let keydownCommitSent = null; // { data, at } — 키 확정이 방금 보낸 문자열(1회 소거용)
+    const imeCore = (agent === 'devezvibe' || agent === 'codex') && term._core;
+    const imeHelper = imeCore && imeCore._compositionHelper;
+    const deterministicImeCommit = !!(imeHelper && imeHelper._compositionView &&
+      imeHelper._coreService && typeof imeHelper._finalizeComposition === 'function');
+    if (deterministicImeCommit) {
+      imeHelper._finalizeComposition = function (waitForPropagation) {
+        this._compositionView.classList.remove('active');
+        this._isComposing = false;
+        this._isSendingComposition = false;
+        if (!waitForPropagation) {
+          // 키가 조합을 끊었다 — 이 키의 문자보다 먼저, 지금 이 자리에서 동기 전송해야
+          // 순서가 맞는다(원본 xterm 의 즉시 분기 자리). 원본은 textarea 범위를 되읽지만
+          // 그 범위의 end 는 compositionupdate 의 0ms 타이머가 갱신해 몰림 상황에서 낡는다.
+          // 조합뷰 textContent 는 compositionupdate 가 동기로 채우므로 그걸 원천으로 쓰고
+          // (U+200E 감쌈 제거), 비어 있으면 원본과 같은 범위 읽기로 폴백한다.
+          const viewText = (this._compositionView.textContent || '').split(String.fromCharCode(0x200E)).join('');
+          const data = viewText || this._textarea.value.substring(
+            this._compositionPosition.start, this._compositionPosition.end);
+          if (data.length > 0) {
+            keydownCommitSent = { data: data, at: Date.now() };
+            this._coreService.triggerDataEvent(data, true);
+            imeDiag('commit-send(keydown) "' + data + '"');
+          }
+        }
+        // 지연 분기는 전송하지 않는다 — compositionend 리스너가 e.data 로 보낸다.
+      };
+      imeHelper._handleAnyTextareaChanges = function () {};
+      ta.addEventListener('compositionend', function (e) {
+        const data = (e && e.data) || '';
+        if (!data) return; // 조합 취소/합성 리셋(resetImeNow) — 보낼 게 없다
+        if (keydownCommitSent && keydownCommitSent.data === data &&
+            Date.now() - keydownCommitSent.at < 200) {
+          keydownCommitSent = null; // 키 확정이 이미 보냈다 — 중복 전송 금지
+          imeDiag('commit-send dedup "' + data + '"');
+          return;
+        }
+        keydownCommitSent = null;
+        imeHelper._coreService.triggerDataEvent(data, true);
+      });
+    }
+
     ta.addEventListener('compositionend', function (e) {
       const composerCols = syncDevezVibeComposerLayout();
       // 이번 확정이 Backspace/Delete/Enter/Esc 로 강제된 것이면(Ctrl+Backspace 단어 삭제가
