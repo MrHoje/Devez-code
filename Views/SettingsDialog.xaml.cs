@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.15", "2026-09-03", true, new[]
+          ("v1.26.16", "2026-09-03", true, new[]
+          {
+              "한글 조합을 잠시 멈춰도 Devez Vibe의 빈 입력 힌트가 다시 나타나지 않도록 보완했습니다.",
+          }),
+          ("v1.26.15", "2026-09-03", false, new[]
           {
               "한글 조합을 시작하면 Devez Vibe의 빈 입력 힌트가 즉시 사라지도록 개선했습니다.",
               "Codex 경고의 실제 내용과 상세 안내가 정상 표시되도록 수정했습니다.",
