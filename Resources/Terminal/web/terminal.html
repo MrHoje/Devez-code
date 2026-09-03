@@ -1562,8 +1562,7 @@
       composerHintMaskEl.style.width = Math.ceil(remainingCols * cw) + 'px';
       composerHintMaskEl.style.height = Math.ceil(chh) + 'px';
       composerHintMaskEl.style.display = 'block';
-      if (composerHintMaskTimer) clearTimeout(composerHintMaskTimer);
-      composerHintMaskTimer = setTimeout(clearComposerHintMask, 800);
+      if (composerHintMaskTimer) { clearTimeout(composerHintMaskTimer); composerHintMaskTimer = 0; }
     }
 
     el._setDevezComposerHintCols = function (columns) {
@@ -2450,7 +2449,11 @@
       }
       isImeComposing = false;
       frozenImeCaret = null;
-      if (!e || !e.data) clearComposerHintMask();
+      if (!e || !e.data) {
+        clearComposerHintMask();
+      } else if (composerHintMaskEl && composerHintMaskEl.style.display !== 'none') {
+        composerHintMaskTimer = setTimeout(clearComposerHintMask, 800);
+      }
       // pin 해제 — 다음 조합 전까지는 xterm 이 textarea 를 논리 커서와 자유롭게 동기화하게
       // 둔다(여기 잔류하면 IME 후보창 기준점이 낡은 위치에 고정된다).
       el.classList.remove('ime-fixed');
