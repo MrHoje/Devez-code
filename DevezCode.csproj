@@ -20,7 +20,7 @@
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <!-- 단일 버전 소스: UpdateService.CurrentVersion 이 이 값을 읽는다. 릴리스 때 여기만 올린다.
          (csproj <Version> → 어셈블리 버전 → FileVersion → version.json 이 자동 일치) -->
-    <Version>1.26.21</Version>
+    <Version>1.26.22</Version>
     <!-- 아래 3개는 single-file publish 시에만 효력 — 일반 dotnet build 동작에는 영향 없음.
          네이티브 DLL(WebView2Loader)·Content(xterm.js 자산)·zstd.exe 를 단일 exe 에 포함 →
          자동 업데이트가 DevezCode.exe 하나만 교체해도 터미널/델타복원이 동작한다.
