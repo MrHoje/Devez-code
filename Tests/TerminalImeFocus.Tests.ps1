@@ -78,6 +78,7 @@ $shutdownSource = Get-SourceSlice $windowSource 'private async void OnWindowClos
 $titleDropSource = Get-SourceSlice $windowSource 'private void TitleBarFileOpen_PreviewDrop(' 'private void Splitter_PreviewDragOver(' 'Could not isolate title-bar file drop.'
 $taskSendSource = Get-SourceSlice $windowSource 'public bool SendTextToActiveSession(string text)' 'public bool TryRestartActiveClaudeSession()' 'Could not isolate task-queue send.'
 $crossDropSource = Get-SourceSlice $windowSource 'private bool OnTryCommitCrossTabDrop(' 'private WorkspacePaneView? PaneAtScreen(' 'Could not isolate cross-pane drop.'
+$hintDetectSource = Get-SourceSlice $terminalHtml 'function detectComposerHintCols(caret)' 'function updateComposerHintMask(preedit)' 'Could not isolate the composer hint fallback.'
 $hintMaskSource = Get-SourceSlice $terminalHtml 'function updateComposerHintMask(preedit)' 'el._setDevezComposerHintCols = function' 'Could not isolate the IME composer hint mask.'
 
 # TerminalHostView: sticky IME boundary, one timer per host, and one ordering epoch across hosts.
@@ -110,9 +111,13 @@ Assert-Match $terminalHtml "document\.addEventListener\('mousedown',[\s\S]{0,250
 Assert-Match $terminalHtml "document\.addEventListener\('keydown', function \(\) \{ post\(\{ type: 'inputIntent' \}\); \}, true\);" 'Terminal key input must supersede a pending navigation.'
 Assert-Match $terminalHtml "document\.addEventListener\('compositionstart', function \(\) \{ post\(\{ type: 'inputIntent' \}\); \}, true\);" 'IME composition start must supersede a pending navigation.'
 Assert-Match $terminalHtml 'ime-composer-hint-mask[\s\S]*?background: var\(--term-bg' 'The IME hint mask must cover stale composer guidance with the terminal background.'
+Assert-Match $terminalHtml '\.xterm \.composition-view[\s\S]*?z-index: 2' 'The active IME preedit must stay above the full composer hint mask.'
 Assert-Match $terminalHtml 'devezComposerHintCols: 0' 'Each terminal must start without stale Devez Vibe hint metadata.'
 Assert-Match $terminalHtml 'devez-composer-hint-v1;\(\\d\+\)\$[\s\S]*?_setDevezComposerHintCols\(columns\)' 'Devez Vibe hint metadata must reach the active terminal mask.'
-Assert-Match $terminalHtml 'function updateComposerHintMask\(preedit\)[\s\S]*?preeditCols[\s\S]*?remainingCols[\s\S]*?composerHintMaskEl\.style\.display = ''block''' 'The mask must begin after the live preedit and cover only the remaining hint cells.'
+Assert-Match $hintDetectSource 'Tab: Change dvz agent' 'The host must recover the idle composer hint when its metadata signal was missed.'
+Assert-Match $hintDetectSource 'Enter: steer' 'The host must recover the busy composer hint when its metadata signal was missed.'
+Assert-Match $hintDetectSource 'Alt\+Enter: queue' 'The recovered busy hint must cover its queue shortcut too.'
+Assert-Match $terminalHtml 'function updateComposerHintMask\(preedit\)[\s\S]*?signaledHintCols \|\| detectComposerHintCols[\s\S]*?style\.left = Math\.round\(frozenImeCaret\.col \* cw\)[\s\S]*?style\.width = Math\.ceil\(hintCols \* cw\)' 'The mask must cover the full hint from the composer caret.'
 Assert-NotMatch $hintMaskSource 'setTimeout\(clearComposerHintMask, 800\)' 'The hint mask must not expire while IME composition is still active.'
 Assert-Match $terminalHtml "ta\.addEventListener\('compositionend',[\s\S]*?composerHintMaskTimer = setTimeout\(clearComposerHintMask, 800\)" 'Only a completed IME composition may arm the hint-mask fallback timeout.'
 Assert-Match $terminalHtml 'function apply\(\)[\s\S]*?updateComposerHintMask\(' 'IME composition updates must refresh the empty-composer hint mask.'

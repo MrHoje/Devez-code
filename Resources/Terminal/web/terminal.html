@@ -54,6 +54,7 @@
     color: var(--term-fg, #CCCCCC);
     text-decoration: underline;
     text-underline-offset: 3px;
+    z-index: 2;
   }
 
   /* IME 조합 위치 고정: TUI 는 리페인트 중 하드웨어 커서를 입력 캐럿이 아닌 출력영역/
@@ -1536,18 +1537,26 @@
       if (composerHintMaskEl) composerHintMaskEl.style.display = 'none';
     }
 
+    function detectComposerHintCols(caret) {
+      if (agent !== 'devezvibe' || !caret) return 0;
+      const line = term.buffer.active.getLine(term.buffer.active.viewportY + caret.row);
+      if (!line) return 0;
+      const hints = [' Tab: Change dvz agent', ' Enter: steer · Alt+Enter: queue'];
+      const tail = line.translateToString(false, caret.col, Math.min(term.cols, caret.col + 48));
+      const hint = hints.find(function (candidate) { return tail.startsWith(candidate); });
+      return hint ? Array.from(hint).reduce(function (sum, ch) {
+        return sum + imeCellWidth(ch);
+      }, 0) : 0;
+    }
+
     function updateComposerHintMask(preedit) {
-      const hintCols = entry ? Number(entry.devezComposerHintCols || 0) : 0;
+      const signaledHintCols = entry ? Number(entry.devezComposerHintCols || 0) : 0;
+      const hintCols = signaledHintCols || detectComposerHintCols(frozenImeCaret);
       if (agent !== 'devezvibe' || !isImeComposing || !frozenImeCaret || hintCols <= 0) {
         clearComposerHintMask();
         return;
       }
-      const preeditCols = Array.from(preedit || '').reduce(function (sum, ch) {
-        return sum + imeCellWidth(ch);
-      }, 0);
-      if (preeditCols <= 0) return;
-      const remainingCols = Math.max(0, hintCols - preeditCols);
-      if (remainingCols <= 0) { clearComposerHintMask(); return; }
+      if (!preedit) return;
       const screen = el.querySelector('.xterm-screen');
       if (!screen) return;
       if (!composerHintMaskEl) {
@@ -1557,9 +1566,9 @@
       }
       const cw = screen.clientWidth / term.cols;
       const chh = screen.clientHeight / term.rows;
-      composerHintMaskEl.style.left = Math.round((frozenImeCaret.col + preeditCols) * cw) + 'px';
+      composerHintMaskEl.style.left = Math.round(frozenImeCaret.col * cw) + 'px';
       composerHintMaskEl.style.top = Math.round(frozenImeCaret.row * chh) + 'px';
-      composerHintMaskEl.style.width = Math.ceil(remainingCols * cw) + 'px';
+      composerHintMaskEl.style.width = Math.ceil(hintCols * cw) + 'px';
       composerHintMaskEl.style.height = Math.ceil(chh) + 'px';
       composerHintMaskEl.style.display = 'block';
       if (composerHintMaskTimer) { clearTimeout(composerHintMaskTimer); composerHintMaskTimer = 0; }
