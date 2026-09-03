@@ -1556,6 +1556,7 @@
     function schedulePreedit(text) {
       if (!inlinePreedit()) return;
       pendingPreedit = text || '';
+      entry._latestImePreedit = pendingPreedit;
       if (!pendingPreeditTimer) pendingPreeditTimer = setTimeout(flushPreedit, 0);
     }
 
@@ -2418,6 +2419,11 @@
         const data = (e && e.data) || '';
         if (!data) return; // 조합 취소/합성 리셋(resetImeNow) — 보낼 게 없다
         rememberCompositionInput(data);
+        if (takeHanjaCommitSkip(entry, data, Date.now())) {
+          keydownCommitSent = null;
+          imeDiag('commit-send skipped(hanja) "' + data + '"');
+          return;
+        }
         if (keydownCommitSent && keydownCommitSent.data === data &&
             Date.now() - keydownCommitSent.at < 200) {
           keydownCommitSent = null; // 키 확정이 이미 보냈다 — 중복 전송 금지
@@ -2625,6 +2631,31 @@
       : '\x1b\r';
   }
 
+  function isHanjaConversionKey(e) {
+    return e.key === 'HanjaMode' || e.code === 'Lang2' || e.keyCode === 25 ||
+      // 한국어 101키 Type 1은 한자 키로 쓰는 오른쪽 Ctrl을 Chromium/WebView2가
+      // HanjaMode가 아닌 Process+ControlRight+229로 보고한다. 일반 Ctrl과 조합
+      // 자모(Process+KeyA 등)는 건드리지 않도록 실측된 조합만 좁게 받는다.
+      (e.isComposing && e.key === 'Process' && e.code === 'ControlRight' && e.keyCode === 229);
+  }
+
+  function isImeModeKey(e) {
+    return isHanjaConversionKey(e) || e.key === 'HangulMode' ||
+      e.code === 'Lang1' || e.keyCode === 21;
+  }
+
+  function armHanjaCommitSkip(entry, e, now) {
+    const data = entry && entry._latestImePreedit;
+    if (!isHanjaConversionKey(e) || !data) return;
+    entry._hanjaCommitSkip = { data: data, at: now };
+  }
+
+  function takeHanjaCommitSkip(entry, data, now) {
+    const pending = entry && entry._hanjaCommitSkip;
+    if (entry) entry._hanjaCommitSkip = null;
+    return !!pending && pending.data === data && now - pending.at >= 0 && now - pending.at < 200;
+  }
+
   function handleKey(e, entry, roomId) {
     if (e.type !== 'keydown') return true;
     if (entry.external) { e.preventDefault(); return false; }
@@ -2632,9 +2663,8 @@
     // 자모를 확정 전송해(재정의된 확정 경로는 조합뷰 글자를 원천으로 쓴다) 변환 결과 앞에
     // ㅁ 같은 잔여 자모가 남는다. preventDefault 는 하지 않는다 — IME 가 이 키로 후보창을
     // 열어야 한다.
-    if (e.key === 'HanjaMode' || e.key === 'HangulMode' ||
-        e.code === 'Lang1' || e.code === 'Lang2' ||
-        e.keyCode === 21 || e.keyCode === 25) {
+    if (isImeModeKey(e)) {
+      armHanjaCommitSkip(entry, e, Date.now());
       return false;
     }
     // Ctrl+Enter / Shift+Enter: 줄바꿈 삽입(제출 X). 조합 중에도 동작해야 한다 — 단, isComposing 가드보다
