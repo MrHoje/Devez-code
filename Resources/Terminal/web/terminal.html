@@ -99,6 +99,13 @@
     white-space: pre; pointer-events: none;
   }
 
+  /* Devez Vibe의 빈 컴포저 힌트는 IME 조합 문자열이 확정되기 전까지 TUI가 지울 수 없다.
+     조합 글자 뒤에 남은 힌트 셀만 터미널 배경으로 가려 실제 입력처럼 즉시 사라지게 한다. */
+  .ime-composer-hint-mask {
+    position: absolute; z-index: 1; display: none;
+    background: var(--term-bg, #0C0C0C); pointer-events: none;
+  }
+
   /* ── 세션 로딩 스피너 (테마 변경 재시작·세션 진입 중) ──────────────
      WebView2 는 HwndHost 라 항상 WPF 위에 그려진다 → WPF 오버레이로는 터미널을
      덮을 수 없으므로 스피너를 웹 레이어 안에 둔다. 배경은 --term-bg 라 테마를 따라간다.
@@ -1421,6 +1428,8 @@
     let ghost = null;      // { row, col, text } — 아직 echo 확인 안 된 확정 문자열(연속 확정은 이어붙임)
     let ghostEl = null;    // .ime-echo-ghost div (lazy 생성, .xterm-screen 에 append)
     let ghostTimer = 0;    // 600ms 안전망 타이머 — echo 가 영영 안 오는 경우(제출로 입력란 비움 등) 정리
+    let composerHintMaskEl = null;
+    let composerHintMaskTimer = 0;
     // 마지막으로 Backspace/Delete/Enter/Esc 가 눌린 시각. 조합 중에 눌리면 IME 조합이 강제
     // 확정되는데(Ctrl+Backspace 단어 삭제 경로), 그 확정 글자는 곧바로 지워져 echo 가 영영
     // 오지 않는다 → 확정 시 고스트를 그리면 그 한 글자만 600ms 잔상으로 남는다. 확정이 이
@@ -1521,6 +1530,53 @@
         doRestoreHwCursor((reason || '?') + '-deferred');
       }, 350);
     }
+
+    function clearComposerHintMask() {
+      if (composerHintMaskTimer) { clearTimeout(composerHintMaskTimer); composerHintMaskTimer = 0; }
+      if (composerHintMaskEl) composerHintMaskEl.style.display = 'none';
+    }
+
+    function updateComposerHintMask(preedit) {
+      const hintCols = entry ? Number(entry.devezComposerHintCols || 0) : 0;
+      if (agent !== 'devezvibe' || !isImeComposing || !frozenImeCaret || hintCols <= 0) {
+        clearComposerHintMask();
+        return;
+      }
+      const preeditCols = Array.from(preedit || '').reduce(function (sum, ch) {
+        return sum + imeCellWidth(ch);
+      }, 0);
+      if (preeditCols <= 0) return;
+      const remainingCols = Math.max(0, hintCols - preeditCols);
+      if (remainingCols <= 0) { clearComposerHintMask(); return; }
+      const screen = el.querySelector('.xterm-screen');
+      if (!screen) return;
+      if (!composerHintMaskEl) {
+        composerHintMaskEl = document.createElement('div');
+        composerHintMaskEl.className = 'ime-composer-hint-mask';
+        screen.appendChild(composerHintMaskEl);
+      }
+      const cw = screen.clientWidth / term.cols;
+      const chh = screen.clientHeight / term.rows;
+      composerHintMaskEl.style.left = Math.round((frozenImeCaret.col + preeditCols) * cw) + 'px';
+      composerHintMaskEl.style.top = Math.round(frozenImeCaret.row * chh) + 'px';
+      composerHintMaskEl.style.width = Math.ceil(remainingCols * cw) + 'px';
+      composerHintMaskEl.style.height = Math.ceil(chh) + 'px';
+      composerHintMaskEl.style.display = 'block';
+      if (composerHintMaskTimer) clearTimeout(composerHintMaskTimer);
+      composerHintMaskTimer = setTimeout(clearComposerHintMask, 800);
+    }
+
+    el._setDevezComposerHintCols = function (columns) {
+      if (entry) entry.devezComposerHintCols = Math.max(0, Number(columns) || 0);
+      if (!entry || entry.devezComposerHintCols <= 0) {
+        clearComposerHintMask();
+        return;
+      }
+      if (isImeComposing) {
+        const view = el.querySelector('.composition-view');
+        updateComposerHintMask((view && view.textContent) || ta.value || '');
+      }
+    };
     // 라이브 테마 전환(message 'theme')이 term.options.theme 을 통째로 교체하면 저장해둔
     // 이전 테마의 커서색이 낡는다 — 그대로 복원하면 새 테마에 옛 테마 커서색이 박힌다.
     // 새 테마 객체는 커서를 이미 정상 표시하므로 복원할 것도 없음 → 저장분만 폐기.
@@ -1646,6 +1702,7 @@
       frozenImeCaret = null;
       chainCaret = null;
       clearGhost();
+      clearComposerHintMask();
       maybeRestoreHwCursor(true, reason || 'blur');
       pendingResponseReset = false;
       clearResponseResetTimer();
@@ -2010,6 +2067,8 @@
       el.style.setProperty('--ime-left', Math.round(caret.col * cw) + 'px');
       el.style.setProperty('--ime-top', Math.round(caret.row * chh) + 'px');
       el.classList.add('ime-fixed');
+      const view = el.querySelector('.composition-view');
+      updateComposerHintMask((view && view.textContent) || ta.value || '');
     }
 
     // ── 조합 이벤트 핸들러 ──
@@ -2391,6 +2450,7 @@
       }
       isImeComposing = false;
       frozenImeCaret = null;
+      if (!e || !e.data) clearComposerHintMask();
       // pin 해제 — 다음 조합 전까지는 xterm 이 textarea 를 논리 커서와 자유롭게 동기화하게
       // 둔다(여기 잔류하면 IME 후보창 기준점이 낡은 위치에 고정된다).
       el.classList.remove('ime-fixed');
@@ -2894,7 +2954,7 @@
 
     term.open(el);
 
-    const entry = { term, fit, el, webgl: null, engine6: !!use6, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map(), devezComposerSelectAll: false };
+    const entry = { term, fit, el, webgl: null, engine6: !!use6, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map(), devezComposerSelectAll: false, devezComposerHintCols: 0 };
     terms[roomId] = entry;
     // Claude 2.1.22x 는 시작 시 XTVERSION(CSI > 0 q) 응답 여부로 입력 증분 렌더와
     // 동기화 출력(?2026)을 결정한다. xterm 5/6 은 이 응답이 없어 Backspace 연타와 응답 출력이
@@ -2921,6 +2981,15 @@
           const cols = Number(layout[1]);
           el._devezVibeComposerCols = cols;
           if (typeof el._setDevezVibeComposerCols === 'function') el._setDevezVibeComposerCols(cols);
+          return true;
+        }
+        const composerHint = agent === 'devezvibe'
+          ? /^devez-composer-hint-v1;(\d+)$/.exec(data || '')
+          : null;
+        if (composerHint) {
+          const columns = Number(composerHint[1]);
+          entry.devezComposerHintCols = columns;
+          if (typeof el._setDevezComposerHintCols === 'function') el._setDevezComposerHintCols(columns);
           return true;
         }
         if (data === 'devez-copy-clear') {

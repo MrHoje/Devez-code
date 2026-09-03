@@ -26,6 +26,8 @@ CloseApplications=yes
 RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; 번들 추출 경로를 환경변수로 옮기므로 설치 후 환경 변경을 브로드캐스트한다.
+ChangesEnvironment=yes
 
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
@@ -44,10 +46,30 @@ Source: "LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "DevezCode-LICENSE.t
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
+[Registry]
+; single-file exe 는 실행할 때마다 번들 내용을 %TEMP%\.net\DevezCode\<랜덤> 으로 풀어 실행한다.
+; Defender 의 머신러닝 휴리스틱은 임시 폴더에서 추출·실행되는 미서명 바이너리를 Trojan 으로
+; 오탐하므로(Trojan:Win32/Bearfoos.A!ml), 추출 위치를 설치 폴더 아래 고정 경로로 옮긴다.
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "DOTNET_BUNDLE_EXTRACT_BASE_DIR"; ValueData: "{app}\bundle"; Flags: preservestringtype uninsdeletevalue
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\bundle"
+
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{#AppName} 실행"; Flags: nowait postinstall skipifsilent
 
 [Code]
+// [Run] 로 띄우는 첫 실행은 setup 프로세스의 환경을 물려받아 방금 쓴 레지스트리 값을 보지
+// 못한다. setup 자신의 환경에도 같은 값을 넣어야 첫 실행부터 새 추출 경로를 쓴다.
+function SetEnvironmentVariable(lpName, lpValue: String): Boolean;
+  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    SetEnvironmentVariable('DOTNET_BUNDLE_EXTRACT_BASE_DIR', ExpandConstant('{app}\bundle'));
+end;
+
 function IsDotNet9Installed: Boolean;
 var
   Path: String;
