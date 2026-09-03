@@ -112,6 +112,14 @@
      좌표·크기)으로만 남기고 보이지 않게 한다. display:none 은 조합을 끊으므로 opacity 로만 숨긴다. */
   .term-container.ime-inline-preedit .xterm .composition-view { opacity: 0; }
 
+  /* devez-preedit-v2: 조합 글자는 dvz가 일반 셀로 그리고, 호스트는 실제 버퍼에서 글자와
+     커서가 일치한 뒤에만 셀의 마지막 물리 픽셀에 밑줄을 얹는다. xterm의 ANSI 밑줄보다
+     아래라 한글 하단 모음 획을 가리지 않으며, v1·일반 링크·다른 에이전트에는 적용되지 않는다. */
+  .ime-inline-preedit-underline {
+    position: absolute; z-index: 3; display: none;
+    background: var(--term-fg, #CCCCCC); pointer-events: none;
+  }
+
   /* ── 세션 로딩 스피너 (테마 변경 재시작·세션 진입 중) ──────────────
      WebView2 는 HwndHost 라 항상 WPF 위에 그려진다 → WPF 오버레이로는 터미널을
      덮을 수 없으므로 스피너를 웹 레이어 안에 둔다. 배경은 --term-bg 라 테마를 따라간다.
@@ -1391,6 +1399,50 @@
     return w;
   }
 
+  // dvz가 조합 글자를 실제로 그린 프레임인지 확인하고 그 셀 범위를 돌려준다. 조합 이벤트
+  // 좌표만 믿으면 PTY 왕복 전에는 밑줄만 먼저 보이거나, 리페인트 중 다른 행에 붙을 수 있다.
+  function inlinePreeditCellRange(term, text, bottomReserved) {
+    if (!term || !text || !term.buffer || !term.buffer.active) return null;
+    const buf = term.buffer.active;
+    const row = Number(buf.cursorY);
+    const end = Number(buf.cursorX);
+    const width = imeCellWidth(text);
+    const start = end - width;
+    const lastContentRow = Number(term.rows) - Math.max(0, Number(bottomReserved) || 0);
+    if (!Number.isInteger(row) || !Number.isInteger(end) || width <= 0 ||
+        row < 0 || row >= lastContentRow || start < 0 || end > Number(term.cols)) return null;
+    const line = buf.getLine(Number(buf.viewportY || 0) + row);
+    if (!line) return null;
+    let column = start;
+    for (const ch of Array.from(text)) {
+      const cell = line.getCell(column);
+      if (!cell || cell.getChars() !== ch) return null;
+      column += imeCellWidth(ch);
+    }
+    return column === end ? { row: row, start: start, end: end } : null;
+  }
+
+  // CSS 좌표를 장치 픽셀 경계에 맞춘다. 두께는 항상 물리 1px이고 셀의 마지막 픽셀을
+  // 사용하므로 글꼴·배율이 달라도 글리프의 하단 획보다 아래에 안정적으로 놓인다.
+  function inlinePreeditUnderlineRect(range, screenWidth, screenHeight, cols, rows, devicePixelRatio) {
+    const dpr = Number(devicePixelRatio) > 0 ? Number(devicePixelRatio) : 1;
+    if (!range || screenWidth <= 0 || screenHeight <= 0 || cols <= 0 || rows <= 0) return null;
+    const cw = screenWidth / cols;
+    const chh = screenHeight / rows;
+    const snap = value => Math.round(value * dpr) / dpr;
+    const thickness = 1 / dpr;
+    const left = snap(range.start * cw);
+    const right = snap(range.end * cw);
+    const rowTop = snap(range.row * chh);
+    const rowBottom = snap((range.row + 1) * chh);
+    return {
+      left: left,
+      top: Math.max(rowTop, rowBottom - thickness),
+      width: Math.max(thickness, right - left),
+      height: thickness
+    };
+  }
+
   // 모바일 원격 키보드는 한글 확정을 composition* 없이 input(insertText)로만 보내기도 한다.
   // 그 경로만 좁게 식별해 일반 영문 keydown/keypress 중복 방지 계약은 건드리지 않는다.
   function containsHangulText(s) {
@@ -1537,14 +1589,18 @@
       }, 350);
     }
 
-    // [inline preedit] dvz 가 devez-preedit-v1 을 알린 세션은 조합 문자열을 U+E000 … U+E001
-    // 프레임으로 PTY 에 보내고, dvz 가 커서 자리에 밑줄 글자로 직접 그린다(뒤 글자도 함께 밀려
-    // 확정 후 모양과 같다). 확정 문자열은 compositionend 의 0ms 타이머로 나가므로, 조합 문자열도
+    // [inline preedit] dvz 가 devez-preedit-v1/v2 를 알린 세션은 조합 문자열을 U+E000 … U+E001
+    // 프레임으로 PTY 에 보내고, dvz 가 커서 자리에 글자를 직접 그린다(뒤 글자도 함께 밀려 확정 후
+    // 모양과 같다). v1은 dvz가 ANSI 밑줄까지 그리고, v2는 글자와 분리된 최하단 밑줄을 호스트가
+    // 그린다. 확정 문자열은 compositionend 의 0ms 타이머로 나가므로, 조합 문자열도
     // 같은 0ms 타이머로 미뤄 항상 확정 뒤에 도착하게 한다 — dvz 는 확정 글자가 오면 보여 주던
     // 조합 글자를 스스로 내리고, 뒤따르는 프레임으로 다음 음절을 받는다. 최신 값만 보낸다.
     let pendingPreedit = null;   // 아직 안 보낸 최신 조합 문자열(null = 보낼 것 없음)
     let pendingPreeditTimer = 0;
     function inlinePreedit() { return !!(entry && entry.devezInlinePreedit); }
+    function hostDecoratesInlinePreedit() {
+      return inlinePreedit() && Number(entry.devezInlinePreeditVersion || 0) >= 2;
+    }
     function flushPreedit() {
       pendingPreeditTimer = 0;
       const text = pendingPreedit;
@@ -1557,8 +1613,52 @@
       if (!inlinePreedit()) return;
       pendingPreedit = text || '';
       entry._latestImePreedit = pendingPreedit;
+      if (!pendingPreedit) clearInlinePreeditUnderline();
       if (!pendingPreeditTimer) pendingPreeditTimer = setTimeout(flushPreedit, 0);
     }
+
+    let inlinePreeditUnderlineEl = null;
+    let inlinePreeditUnderlineSuspended = false;
+    function clearInlinePreeditUnderline() {
+      if (inlinePreeditUnderlineEl) inlinePreeditUnderlineEl.style.display = 'none';
+    }
+    function updateInlinePreeditUnderline() {
+      if (!hostDecoratesInlinePreedit() || !isImeComposing || inlinePreeditUnderlineSuspended) {
+        clearInlinePreeditUnderline();
+        return;
+      }
+      const text = entry._latestImePreedit || '';
+      const range = inlinePreeditCellRange(term, text, bottomReserved);
+      const screen = el.querySelector('.xterm-screen');
+      const rect = screen && inlinePreeditUnderlineRect(
+        range, screen.clientWidth, screen.clientHeight, term.cols, term.rows,
+        window.devicePixelRatio || 1);
+      if (!rect) {
+        clearInlinePreeditUnderline();
+        return;
+      }
+      if (!inlinePreeditUnderlineEl) {
+        inlinePreeditUnderlineEl = document.createElement('div');
+        inlinePreeditUnderlineEl.className = 'ime-inline-preedit-underline';
+      }
+      if (inlinePreeditUnderlineEl.parentNode !== screen) screen.appendChild(inlinePreeditUnderlineEl);
+      inlinePreeditUnderlineEl.style.left = rect.left + 'px';
+      inlinePreeditUnderlineEl.style.top = rect.top + 'px';
+      inlinePreeditUnderlineEl.style.width = rect.width + 'px';
+      inlinePreeditUnderlineEl.style.height = rect.height + 'px';
+      inlinePreeditUnderlineEl.style.display = 'block';
+    }
+    el._setDevezInlinePreedit = function (enabled, version) {
+      entry.devezInlinePreedit = !!enabled;
+      entry.devezInlinePreeditVersion = enabled ? Math.max(1, Number(version) || 1) : 0;
+      if (!entry.devezInlinePreedit) {
+        pendingPreedit = null;
+        if (pendingPreeditTimer) { clearTimeout(pendingPreeditTimer); pendingPreeditTimer = 0; }
+        entry._latestImePreedit = '';
+      }
+      if (!hostDecoratesInlinePreedit()) clearInlinePreeditUnderline();
+      else if (isImeComposing) requestAnimationFrame(updateInlinePreeditUnderline);
+    };
 
     function clearComposerHintMask() {
       if (composerHintMaskTimer) { clearTimeout(composerHintMaskTimer); composerHintMaskTimer = 0; }
@@ -1736,11 +1836,15 @@
     // textarea 밖이면 ta.blur()가 blur 이벤트를 다시 내지 않으므로, resetImeNow도 직접 호출한다.
     // 두 경로가 연달아 호출돼도 멱등이어야 한다(실제 blur가 동기 발화한 뒤 강제 정리가 이어짐).
     function clearImeAfterBlur(reason) {
+      if (inlinePreedit()) schedulePreedit('');
+      else entry._latestImePreedit = '';
       isImeComposing = false;
+      inlinePreeditUnderlineSuspended = false;
       frozenImeCaret = null;
       chainCaret = null;
       clearGhost();
       clearComposerHintMask();
+      clearInlinePreeditUnderline();
       maybeRestoreHwCursor(true, reason || 'blur');
       pendingResponseReset = false;
       clearResponseResetTimer();
@@ -1975,9 +2079,11 @@
         term.onRender(function () {
           syncDevezVibeComposerLayout();
           checkGhostEchoed();
+          updateInlinePreeditUnderline();
         }); // 렌더 배치마다 패널 전환 감지 + 고스트 echo 확인
         term.onResize(function () {
           clearGhost(); // 그리드가 바뀌면 셀→픽셀 환산이 전부 무효 — 고스트는 즉시 정리
+          clearInlinePreeditUnderline();
           if (isImeComposing) apply(); // 조합 중이면 동결 좌표를 새 그리드 기준 픽셀로 재적용
         });
         // [스크롤 재고정] pin/ghost 좌표는 viewport 상대 행을 동결한 것 — 타이핑 중 위에서
@@ -1994,12 +2100,15 @@
           if (!isImeComposing && !ghost) return; // 평시 스크롤은 무관
           clearGhost();
           if (!isImeComposing) return;
+          inlinePreeditUnderlineSuspended = true;
+          clearInlinePreeditUnderline();
           if (scrollReanchorTimer) clearTimeout(scrollReanchorTimer);
           scrollReanchorTimer = setTimeout(function () {
             scrollReanchorTimer = 0;
             if (!isImeComposing) return; // 조합이 그새 끝났으면 apply 가드와 이중 방어
             imeDiag('scroll-reanchor');
             frozenImeCaret = null;       // 동결 해제 — findBlockCursor 가 현재 커서를 새로 읽는다
+            inlinePreeditUnderlineSuspended = false;
             apply();
           }, 80);
         });
@@ -2107,6 +2216,7 @@
       el.classList.add('ime-fixed');
       const view = el.querySelector('.composition-view');
       updateComposerHintMask((view && view.textContent) || ta.value || '');
+      updateInlinePreeditUnderline();
     }
 
     // ── 조합 이벤트 핸들러 ──
@@ -2184,6 +2294,7 @@
 
     function beginComposition() {
       isImeComposing = true;
+      inlinePreeditUnderlineSuspended = false;
       // 컴포저가 전체선택(Ctrl+A)된 상태에서 조합이 시작되면 — CLI 는 조합의 시작을
       // 볼 수 없다(확정 전까지 PTY 로 아무것도 안 간다). 그대로 두면 선택은 남고
       // 조합뷰만 오른쪽에 겹쳐 보이다가, 한참 뒤 확정 시점에야 지워진다. 선택 삭제를
@@ -2498,6 +2609,8 @@
       // 같은 타이머의 값을 덮어써 빈 프레임 대신 새 음절이 나간다.
       schedulePreedit('');
       isImeComposing = false;
+      inlinePreeditUnderlineSuspended = false;
+      clearInlinePreeditUnderline();
       frozenImeCaret = null;
       if (!e || !e.data) {
         clearComposerHintMask();
@@ -3043,7 +3156,7 @@
 
     term.open(el);
 
-    const entry = { term, fit, el, webgl: null, engine6: !!use6, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map(), devezComposerSelectAll: false, devezComposerHintCols: 0 };
+    const entry = { term, fit, el, webgl: null, engine6: !!use6, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map(), devezComposerSelectAll: false, devezComposerHintCols: 0, devezInlinePreedit: false, devezInlinePreeditVersion: 0, _latestImePreedit: '' };
     terms[roomId] = entry;
     // Claude 2.1.22x 는 시작 시 XTVERSION(CSI > 0 q) 응답 여부로 입력 증분 렌더와
     // 동기화 출력(?2026)을 결정한다. xterm 5/6 은 이 응답이 없어 Backspace 연타와 응답 출력이
@@ -3072,14 +3185,18 @@
           if (typeof el._setDevezVibeComposerCols === 'function') el._setDevezVibeComposerCols(cols);
           return true;
         }
-        // dvz 가 조합 문자열 프레임(U+E000…U+E001)을 이해한다는 알림. 받은 뒤부터 조합
-        // 미리보기는 dvz 가 그리고, 호스트는 조합뷰를 숨기고 문자열만 전달한다.
+        // dvz 가 조합 문자열 프레임(U+E000…U+E001)을 이해한다는 알림. v1은 dvz의 ANSI
+        // 밑줄을 유지하고, v2는 호스트가 글자 아래 마지막 물리 픽셀에 전용 밑줄을 그린다.
         const preedit = agent === 'devezvibe'
-          ? /^devez-preedit-v1;([01])$/.exec(data || '')
+          ? /^devez-preedit-v([12]);([01])$/.exec(data || '')
           : null;
         if (preedit) {
-          entry.devezInlinePreedit = preedit[1] === '1';
+          const version = Number(preedit[1]);
+          entry.devezInlinePreedit = preedit[2] === '1';
+          entry.devezInlinePreeditVersion = entry.devezInlinePreedit ? version : 0;
           el.classList.toggle('ime-inline-preedit', entry.devezInlinePreedit);
+          if (typeof el._setDevezInlinePreedit === 'function')
+            el._setDevezInlinePreedit(entry.devezInlinePreedit, version);
           return true;
         }
         const composerHint = agent === 'devezvibe'
@@ -3097,7 +3214,11 @@
           // 같은 방에서 다시 실행되면 프레임 문자가 입력으로 새지 않게 여기서 내린다.
           if (entry.devezInlinePreedit) {
             entry.devezInlinePreedit = false;
+            entry.devezInlinePreeditVersion = 0;
+            entry._latestImePreedit = '';
             el.classList.remove('ime-inline-preedit');
+            if (typeof el._setDevezInlinePreedit === 'function')
+              el._setDevezInlinePreedit(false, 0);
           }
           return true;
         }

@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.20", "2026-09-03", true, new[]
+          ("v1.26.21", "2026-09-03", true, new[]
+          {
+              "Devez Vibe에서 한글을 조합할 때 밑줄이 모음 획을 가리던 문제를 수정했습니다.",
+          }),
+          ("v1.26.20", "2026-09-03", false, new[]
           {
               "특수문자 입력 시 한글 자음이 지워지지 않는 문제를 수정했습니다.",
           }),
