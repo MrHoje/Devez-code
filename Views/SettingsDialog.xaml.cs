@@ -103,7 +103,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.14", "2026-08-29", true, new[]
+          ("v1.26.15", "2026-09-03", true, new[]
+          {
+              "한글 조합을 시작하면 Devez Vibe의 빈 입력 힌트가 즉시 사라지도록 개선했습니다.",
+              "Codex 경고의 실제 내용과 상세 안내가 정상 표시되도록 수정했습니다.",
+              "앱 실행 파일의 임시 추출 위치를 설치 폴더로 고정해 Windows 보안 프로그램의 오탐 가능성을 낮췄습니다.",
+          }),
+          ("v1.26.14", "2026-08-29", false, new[]
           {
               "모바일 원격 데스크톱에서 한글을 빠르게 입력하면 일부 글자가 누락되던 문제를 수정했습니다.",
           }),
