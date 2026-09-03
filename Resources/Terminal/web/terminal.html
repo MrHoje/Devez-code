@@ -1613,14 +1613,34 @@
       if (!inlinePreedit()) return;
       pendingPreedit = text || '';
       entry._latestImePreedit = pendingPreedit;
-      if (!pendingPreedit) clearInlinePreeditUnderline();
+      if (pendingPreedit) cancelInlinePreeditUnderlineClear();
+      else scheduleInlinePreeditUnderlineClear();
       if (!pendingPreeditTimer) pendingPreeditTimer = setTimeout(flushPreedit, 0);
     }
 
     let inlinePreeditUnderlineEl = null;
     let inlinePreeditUnderlineSuspended = false;
-    function clearInlinePreeditUnderline() {
+    let inlinePreeditUnderlineClearFrame = 0;
+    function cancelInlinePreeditUnderlineClear() {
+      if (!inlinePreeditUnderlineClearFrame) return;
+      cancelAnimationFrame(inlinePreeditUnderlineClearFrame);
+      inlinePreeditUnderlineClearFrame = 0;
+    }
+    function hideInlinePreeditUnderline() {
       if (inlinePreeditUnderlineEl) inlinePreeditUnderlineEl.style.display = 'none';
+    }
+    function clearInlinePreeditUnderline() {
+      cancelInlinePreeditUnderlineClear();
+      hideInlinePreeditUnderline();
+    }
+    function scheduleInlinePreeditUnderlineClear() {
+      cancelInlinePreeditUnderlineClear();
+      inlinePreeditUnderlineClearFrame = requestAnimationFrame(function () {
+        inlinePreeditUnderlineClearFrame = 0;
+        // 한글 연타는 한 keydown 안에서 end→start→update가 이어진다. 새 update가 이 예약을
+        // 취소하지 않은 실제 종료일 때만 숨겨 음절 경계마다 선이 꺼졌다 켜지지 않게 한다.
+        if (!isImeComposing || !entry._latestImePreedit) hideInlinePreeditUnderline();
+      });
     }
     function updateInlinePreeditUnderline() {
       if (!hostDecoratesInlinePreedit() || !isImeComposing || inlinePreeditUnderlineSuspended) {
@@ -1633,10 +1653,10 @@
       const rect = screen && inlinePreeditUnderlineRect(
         range, screen.clientWidth, screen.clientHeight, term.cols, term.rows,
         window.devicePixelRatio || 1);
-      if (!rect) {
-        clearInlinePreeditUnderline();
-        return;
-      }
+      // 최신 조합 프레임이 PTY를 왕복하는 동안 버퍼에는 직전 글자가 잠깐 남는다. 이 불일치는
+      // 오류가 아니라 전환 상태이므로 마지막으로 검증된 선을 유지하고, 새 위치가 검증되면 이동한다.
+      if (!rect) return;
+      cancelInlinePreeditUnderlineClear();
       if (!inlinePreeditUnderlineEl) {
         inlinePreeditUnderlineEl = document.createElement('div');
         inlinePreeditUnderlineEl.className = 'ime-inline-preedit-underline';
@@ -2610,7 +2630,6 @@
       schedulePreedit('');
       isImeComposing = false;
       inlinePreeditUnderlineSuspended = false;
-      clearInlinePreeditUnderline();
       frozenImeCaret = null;
       if (!e || !e.data) {
         clearComposerHintMask();

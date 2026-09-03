@@ -22,6 +22,12 @@ function loadHelpers() {
   return Object.fromEntries(names.map((name) => [name, vm.runInContext(name, context)]));
 }
 
+function nestedFunctionSource(name) {
+  const match = source.match(new RegExp(`    function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n    \\}`));
+  assert.ok(match, `${name} must exist inside the IME controller`);
+  return match[0];
+}
+
 function terminalWithLine({ text = '가', start = 6, cursorX = 8, cursorY = 4, rows = 10 } = {}) {
   const cells = new Map();
   let column = start;
@@ -80,4 +86,22 @@ test('the custom line is isolated from xterm ANSI underline rendering', () => {
   assert.match(source, /background:\s*var\(--term-fg/);
   assert.match(source, /pointer-events:\s*none/);
   assert.match(source, /updateInlinePreeditUnderline\(\)/);
+});
+
+test('transient frames and chained Hangul syllables keep the last validated underline', () => {
+  const schedule = nestedFunctionSource('schedulePreedit');
+  const update = nestedFunctionSource('updateInlinePreeditUnderline');
+  assert.match(schedule, /if \(pendingPreedit\) cancelInlinePreeditUnderlineClear\(\);/);
+  assert.match(schedule, /else scheduleInlinePreeditUnderlineClear\(\);/);
+  assert.match(nestedFunctionSource('scheduleInlinePreeditUnderlineClear'), /requestAnimationFrame/);
+  assert.match(update, /if \(!rect\) return;/);
+  assert.doesNotMatch(update, /if \(!rect\)\s*\{[\s\S]*?clearInlinePreeditUnderline/);
+
+  const composerCols = source.indexOf('const composerCols = syncDevezVibeComposerLayout();');
+  assert.notEqual(composerCols, -1);
+  const compositionEnd = source.lastIndexOf("ta.addEventListener('compositionend', function (e) {", composerCols);
+  assert.notEqual(compositionEnd, -1);
+  const clearFrame = source.indexOf("schedulePreedit('');", compositionEnd);
+  assert.notEqual(clearFrame, -1);
+  assert.doesNotMatch(source.slice(clearFrame, clearFrame + 220), /clearInlinePreeditUnderline\(\)/);
 });
