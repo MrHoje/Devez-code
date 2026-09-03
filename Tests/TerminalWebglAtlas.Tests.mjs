@@ -31,7 +31,8 @@ test('xterm6 uses the pinned compatible beta bundle set with the atlas fixes', (
     'the default agent globals must return to xterm5');
   for (const [name, expectedHash] of Object.entries(betaBundles)) {
     const bundle = fs.readFileSync(path.join(webDir, name));
-    assert.equal(crypto.createHash('sha256').update(bundle).digest('hex'), expectedHash, `${name} hash`);
+    const canonicalBundle = Buffer.from(bundle.toString('utf8').replaceAll('\r\n', '\n'));
+    assert.equal(crypto.createHash('sha256').update(canonicalBundle).digest('hex'), expectedHash, `${name} hash`);
     new vm.Script(bundle.toString('utf8'), { filename: name });
   }
   const webgl = fs.readFileSync(path.join(webDir, 'addon-webgl6.min.js'), 'utf8');
