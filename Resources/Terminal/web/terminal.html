@@ -996,6 +996,28 @@
     } catch (e) { /* 폴백: 픽셀 박스로 판정 */ }
     return entry.el.clientWidth >= 160 && entry.el.clientHeight >= 80;
   }
+  // Devez Vibe 는 오른쪽 두 칸을 비워 그리고 왼쪽은 첫 열부터 그린다. 창 폭이 셀 폭으로 나눠떨어지지
+  // 않아 남는 픽셀까지 전부 오른쪽에 쌓이므로, 왼쪽에 고정 패딩만 두면 오른쪽 여백이 늘 더 넓다.
+  // 남는 픽셀의 절반을 왼쪽 패딩에 실어(= 오른쪽에는 절반만 남게 해) 좌우 여백을 같은 폭으로 맞춘다.
+  const DEVEZVIBE_TRAILING_CELLS = 2;
+  function cellWidthPx(term) {
+    try {
+      const css = term._core && term._core._renderService
+        && term._core._renderService.dimensions && term._core._renderService.dimensions.css;
+      const width = css && css.cell && css.cell.width;
+      return typeof width === 'number' && width > 0 ? width : 0;
+    } catch (e) { return 0; }
+  }
+  function syncDevezVibeSidePadding(entry) {
+    if (!entry || entry.agent !== 'devezvibe' || entry.external) return;
+    const cell = cellWidthPx(entry.term);
+    const box = entry.el.clientWidth;
+    if (!(cell > 0) || box <= 0) return;
+    const padding = (box % cell) / 2 + DEVEZVIBE_TRAILING_CELLS * cell;
+    const next = padding.toFixed(2) + 'px';
+    if (entry.el.style.paddingLeft !== next) entry.el.style.paddingLeft = next;
+  }
+
   /// ConPTY 로 크기를 통보해도 되는 상태인지(그리드가 기본값 80x24 로 남아 있는 채 통보하면 살아있는
   /// 세션을 그 크기로 줄여버린다).
   function canPostSize(entry) {
@@ -3281,6 +3303,8 @@
           + ' grid=' + term.cols + 'x' + term.rows);
         return;
       }
+      // 패딩을 먼저 맞춰야 이어지는 fit 이 새 여백 기준으로 열 수를 잡는다.
+      syncDevezVibeSidePadding(entry);
       // 리사이즈 '직전'(=정상 프레임) 화면의 내부 공백을 기준선으로 잡아, 리사이즈 뒤 커진 공백
       // (claude/Ink 가 짧아진 프레임만 써서 남기는 alt 버퍼 빈 셀, §6.7)을 감시·치유한다.
       // claude alt 방이 아니면 altInteriorGap 이 즉시 -1 이라 비용도 무장도 없다.
