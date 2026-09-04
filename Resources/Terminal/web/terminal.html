@@ -1002,9 +1002,10 @@
   const DEVEZVIBE_TRAILING_CELLS = 2;
   function cellWidthPx(term) {
     try {
-      const css = term._core && term._core._renderService
-        && term._core._renderService.dimensions && term._core._renderService.dimensions.css;
-      const width = css && css.cell && css.cell.width;
+      // xterm 6.x 는 치수를 공개 속성으로 노출하고, 5.5 는 렌더 서비스 안에만 둔다.
+      const dims = (term.dimensions)
+        || (term._core && term._core._renderService && term._core._renderService.dimensions);
+      const width = dims && dims.css && dims.css.cell && dims.css.cell.width;
       return typeof width === 'number' && width > 0 ? width : 0;
     } catch (e) { return 0; }
   }
@@ -3178,9 +3179,13 @@
       altClickMovesCursor: false,
       allowProposedApi: true,
       scrollback: 5000,
+      // xterm 6.x 는 스크롤바를 그리지 않아도 fit 계산에서 그 폭(기본 14px)을 오른쪽에 예약한다.
+      // Devez Vibe 는 이 스크롤바를 CSS 로 숨기고 자체 오버레이를 쓰므로, 예약을 꺼야 오른쪽에
+      // 쓰이지 않는 빈 띠가 남지 않는다.
       // ConPTY 백엔드 명시 → Windows 줄바꿈/와이드(CJK) 문자 휴리스틱 적용
       windowsPty: { backend: 'conpty', buildNumber: cfg.windowsBuild || 0 },
     };
+    if (agent === 'devezvibe') termOptions.scrollbar = { showScrollbar: false };
     // Claude/Codex가 OSC 8 링크를 출력하면 xterm 기본 동작은 WebView 내부 confirm + window.open이다.
     // 기본 브라우저 실행은 호스트에 위임해 xterm 보안 확인창과 앱 내부 탐색을 막는다.
     termOptions.linkHandler = {
