@@ -5,11 +5,15 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $terminalSource = [System.IO.File]::ReadAllText((Join-Path $webRoot 'terminal.html'), $utf8)
 $sessionManagerSource = [System.IO.File]::ReadAllText(
     (Join-Path $PSScriptRoot '..\Services\Terminal\TerminalSessionManager.cs'), $utf8)
-if ($sessionManagerSource -notmatch 'TryBuildDevezVibeDirectLaunch[\s\S]*?const string widthProfile = "set \\"DEVEZCODE_TERM_WIDTH_PROFILE=xterm6-unicode6\\"\\r\\n";') {
+if ($sessionManagerSource -notmatch 'TryBuildDevezVibeDirectLaunch[\s\S]*?const string widthProfile = "set \\"DEVEZCODE_TERM_WIDTH_PROFILE=xterm6-unicode6-paw2\\"\\r\\n";') {
     throw 'The internal dvz launch command does not set the xterm width profile.'
 }
 if ($sessionManagerSource -match 'Environment\.SetEnvironmentVariable\("DEVEZCODE_TERM_WIDTH_PROFILE"') {
     throw 'The dvz xterm width profile must not use process-global environment mutation.'
+}
+if ($terminalSource -notmatch '<script src="devez-unicode-width\.js"></script>' -or
+    $terminalSource -notmatch 'DevezUnicodeWidth\.install\(term, agent\)') {
+    throw 'The Devez Vibe terminal must install its matching Unicode width provider.'
 }
 $scrollbarStartMarker = '/* BEGIN xterm6-scrollbar-hide */'
 $scrollbarEndMarker = '/* END xterm6-scrollbar-hide */'

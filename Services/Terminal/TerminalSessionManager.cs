@@ -911,7 +911,7 @@ public sealed class TerminalSessionManager
         // 실측: 같은 프레임이 949 에서 '?' 1083바이트, 65001 에서 45바이트.
         // 이 배치는 내부 ConPTY 전용이다. Process 전역 환경을 잠깐 바꾸면 같은 순간 열리는 외부
         // Windows Terminal이 프로필을 잘못 상속할 수 있으므로, dvz를 실행하는 이 cmd 안에서만 설정한다.
-        const string widthProfile = "set \"DEVEZCODE_TERM_WIDTH_PROFILE=xterm6-unicode6\"\r\n";
+        const string widthProfile = "set \"DEVEZCODE_TERM_WIDTH_PROFILE=xterm6-unicode6-paw2\"\r\n";
         string body = widthProfile + (string.IsNullOrEmpty(sessionId)
             ? $"chcp 65001 >nul\r\ncall {command} --theme {theme}\r\nexit"
             : $"chcp 65001 >nul\r\ncall {command} --theme {theme} -r {sessionId}\r\nexit");
