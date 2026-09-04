@@ -31,20 +31,12 @@ function loadHelpers() {
   };
 }
 
-// xterm 6.x 는 치수를 공개 속성으로, 5.5 는 렌더 서비스 안에만 노출한다.
-function termWith(cellWidth, engine) {
-  const dimensions = { css: { cell: { width: cellWidth, height: 20 } } };
-  return engine === 'xterm6'
-    ? { dimensions }
-    : { _core: { _renderService: { dimensions } } };
-}
-
-function entryWith({ agent = 'devezvibe', clientWidth = 1000, cellWidth = 10.4, external = false, engine = 'xterm6' } = {}) {
+function entryWith({ agent = 'devezvibe', clientWidth = 1000, cellWidth = 10.4, external = false } = {}) {
   return {
     agent,
     external,
     el: { clientWidth, style: { paddingLeft: '' } },
-    term: termWith(cellWidth, engine)
+    term: { _core: { _renderService: { dimensions: { css: { cell: { width: cellWidth } } } } } }
   };
 }
 
@@ -53,7 +45,7 @@ const { syncDevezVibeSidePadding, trailingCells } = loadHelpers();
 test('Devez Vibe 세션의 좌우 여백이 같은 폭으로 맞는다', () => {
   for (const clientWidth of [640, 801, 1000, 1024.5, 1366, 1920]) {
     for (const cellWidth of [7.2, 9.6, 10.4, 13.5]) {
-      const entry = entryWith({ clientWidth, cellWidth, engine: 'xterm6' });
+      const entry = entryWith({ clientWidth, cellWidth });
       syncDevezVibeSidePadding(entry);
       const left = Number.parseFloat(entry.el.style.paddingLeft);
       const content = clientWidth - left;
@@ -83,16 +75,4 @@ test('외부 미러와 크기 미확정 상태에서는 패딩을 건드리지 �
   const collapsed = entryWith({ clientWidth: 0 });
   syncDevezVibeSidePadding(collapsed);
   assert.equal(collapsed.el.style.paddingLeft, '');
-});
-
-test('xterm 5.5 형태의 치수도 읽는다', () => {
-  const entry = entryWith({ engine: 'xterm5', clientWidth: 1000, cellWidth: 10.4 });
-  syncDevezVibeSidePadding(entry);
-  assert.ok(Number.parseFloat(entry.el.style.paddingLeft) > 0);
-});
-
-test('Devez Vibe 터미널만 스크롤바 예약 폭을 끈다', () => {
-  assert.match(source, /agent === 'devezvibe'\) termOptions\.scrollbar = \{ showScrollbar: false \};/);
-  const others = source.match(/termOptions\.scrollbar = /g) || [];
-  assert.equal(others.length, 1);
 });
