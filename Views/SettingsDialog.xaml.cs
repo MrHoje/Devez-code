@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.23", "2026-09-04", true, new[]
+          ("v1.26.24", "2026-09-09", true, new[]
+          {
+              "Devez Vibe 업데이트 후에도 이전 버전이 실행되던 문제를 수정했습니다.",
+          }),
+          ("v1.26.23", "2026-09-04", false, new[]
           {
               "셀 배경에 단차가 생기던 문제를 수정했습니다.",
           }),
