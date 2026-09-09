@@ -12,9 +12,8 @@ namespace DevezCode.Services;
 
 /// <summary>세션 대화 로그(JSONL)에서 입/출력 토큰 사용량을 누적 집계한다.
 /// claude(~/.claude/projects/*/&lt;sid&gt;.jsonl 의 message.usage)와 codex/devezvibe(token_count 이벤트의
-/// total_token_usage)를 정확 지원 — 세 CLI 가 API 응답 usage 를 그대로 기록하므로 공급자 청구 토큰과 동일하다.
-/// 부하 최소화: claude 는 파일 끝에 붙은 새 줄만 증분 파싱(방별 offset·누적 캐시), codex/devezvibe 는 파일 끝
-/// 마지막 token_count 한 줄만 tail 로 읽는다. 상태는 %AppData%\DevezCode\usage.json 에 영속(재시작 시 이어읽기).</summary>
+/// total_token_usage)를 집계한다. 비용은 기록된 모델·사용량을 현재 API 단가로 환산한 추정치다.
+/// 파일이 변경될 때 재집계하고, 상태는 %AppData%\DevezCode\usage.json 에 영속한다.</summary>
 public static class SessionUsageService
 {
     /// <summary>방(세션) 하나의 누적 토큰. Codex 는 CacheRead=cached_input_tokens, CacheWrite5m=cache_write_input_tokens
@@ -26,6 +25,7 @@ public static class SessionUsageService
         /// <summary>비용($) 추정치. 파싱 시 모델별 단가로 계산해 담는다(세션 중 모델 변경 대응 — 모델별 버킷 합산).
         /// 단가 미상 모델뿐이면 null.</summary>
         public double? Cost { get; init; }
+        public bool CostIsPartial { get; init; }
         public long InputTotal => InputNew + CacheWrite5m + CacheWrite1h + CacheRead;
         public bool HasData => InputNew > 0 || CacheWrite5m > 0 || CacheWrite1h > 0 || CacheRead > 0 || Output > 0;
     }
@@ -35,6 +35,7 @@ public static class SessionUsageService
         public string? Sid;      // 이 방이 현재 가리키는 CLI 세션ID. 바뀌면(포크/재개) offset·누적을 리셋
         public long Offset;      // claude: 다음에 이어읽을 byte 위치. codex: 미사용
         public long LastLen;     // 마지막으로 읽었을 때 파일 크기(변화 감지용)
+        public long LastWriteTicks;
         public UsageTotals Totals;
     }
 
@@ -43,7 +44,7 @@ public static class SessionUsageService
     private static long _lastSaveTicks;
     private static bool _loaded;
 
-    // ── 단가표 (per 1M tokens). Claude 는 claude-api 스킬 기준 정확값. Codex(GPT)는 근사치 — "예상" 표기. ──
+    // ── 단가표 (per 1M tokens). 현재 API 정가로 환산하며 실제 구독 청구액과 다르다. ──
     // settings.json 의 UsagePricing(SettingsService.LoadUsagePricing) 이 있으면 그게 우선(덮어쓰기/신규 모델).
     // 갱신 절차 문서: .knowledge/토큰사용량-단가-갱신.md
     // 표준 캐시 배수(입력 단가 대비). 규칙에서 생략 시 이 값 사용. Anthropic/OpenAI 공통 현행값.
@@ -57,7 +58,9 @@ public static class SessionUsageService
         try
         {
             foreach (var r in SettingsService.LoadUsagePricing())
-                if (!string.IsNullOrEmpty(r.Match) && m.Contains(r.Match.ToLowerInvariant()))
+                if (!string.IsNullOrEmpty(r.Match) && m.Contains(r.Match.ToLowerInvariant())
+                    && ValidRate(r.InPerM) && ValidRate(r.OutPerM)
+                    && ValidRate(r.CacheWrite5m ?? DefW5m) && ValidRate(r.CacheWrite1h ?? DefW1h) && ValidRate(r.CacheRead ?? DefRead))
                     return new Price(r.InPerM, r.OutPerM,
                         r.CacheWrite5m ?? DefW5m, r.CacheWrite1h ?? DefW1h, r.CacheRead ?? DefRead);
         }
@@ -67,15 +70,19 @@ public static class SessionUsageService
         if (m.Contains("opus")) return new Price(5, 25, DefW5m, DefW1h, DefRead);
         if (m.Contains("sonnet")) return new Price(3, 15, DefW5m, DefW1h, DefRead); // Sonnet 5 정가(인트로 $2/$10 은 2026-08 까지 — 정가 기준 표시)
         if (m.Contains("haiku")) return new Price(1, 5, DefW5m, DefW1h, DefRead);
+        // OpenAI 공식 표준 단가, 2026-09-09 확인. 장문·서비스 등급은 요청별로 적용.
+        if (m.Contains("gpt-6-astra")) return new Price(10, 50, DefW5m, DefW1h, DefRead);
         // GPT-5.6 티어별(2026-07-30 인하 반영). cached read ×0.1, cache write ×1.25(5.6부터 write 과금).
         if (m.Contains("gpt-5.6-terra")) return new Price(2, 12, DefW5m, DefW1h, DefRead);
         if (m.Contains("gpt-5.6-luna")) return new Price(0.2, 1.2, DefW5m, DefW1h, DefRead);
-        if (m.Contains("gpt-5.6")) return new Price(5, 30, DefW5m, DefW1h, DefRead); // sol + 티어 미표기 폴백
+        if (m.Contains("gpt-5.6")) return new Price(4, 20, DefW5m, DefW1h, DefRead); // sol + 공식 별칭, 행사 가격(최소 2026-11-21까지)
         if (m.Contains("gpt-5.5")) return new Price(5, 30, DefW5m, DefW1h, DefRead);
         if (m.Contains("gpt-5.3-codex")) return new Price(1.75, 14, DefW5m, DefW1h, DefRead);
         if (m.Contains("gpt-5") || m.Contains("codex") || m.Contains("gpt5")) return new Price(1.25, 10, DefW5m, DefW1h, DefRead); // 구 GPT-5/gpt-5-codex
         return null;
     }
+
+    private static bool ValidRate(double value) => double.IsFinite(value) && value >= 0;
 
     /// <summary>파싱 시 계산해 둔 비용 추정치. (모델별 단가 합산은 ParseClaudeFull/ReadCodexLike 에서 수행)</summary>
     public static double? EstimateCost(in UsageTotals t) => t.Cost;
@@ -209,50 +216,177 @@ public static class SessionUsageService
         if (s.Contains("sonnet")) return "Sonnet";
         if (s.Contains("haiku")) return "Haiku";
         if (s.Contains("fable")) return "Fable";
+        if (s.Contains("gpt-6-astra")) return "6 Astra";
         if (s.Contains("gpt-5.6-sol")) return "5.6 Sol";
         if (s.Contains("gpt-5.6-terra")) return "5.6 Terra";
         if (s.Contains("gpt-5.6-luna")) return "5.6 Luna";
         return m;
     }
 
-    // ── codex/devezvibe: 파일 끝 마지막 token_count 이벤트 한 줄만 (누적값 내장) ──
+    // ── codex/devezvibe: 요청별 기록 우선, 구버전은 누적 token_count 차이로 복원 ──
     private static UsageTotals? ReadCodexLike(string roomId, string? sid, string agentLabel)
     {
         var path = TerminalSessionManager.FindCodexTranscriptPath(sid);
         if (path == null) return LastKnown(roomId); // 재시작 직후 등 경로 미해석 → 마지막 저장값
-
-        long len = new FileInfo(path).Length;
-        var tail = ReadTail(path, 128 * 1024);
-        string? last = null, model = null;
-        foreach (var line in tail.Split('\n'))
+        var entry = _cache.GetOrAdd(roomId, _ => new Entry());
+        lock (entry)
         {
-            if (line.Contains("\"token_count\"")) last = line;
-            if (model == null)
+            var file = new FileInfo(path);
+            long len = file.Length, ticks = file.LastWriteTimeUtc.Ticks;
+            if (entry.Sid == sid && entry.LastLen == len && entry.LastWriteTicks == ticks)
+                return entry.Totals.HasData ? entry.Totals : null;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(fs, Encoding.UTF8);
+            var totals = ParseCodexUsage(reader, agentLabel);
+            entry.Sid = sid;
+            entry.LastLen = len;
+            entry.LastWriteTicks = ticks;
+            entry.Offset = -1;
+            entry.Totals = totals;
+            return totals.HasData ? totals : null;
+        }
+    }
+
+    private readonly record struct CodexTokens(long Input, long Cached, long Write, long Output)
+    {
+        public bool HasData => Input > 0 || Output > 0;
+        public static CodexTokens operator -(CodexTokens a, CodexTokens b)
+            => new(a.Input - b.Input, a.Cached - b.Cached, a.Write - b.Write, a.Output - b.Output);
+        public bool IsValid => Input >= 0 && Output >= 0 && Cached >= 0 && Write >= 0
+            && Cached <= Input && Write <= Input - Cached && Output <= long.MaxValue - Input;
+    }
+
+    private static bool TryCodexTokens(JsonElement obj, string name, out CodexTokens tokens)
+    {
+        tokens = default;
+        if (!obj.TryGetProperty(name, out var u) || u.ValueKind != JsonValueKind.Object) return false;
+        bool Number(string key, bool required, out long value)
+        {
+            value = 0;
+            return u.TryGetProperty(key, out var v)
+                ? v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out value) && value >= 0
+                : !required;
+        }
+        if (!Number("input_tokens", true, out var input) || !Number("output_tokens", true, out var output)
+            || !Number("cached_input_tokens", false, out var cached) || !Number("cache_write_input_tokens", false, out var write)) return false;
+        tokens = new(input, cached, write, output);
+        return tokens.IsValid;
+    }
+
+    private static string? StringProperty(JsonElement obj, string name)
+        => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString() : null;
+
+    internal static UsageTotals ParseCodexUsage(TextReader reader, string agentLabel)
+    {
+        string? model = null, tier = null;
+        long input = 0, cached = 0, write = 0, output = 0;
+        double cost = 0;
+        bool priced = false, partial = false, modern = false, pendingRecord = false;
+        CodexTokens previous = default, modernSum = default, latestRequest = default;
+        var responses = new HashSet<string>(StringComparer.Ordinal);
+        var models = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(CodexTokens usage, bool requestKnown)
+        {
+            if (!usage.HasData) return;
+            // 손상된 로그의 정수 넘침이 표시와 추정 비용을 음수로 만들지 않게 한다.
+            long ni, nc, nw, no;
+            try { checked { ni = input + usage.Input; nc = cached + usage.Cached; nw = write + usage.Write; no = output + usage.Output; } }
+            catch (OverflowException) { partial = true; return; }
+            input = ni; cached = nc; write = nw; output = no;
+            models.Add(model ?? "?");
+            if (PriceFor(model) is not { } p) { partial = true; return; }
+            var m = model!.ToLowerInvariant();
+            bool longContext = requestKnown && usage.Input > 272_000
+                && (m.Contains("gpt-6-astra") || m.Contains("gpt-5.6"));
+            var serviceTier = tier?.ToLowerInvariant();
+            double speed = serviceTier switch { "priority" or "fast" => 2, "flex" or "batch" => 0.5, _ => 1 };
+            partial |= serviceTier is not (null or "" or "default" or "standard" or "priority" or "fast" or "flex" or "batch");
+            double inputCost = ((usage.Input - usage.Cached - usage.Write) + usage.Cached * p.ReadMult + usage.Write * p.W5mMult) * p.InPerM;
+            double requestCost = (inputCost * (longContext ? 2 : 1) + usage.Output * p.OutPerM * (longContext ? 1.5 : 1)) * speed / 1_000_000;
+            if (!double.IsFinite(cost + requestCost)) { partial = true; return; }
+            cost += requestCost;
+            priced = true;
+            partial |= !requestKnown;
+        }
+
+        void Record(JsonElement payload)
+        {
+            var id = StringProperty(payload, "response_id");
+            if (string.IsNullOrEmpty(id) || !TryCodexTokens(payload, "usage", out var usage)) { partial = true; return; }
+            modern = true;
+            if (!responses.Add(id)) return;
+            pendingRecord = true;
+            latestRequest = usage;
+            Add(usage, true);
+            try
             {
-                int mi = line.IndexOf("\"model\":\"", StringComparison.Ordinal);
-                if (mi >= 0)
+                checked { modernSum = new(modernSum.Input + usage.Input, modernSum.Cached + usage.Cached,
+                    modernSum.Write + usage.Write, modernSum.Output + usage.Output); }
+                if (payload.TryGetProperty("thread_token_usage", out _))
+                    partial |= !TryCodexTokens(payload, "thread_token_usage", out var cumulative) || cumulative != modernSum;
+            }
+            catch (OverflowException) { partial = true; }
+        }
+
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                using var document = JsonDocument.Parse(line);
+                var root = document.RootElement;
+                if (!root.TryGetProperty("payload", out var payload) || payload.ValueKind != JsonValueKind.Object) continue;
+                switch (StringProperty(root, "type"))
                 {
-                    int s = mi + 9, e = line.IndexOf('"', s);
-                    if (e > s) model = line.Substring(s, e - s);
+                    case "turn_context":
+                        model = StringProperty(payload, "model") ?? model;
+                        if (payload.TryGetProperty("service_tier", out _)) tier = StringProperty(payload, "service_tier");
+                        break;
+                    case "token_usage_record":
+                        Record(payload);
+                        break;
+                    case "compacted":
+                        if (payload.TryGetProperty("latest_token_usage_record", out var latest) && latest.ValueKind == JsonValueKind.Object) Record(latest);
+                        break;
+                    case "event_msg":
+                        if (StringProperty(payload, "type") == "thread_settings_applied"
+                            && payload.TryGetProperty("thread_settings", out var settings) && settings.ValueKind == JsonValueKind.Object)
+                        {
+                            model = StringProperty(settings, "model") ?? model;
+                            tier = StringProperty(settings, "service_tier");
+                        }
+                        else if (StringProperty(payload, "type") == "token_count"
+                            && payload.TryGetProperty("info", out var info) && info.ValueKind == JsonValueKind.Object
+                            && TryCodexTokens(info, "total_token_usage", out var total))
+                        {
+                            var delta = total - previous;
+                            bool hasLast = TryCodexTokens(info, "last_token_usage", out var last);
+                            if (total != previous && !modern)
+                            {
+                                if (!delta.IsValid) delta = total; // 재개·요약 등으로 누적이 초기화된 구간
+                                Add(delta, hasLast && delta == last);
+                            }
+                            else if (modern)
+                            {
+                                // 새 요청 기록이 빠졌는데 구 누적만 증가했다면 완전한 집계로 표시하지 않는다.
+                                if (total != previous && (!pendingRecord || (hasLast && last.HasData && last != latestRequest)))
+                                    partial = true;
+                                pendingRecord = false;
+                            }
+                            previous = total;
+                        }
+                        break;
                 }
             }
+            catch (JsonException) { partial = true; /* 작성 중인 마지막 줄은 다음 변경 때 다시 읽는다. */ }
+            catch (InvalidOperationException) { partial = true; /* 손상된 줄로 사용량을 놓쳤을 수 있다. */ }
         }
-        if (last == null) return LastKnown(roomId); // tail 128KB 안에 token_count 없음(마지막 응답 큼) → 직전 집계값 유지(순간 미표시 방지)
-        try
-        {
-            using var d = JsonDocument.Parse(last);
-            var info = d.RootElement.GetProperty("payload").GetProperty("info").GetProperty("total_token_usage");
-            long input = GetLong(info, "input_tokens");
-            long cached = GetLong(info, "cached_input_tokens");
-            long cw = GetLong(info, "cache_write_input_tokens"); // GPT-5.6부터 write 과금(×1.25) — CacheWrite5m 버킷으로 계산
-            long output = GetLong(info, "output_tokens");
-            long inNew = Math.Max(0, input - cached - cw); // input_tokens 는 cached/write 포함 총계
-            var t = new UsageTotals(inNew, cw, 0, cached, output, model ?? "gpt-5-codex", agentLabel)
-            { Cost = CostOf(model ?? "gpt-5-codex", inNew, cw, 0, cached, output) };
-            _cache[roomId] = new Entry { Sid = sid, LastLen = len, Totals = t, Offset = -1 };
-            return t.HasData ? t : null;
-        }
-        catch { return null; }
+        string? label = models.Count switch { 0 => null, 1 => models.First(), _ => "여러 모델(" + string.Join(", ", models.Select(ShortModel)) + ")" };
+        return new UsageTotals(input - cached - write, write, 0, cached, output, label, agentLabel)
+            { Cost = priced ? cost : null, CostIsPartial = partial };
     }
 
     // ── 표시 문자열 ──
@@ -262,13 +396,16 @@ public static class SessionUsageService
     {
         var sb = new StringBuilder();
         sb.Append('↓').Append(Compact(t.InputTotal)).Append("  ↑").Append(Compact(t.Output));
-        if (EstimateCost(t) is { } c) sb.Append("  (").Append(FormatCost(c)).Append(')');
+        if (EstimateCost(t) is { } c) sb.Append(t.CostIsPartial ? "  (~" : "  (").Append(FormatCost(c)).Append(')');
         return sb.ToString();
     }
 
     /// <summary>툴팁: 전체 분해 + 예상 비용.</summary>
     public static string FormatTooltip(in UsageTotals t)
-        => "※ 실제 청구액이 아니라 토큰 사용량으로 계산한 추정치입니다.";
+        => "※ 실제 청구액이 아니라 토큰 사용량으로 계산한 추정치입니다."
+            + (t.CostIsPartial ? "\n일부 사용량의 단가 또는 요청 정보가 불완전해 비용이 실제와 차이가 날 수 있습니다." : "")
+            + (!t.AgentLabel.Contains("Claude", StringComparison.OrdinalIgnoreCase)
+                ? "\n처리 등급이 기록되지 않은 요청은 표준 요율로 계산하며, 도구 사용료는 포함하지 않습니다." : "");
 
     private static string Compact(long n)
     {
@@ -304,6 +441,7 @@ public static class SessionUsageService
         public string? Model { get; set; }
         public string? AgentLabel { get; set; }
         public double? Cost { get; set; }
+        public bool CostIsPartial { get; set; }
     }
 
     private static void EnsureLoaded()
@@ -325,7 +463,7 @@ public static class SessionUsageService
                         Offset = v.Offset,
                         LastLen = v.LastLen,
                         Totals = new UsageTotals(v.InputNew, v.CacheWrite5m, v.CacheWrite1h, v.CacheRead, v.Output,
-                            v.Model, v.AgentLabel ?? "Claude") { Cost = v.Cost },
+                            v.Model, v.AgentLabel ?? "Claude") { Cost = v.Cost, CostIsPartial = v.CostIsPartial },
                     };
             }
             catch { /* 손상 시 무시 — 재스캔 */ }
@@ -357,6 +495,7 @@ public static class SessionUsageService
                         InputNew = t.InputNew, CacheWrite5m = t.CacheWrite5m, CacheWrite1h = t.CacheWrite1h,
                         CacheRead = t.CacheRead, Output = t.Output, Model = t.Model, AgentLabel = t.AgentLabel,
                         Cost = t.Cost,
+                        CostIsPartial = t.CostIsPartial,
                     };
                 }
                 var path = FilePath;
@@ -372,14 +511,4 @@ public static class SessionUsageService
     private static long GetLong(JsonElement obj, string name)
         => obj.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var l) ? l : 0;
 
-    private static string ReadTail(string path, int maxBytes)
-    {
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        long len = fs.Length;
-        long start = Math.Max(0, len - maxBytes);
-        fs.Seek(start, SeekOrigin.Begin);
-        var buf = new byte[len - start];
-        int read = fs.Read(buf, 0, buf.Length);
-        return Encoding.UTF8.GetString(buf, 0, read);
-    }
 }

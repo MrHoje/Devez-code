@@ -103,7 +103,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.26.24", "2026-09-09", true, new[]
+          ("v1.26.25", "2026-09-09", true, new[]
+          {
+              "GPT-6-Astra의 예상 비용 표시를 추가하고 GPT-5.6 Sol의 최신 단가를 반영했습니다.",
+              "모델 변경, 장문 입력, 처리 등급과 요약 작업을 반영하도록 토큰 비용 집계를 개선했습니다.",
+              "사용 기록이나 과금 정보가 불완전한 경우 예상 비용의 불확실성을 표시하도록 개선했습니다.",
+          }),
+          ("v1.26.24", "2026-09-09", false, new[]
           {
               "Devez Vibe 업데이트 후에도 이전 버전이 실행되던 문제를 수정했습니다.",
           }),
