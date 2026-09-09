@@ -253,6 +253,7 @@
 <script src="addon-fit6.min.js"></script>
 <script src="addon-webgl6.min.js"></script>
 <script src="devez-unicode-width.js"></script>
+<script src="devez-question-corners.js"></script>
 <script>
   window.__xterm6Versions = { core: '6.1.0-beta.302', fit: '0.12.0-beta.299', webgl: '0.20.0-beta.298' };
   window.Terminal6 = window.Terminal; window.FitAddon6 = window.FitAddon;
@@ -3311,6 +3312,7 @@
         scheduleSharedWebglRefresh(entry.engine6, roomId, 'attach');
       } catch (e) { /* WebGL 미지원 환경 → DOM 렌더러 유지 */ }
     }
+    if (window.DevezQuestionCorners) window.DevezQuestionCorners.install(term, agent);
     // 렌더러 결정 결과를 남긴다(DevTools 비활성이라 diag.log 가 유일한 관측 창구).
     dlog('renderer room=' + roomId + ' agent=' + agent + ' engine=' + (use6 ? 'xterm6' : 'xterm5')
        + ' renderer=' + (entry.webgl ? 'WebGL' : 'DOM') + ' dpr=' + window.devicePixelRatio
