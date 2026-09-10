@@ -73,22 +73,11 @@ public sealed class TerminalSessionManager
     /// 재부착을 막는다 — 죽어가는 세션에 붙으면 종료 트랜스크립트가 재생되고 "[세션 종료됨]" 죽은 방으로
     /// 굳어 자동 resume 이 안 된다(다른 패널에서의 재오픈·프리로드 경로).</summary>
     private readonly HashSet<string> _gracefulStopping = new();
-    private readonly HashSet<string> _accountSwitchRooms = new();
 
     /// <summary>이 방이 graceful 종료 진행 중인지 — WireSession/ActivateSession 재부착 가드용.</summary>
     public bool IsGracefulStopping(string roomId)
     {
-        lock (_lock) return _gracefulStopping.Contains(roomId) || _accountSwitchRooms.Contains(roomId);
-    }
-
-    public void SuspendStartsForAccountChange(IEnumerable<string> roomIds)
-    {
-        lock (_lock) _accountSwitchRooms.UnionWith(roomIds);
-    }
-
-    public void ResumeStartsAfterAccountChange(IEnumerable<string> roomIds)
-    {
-        lock (_lock) _accountSwitchRooms.ExceptWith(roomIds);
+        lock (_lock) return _gracefulStopping.Contains(roomId);
     }
 
     /// <summary>살아있는(프로세스 실행 중) 세션이 하나라도 있는지. 에이전트 인플레이스 업데이트 전에
@@ -175,7 +164,6 @@ public sealed class TerminalSessionManager
         using var _diagCreate = DiagLog.Time($"GetOrCreate.create room={roomId}");
         lock (_lock)
         {
-            if (_accountSwitchRooms.Contains(roomId)) throw new InvalidOperationException("계정 변경 중입니다.");
             if (_sessions.TryGetValue(roomId, out var existing))
             {
                 if (existing.IsAlive) { _pendingInitial[roomId] = null; return existing; } // 프리페치 사이 다른 호출이 생성 — 재주입 금지
@@ -1170,26 +1158,6 @@ public sealed class TerminalSessionManager
     private static string DevezVibeRouteStorePath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezVibe", "session-routes.json");
-
-    /// <summary>표시 ID의 접두사가 아니라 마지막으로 저장된 활성 공급자를 확인한다.</summary>
-    public static string? ResolveDevezVibeProvider(string? sessionId)
-    {
-        if (string.IsNullOrWhiteSpace(sessionId)) return null;
-        try
-        {
-            var path = DevezVibeRouteStorePath();
-            if (!File.Exists(path)) return null;
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var doc = System.Text.Json.JsonDocument.Parse(stream);
-            if (!doc.RootElement.TryGetProperty(sessionId, out var route)
-                && !TryFindDevezVibeRouteByBackingId(doc.RootElement, sessionId, out route)) return null;
-            return route.TryGetProperty("active", out var active) ? active.GetString() switch
-            {
-                "Claude" => "claude", "Codex" => "codex", "OpenCode" => "opencode", _ => null
-            } : null;
-        }
-        catch { return null; }
-    }
 
     /// <summary>dvz 추적 ID 를 실제 대화가 있는 세션 ID 로 바로잡는다. 라우트에 적힌 활성 백엔드
     /// 세션을 먼저 고르고, 라우트가 없을 때만 추적 ID 자체를 쓴다.

@@ -66,32 +66,11 @@ namespace DevezCode
         public void RefreshNow() => MainWindow.Record("refresh");
         public Task ResetForAccountChangeAsync() => Task.CompletedTask;
     }
-    public static class SettingsService
+    public class TerminalSessionManager
     {
-        public static bool LoadClaudeGuiMode() => true;
-        public static string LoadAgentForRoom(string id) => id.StartsWith("sdk") ? "claude" : "codex";
-        public static Dictionary<string, string?> SavedVibeIds = [];
-        public static string? LoadDevezVibeRoomSession(string id) => SavedVibeIds.TryGetValue(id, out var value) ? value : id;
-    }
-    public static class DevezVibeStateService
-    {
-        public static Dictionary<string, string?> TrackedIds = [];
-        public static Dictionary<string, string> LastMessages = [];
-        public static HashSet<string> BusyRooms = [];
-        public static string? LoadTrackedSessionId(string room) => TrackedIds.GetValueOrDefault(room);
-        public static string? LoadLastMessage(string room) => LastMessages.GetValueOrDefault(room);
-        public static bool IsBusyRunning(string room) => BusyRooms.Contains(room);
-        public static string StripBackendPrefix(string sid) => sid.StartsWith("claude:") ? sid[7..] : sid;
-    }
-    public partial class TerminalSessionManager
-    {
-        public static string TestRoutePath = "";
-        private static string DevezVibeRouteStorePath() => TestRoutePath;
         public static TerminalSessionManager Instance = new();
         public HashSet<string> Alive = [];
         public bool FailStop;
-        public void SuspendStartsForAccountChange(IEnumerable<string> ids) => MainWindow.Record("suspend-terminal");
-        public void ResumeStartsAfterAccountChange(IEnumerable<string> ids) => MainWindow.Record("unlock-terminal");
         public SessionItem? Get(string id) => Alive.Contains(id) ? new() { IsAlive = true } : null;
         public Task GracefulDisposeRoomsAsync(IEnumerable<string> ids)
         {
@@ -105,8 +84,6 @@ namespace DevezCode
     {
         public static ClaudeSdkSessionManager Instance = new();
         public HashSet<string> Alive = [];
-        public Task SuspendStartsForAccountChangeAsync(IEnumerable<string> ids) { MainWindow.Record("suspend-sdk"); return Task.CompletedTask; }
-        public void ResumeStartsAfterAccountChange(IEnumerable<string> ids) => MainWindow.Record("unlock-sdk");
         public bool IsStarted(string id) => Alive.Contains(id);
         public Task StopAsync(string id) { MainWindow.Record("stop-sdk:" + id); Alive.Remove(id); return Task.CompletedTask; }
         public Task EnsureStartedAsync(SessionItem session, string path)

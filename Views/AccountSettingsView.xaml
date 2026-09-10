@@ -27,7 +27,7 @@
         <TextBlock Text="설정·스킬·대화 기록은 함께 사용하고, Claude와 Codex의 로그인 계정만 변경합니다."
                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap"/>
         <Border Background="{DynamicResource PanelSoftBrush}" CornerRadius="8" Padding="14" Margin="0,16,0,20">
-            <TextBlock Text="계정을 변경하면 해당 공급자의 세션을 모두 재실행합니다.&#10;작성 중인 입력과 응답은 중단될 수 있습니다. 해당 공급자의 외부 터미널 세션도 먼저 닫아주세요."
+            <TextBlock Text="계정 인증 정보만 변경하며 DevezCode와 외부 터미널의 세션은 종료하지 않습니다.&#10;실행 중인 CLI의 인증·프롬프트 캐시 갱신 시점은 CLI 동작에 따릅니다."
                        TextWrapping="Wrap" FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
         </Border>
             <TextBlock x:Name="StatusText" TextWrapping="Wrap" Margin="0,0,0,12"

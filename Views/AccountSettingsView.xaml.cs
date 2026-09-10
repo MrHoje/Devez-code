@@ -75,12 +75,12 @@ public partial class AccountSettingsView : UserControl
         if (_loading || IsBusy || sender is not ComboBox { DataContext: ProviderRow provider, SelectedItem: AccountRow account }
             || account.Id.Length == 0 || account.Id == provider.ActiveId) return;
         if (Application.Current.MainWindow is not MainWindow main) return;
-        SetBusy(true, "계정을 변경하는 중입니다. 세션의 대화 기록을 저장한 뒤 다시 엽니다.", provider.Id);
+        SetBusy(true, "계정 인증 정보를 변경하는 중입니다.", provider.Id);
         string message;
         try
         {
             await main.SwitchCliAccountAsync(provider.Id, account.Id);
-            message = $"{account.Name} 계정으로 변경했습니다. 해당 공급자의 세션을 다시 시작했습니다.";
+            message = $"{account.Name} 인증 정보를 적용했습니다. 실행 중인 세션은 유지됩니다.";
         }
         catch (Exception ex) { message = AccountError(ex); }
         SetBusy(false);

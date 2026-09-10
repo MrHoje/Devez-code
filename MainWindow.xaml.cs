@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -6789,60 +6789,19 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>인증을 바꾸기 전에 기존 프로세스의 갱신·대화 쓰기를 끝내고, 같은 방 ID로 다시 시작한다.</summary>
+    /// <summary>세션 수명에는 손대지 않고 공통 인증과 사용량 표시만 변경한다.</summary>
     public async Task SwitchCliAccountAsync(string provider, string accountId)
     {
         if (_accountSwitchRunning) throw new InvalidOperationException("다른 계정으로 변경 중입니다.");
         var store = CliAccountStore.Instance;
         store.ValidateActivation(provider, accountId);
-        var all = new List<SessionItem>();
-        foreach (var session in _projects.SelectMany(p => p.Tabs).OfType<SessionItem>())
-        {
-            var agent = string.IsNullOrWhiteSpace(session.AgentId) ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId;
-            string? sessionProvider = agent;
-            if (agent == "devezvibe")
-            {
-                var trackedId = DevezVibeStateService.LoadTrackedSessionId(session.Id);
-                var savedId = SettingsService.LoadDevezVibeRoomSession(session.Id);
-                sessionProvider = TerminalSessionManager.ResolveDevezVibeProvider(trackedId)
-                    ?? TerminalSessionManager.ResolveDevezVibeProvider(savedId);
-                // 첫 메시지 전에는 대화 ID와 라우트가 없다. 이런 새 내부 세션은 인증을 새로 읽도록
-                // 재시작하되, 프롬프트나 작업 흔적이 있는 세션을 새 세션으로 간주하지 않는다.
-                if (sessionProvider == null && !session.IsExternal && !session.IsBusy
-                    && string.IsNullOrWhiteSpace(trackedId) && string.IsNullOrWhiteSpace(savedId)
-                    && !DevezVibeStateService.IsBusyRunning(session.Id)
-                    && string.IsNullOrWhiteSpace(DevezVibeStateService.LoadLastMessage(session.Id)))
-                {
-                    all.Add(session);
-                    continue;
-                }
-                if (sessionProvider == null && (session.IsExternal || TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }))
-                    throw new InvalidOperationException($"'{session.Name}'의 Devez Vibe 공급자를 확인하지 못했습니다. 해당 세션을 다시 열거나 닫은 뒤 계정을 변경하세요.");
-            }
-            if (string.Equals(sessionProvider, provider, StringComparison.OrdinalIgnoreCase)) all.Add(session);
-        }
-        if (all.Any(s => s.IsExternal))
-            throw new InvalidOperationException("변경할 공급자를 사용하는 외부 터미널 세션을 먼저 닫아 주세요.");
-
         _accountSwitchRunning = true;
-        await _sessionReloadGate.WaitAsync();
-        var running = new List<SessionItem>();
-        var errors = new List<string>();
-        bool stopped = false;
-        bool allowRestart = true;
+        bool gateHeld = false;
         try
         {
-            TerminalSessionManager.Instance.SuspendStartsForAccountChange(all.Select(s => s.Id));
-            foreach (var pane in _panes)
-                pane.BeginSessionReload(all, "계정 변경 중\n대화를 저장하고 세션을 다시 여는 중입니다.");
-            await ClaudeSdkSessionManager.Instance.SuspendStartsForAccountChangeAsync(all.Select(s => s.Id));
-            running = all.Where(s => TerminalSessionManager.Instance.Get(s.Id) is { IsAlive: true }
-                || ClaudeSdkSessionManager.Instance.IsStarted(s.Id)).ToList();
-            stopped = true; // 일부 종료만 성공해도 finally에서 살아 있는 방과 종료된 방을 구분해 복구한다.
-            await Task.WhenAll(
-                TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(running.Select(s => s.Id)),
-                Task.WhenAll(running.Where(s => ClaudeSdkSessionManager.Instance.IsStarted(s.Id))
-                    .Select(s => ClaudeSdkSessionManager.Instance.StopAsync(s.Id))));
+            await _sessionReloadGate.WaitAsync();
+            gateHeld = true;
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
             store.Activate(provider, accountId);
             if (provider == "codex")
             {
@@ -6866,75 +6825,12 @@ public partial class MainWindow : Window
             UpdateFooterDivider();
             RefreshUsagePanelIfVisible();
         }
-        catch (AccountRestoreException)
-        {
-            allowRestart = false;
-            throw;
-        }
         finally
         {
-            try
-            {
-                var remaining = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().Select(s => s.Id).ToHashSet();
-                foreach (var session in running.Where(s => remaining.Contains(s.Id)))
-                {
-                    if (TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }
-                        || ClaudeSdkSessionManager.Instance.IsStarted(session.Id)) continue;
-                    TerminalSessionManager.Instance.ClearDisposedRoom(session.Id);
-                    session.IsAlive = false;
-                    session.IsBusy = false;
-                    session.IsWaitingChoice = false;
-                }
-                foreach (var pane in _panes)
-                {
-                    try { pane.CompleteSessionReload(all, restartActive: false); }
-                    catch { errors.Add("세션 화면"); }
-                }
-                TerminalSessionManager.Instance.ResumeStartsAfterAccountChange(all.Select(s => s.Id));
-                ClaudeSdkSessionManager.Instance.ResumeStartsAfterAccountChange(all.Select(s => s.Id));
-                if (stopped && allowRestart)
-                {
-                    await Task.Delay(150);
-                    foreach (var session in running.Where(s => remaining.Contains(s.Id)))
-                    {
-                        try
-                        {
-                            var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId;
-                            if (SettingsService.LoadClaudeGuiMode() && agentId == "claude")
-                            {
-                                var project = _projects.First(p => p.Tabs.Contains(session));
-                                await ClaudeSdkSessionManager.Instance.EnsureStartedAsync(session, project.Path);
-                            }
-                            else PaneFor(session).PreloadSession(session);
-                        }
-                        catch { errors.Add(session.Name); }
-                    }
-                    // preload는 WebView2 메시지로 비동기 실행된다. 요청 전송만으로 재실행 성공으로 보지 않는다.
-                    var deadline = DateTime.UtcNow.AddSeconds(15);
-                    bool Started(SessionItem s) => TerminalSessionManager.Instance.Get(s.Id) is { IsAlive: true }
-                        || ClaudeSdkSessionManager.Instance.IsStarted(s.Id);
-                    var expected = running.Where(s => remaining.Contains(s.Id)).ToList();
-                    while (expected.Any(s => !Started(s)) && DateTime.UtcNow < deadline)
-                        await Task.Delay(100);
-                    errors.AddRange(expected.Where(s => !Started(s)).Select(s => s.Name));
-                }
-            }
-            finally
-            {
-                _accountSwitchRunning = false;
-                TerminalSessionManager.Instance.ResumeStartsAfterAccountChange(all.Select(s => s.Id));
-                ClaudeSdkSessionManager.Instance.ResumeStartsAfterAccountChange(all.Select(s => s.Id));
-                _sessionReloadGate.Release();
-                foreach (var pane in _panes)
-                {
-                    try { pane.CompleteSessionReload(all, restartActive: allowRestart); }
-                    catch { errors.Add("표시 중인 세션"); }
-                }
-                SchedulePendingWorkspaceNavigationDrain();
-            }
+            _accountSwitchRunning = false;
+            if (gateHeld) _sessionReloadGate.Release();
+            SchedulePendingWorkspaceNavigationDrain();
         }
-        if (errors.Count > 0)
-            throw new InvalidOperationException("계정은 변경했지만 일부 세션을 다시 열지 못했습니다. 해당 탭을 다시 열어 주세요: " + string.Join(", ", errors));
     }
 
     private async Task ReloadAllSessionsForThemeCoreAsync()

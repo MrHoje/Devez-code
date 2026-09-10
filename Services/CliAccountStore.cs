@@ -180,7 +180,7 @@ public sealed class CliAccountStore
         }
     }
 
-    /// <summary>호출자가 세션을 종료한 뒤 호출한다. 실패 시 인증·선택값을 원래 상태로 복원한다.</summary>
+    /// <summary>전환할 계정과 인증 경로를 확인한다. 세션 프로세스는 변경하지 않는다.</summary>
     public void ValidateActivation(string provider, string id)
     {
         if (!Path.IsPathFullyQualified(provider == "claude" ? _claudeHome : _codexHome))
@@ -398,5 +398,5 @@ public sealed class CliAccountStore
 
 public sealed class AccountRestoreException : IOException
 {
-    public AccountRestoreException() : base("계정 전환에 실패했고 일부 인증 정보를 복구하지 못했습니다. 세션 자동 재시작을 중단했습니다. 파일 잠금을 해제한 뒤 사용할 계정을 다시 선택하세요.") { }
+    public AccountRestoreException() : base("계정 전환에 실패했고 일부 인증 정보를 복구하지 못했습니다. 파일 잠금을 해제한 뒤 사용할 계정을 다시 선택하세요.") { }
 }

@@ -24,7 +24,7 @@ internal static class Program
         {
             StoreTests();
             AutomaticCurrentAccountTests();
-            ReloadTests();
+            AccountSwitchTests();
             if (args.Contains("--cli")) CliFormatTests();
             UiTests();
             Console.WriteLine($"통과: {_checks}개 검사. 화면: {_root}");
@@ -258,124 +258,58 @@ internal static class Program
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
 
-    private static void ReloadTests()
+    private static void AccountSwitchTests()
     {
-        var home = Path.Combine(_root, "reload");
+        var home = Path.Combine(_root, "account-switch");
         var store = new CliAccountStore(Path.Combine(home, "accounts.dat"), Path.Combine(home, ".claude"), Path.Combine(home, ".codex"));
         var a = Codex("before"); var b = Codex("after");
-        store.Add(a); store.Add(b); store.Activate("codex", a.Id);
+        var ca = Claude("before"); var cb = Claude("after");
+        store.Add(a); store.Add(b); store.Add(ca); store.Add(cb);
+        store.Activate("codex", a.Id); store.Activate("claude", ca.Id);
         DevezCode.MainWindow.TestStore = store;
         DevezCode.MainWindow.Events.Clear();
-        DevezCode.TerminalSessionManager.Instance = new();
+        DevezCode.TerminalSessionManager.Instance = new() { FailStop = true };
         DevezCode.ClaudeSdkSessionManager.Instance = new();
         var main = new DevezCode.MainWindow();
-        var cli = new DevezCode.SessionItem { Id = "cli", Name = "기존 대화", AgentId = "codex", IsAlive = true };
-        var sdk = new DevezCode.SessionItem { Id = "sdk", Name = "GUI 대화", AgentId = "claude", IsAlive = true };
+        main._panes[0].FailBegin = true; main._panes[0].FailComplete = true;
+        var cli = new DevezCode.SessionItem { Id = "cli", Name = "진행 중인 대화", AgentId = "codex", IsAlive = true, IsBusy = true };
+        var sdk = new DevezCode.SessionItem { Id = "sdk", Name = "GUI 대화", AgentId = "claude", IsAlive = true, IsWaitingChoice = true };
+        var external = new DevezCode.SessionItem { Id = "external", Name = "외부 대화", AgentId = "claude", IsExternal = true };
+        var fresh = new DevezCode.SessionItem { Id = "new", Name = "세션 3", AgentId = "devezvibe", IsAlive = true };
         var dormant = new DevezCode.SessionItem { Id = "idle", Name = "휴면 대화", AgentId = "codex" };
-        var starting = new DevezCode.SessionItem { Id = "sdk-starting", Name = "시작 중인 대화", AgentId = "claude" };
-        main._projects.Add(new() { Tabs = [cli, sdk, dormant, starting] });
-        DevezCode.TerminalSessionManager.Instance.Alive.Add(cli.Id);
+        main._projects.Add(new() { Tabs = [cli, sdk, external, fresh, dormant] });
+        DevezCode.TerminalSessionManager.Instance.Alive.UnionWith([cli.Id, fresh.Id]);
         DevezCode.ClaudeSdkSessionManager.Instance.Alive.Add(sdk.Id);
+        var claudeAuth = File.ReadAllBytes(store.ClaudeCredentialsPath);
         DevezCode.MainWindow.OnEvent = evt =>
         {
-            if (evt == "suspend-sdk")
-            {
-                DevezCode.ClaudeSdkSessionManager.Instance.Alive.Add(starting.Id);
+            if (evt == "usage-enabled")
                 Throws(() => main.SwitchCliAccountAsync("codex", a.Id).GetAwaiter().GetResult(), "동시 계정 전환 허용");
-            }
-            if (evt.StartsWith("stop")) Check(store.ReadCurrent("codex")!.Identity == "before:account", "종료 전에 인증 변경");
-            if (evt.StartsWith("start")) Check(store.ReadCurrent("codex")!.Identity == "after:account", "재실행이 이전 계정 사용");
         };
         AwaitOnDispatcher(() => main.SwitchCliAccountAsync("codex", b.Id));
-        Check(DevezCode.TerminalSessionManager.Instance.Alive.Contains(cli.Id), "CLI 세션 재실행 누락");
-        Check(DevezCode.ClaudeSdkSessionManager.Instance.IsStarted(sdk.Id), "GUI 세션 재실행 누락");
-        Check(!DevezCode.MainWindow.Events.Contains("stop-sdk:" + starting.Id) && !DevezCode.MainWindow.Events.Contains("stop-sdk:" + sdk.Id), "Codex 전환이 Claude GUI를 종료");
-        Check(!DevezCode.TerminalSessionManager.Instance.Alive.Contains(dormant.Id), "휴면 세션 강제 기동");
-        Check(main.IsGateAvailable && !main.IsSwitching, "성공 후 전환 잠금 미해제");
-        Check(DevezCode.MainWindow.Events.Last() == "drain", "보류된 사용자 입력 미복원");
         DevezCode.MainWindow.OnEvent = null;
-        cli.IsExternal = true;
-        var count = DevezCode.MainWindow.Events.Count;
-        Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("codex", a.Id)), "외부 세션 전환 허용");
-        Check(DevezCode.MainWindow.Events.Count == count, "외부 세션 검사 전에 프로세스 변경");
-        cli.IsExternal = false;
+        Check(store.ReadCurrent("codex")!.Identity == "after:account", "Codex 인증 미변경");
+        Check(claudeAuth.SequenceEqual(File.ReadAllBytes(store.ClaudeCredentialsPath)), "Codex 전환이 Claude 인증을 변경");
+        Check(cli.IsAlive && cli.IsBusy && sdk.IsAlive && sdk.IsWaitingChoice && external.IsExternal, "계정 변경이 기존 세션 상태를 변경");
+        Check(DevezCode.TerminalSessionManager.Instance.Alive.SetEquals([cli.Id, fresh.Id]) && DevezCode.ClaudeSdkSessionManager.Instance.Alive.SetEquals([sdk.Id]), "실행 프로세스 목록 변경");
+        Check(DevezCode.MainWindow.Events.All(e => e is "usage-enabled" or "refresh" or "drain"), "계정 변경에서 세션 수명 제어 호출");
+        Check(main.IsGateAvailable && !main.IsSwitching, "성공 후 전환 잠금 미해제");
+        DevezCode.MainWindow.Events.Clear();
+        var codexAuth = File.ReadAllBytes(store.CodexCredentialsPath);
+        AwaitOnDispatcher(() => main.SwitchCliAccountAsync("claude", cb.Id));
+        Check(store.ReadCurrent("claude")!.Identity == "after", "Claude 인증 미변경");
+        Check(codexAuth.SequenceEqual(File.ReadAllBytes(store.CodexCredentialsPath)), "Claude 전환이 Codex 인증을 변경");
+        Check(DevezCode.MainWindow.Events.All(e => e is "refresh" or "drain"), "Claude 전환에서 종료 또는 재실행 호출");
+        Check(external.IsExternal && sdk.IsWaitingChoice && fresh.IsAlive && !dormant.IsAlive, "외부·새 세션·대기·휴면 상태 미유지");
+        DevezCode.MainWindow.Events.Clear();
+        using (var locked = new FileStream(store.CodexCredentialsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+            Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("codex", a.Id)), "인증 저장 실패를 성공으로 처리");
+        Check(store.ReadCurrent("codex")!.Identity == "after:account", "저장 실패 후 원래 인증 미복원");
+        Check(DevezCode.MainWindow.Events.All(e => e == "drain"), "저장 실패 시 세션 조작 호출");
+        Check(main.IsGateAvailable && !main.IsSwitching && cli.IsBusy && external.IsExternal, "저장 실패 후 잠금 또는 세션 상태 오류");
         Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("codex", "removed")), "없는 계정 전환 허용");
         Check(main.IsGateAvailable && !main.IsSwitching, "없는 계정 요청 후 잠금");
-        DevezCode.TerminalSessionManager.Instance.FailStop = true;
-        Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("codex", a.Id)), "종료 오류 무시");
-        Check(store.ReadCurrent("codex")!.Identity == "after:account", "종료 실패 후 인증 변경");
-        Check(DevezCode.TerminalSessionManager.Instance.Alive.Contains(cli.Id), "부분 종료 실패 후 CLI 복원 누락");
-        Check(main.IsGateAvailable && !main.IsSwitching, "종료 실패 후 잠금 미해제");
-        DevezCode.TerminalSessionManager.Instance.FailStop = false;
-        main._panes[0].FailComplete = true;
-        Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("codex", a.Id)), "화면 복원 오류 무시");
-        Check(main.IsGateAvailable && !main.IsSwitching, "화면 복원 실패 후 잠금 미해제");
-        main._panes[0].FailComplete = false;
-        ProviderScopeTests(main, store, cli, sdk, starting);
         main.Close();
-    }
-
-    private static void ProviderScopeTests(DevezCode.MainWindow main, CliAccountStore store,
-        DevezCode.SessionItem codexCli, DevezCode.SessionItem sdk, DevezCode.SessionItem starting)
-    {
-        var routePath = Path.Combine(_root, "session-routes.json");
-        DevezCode.TerminalSessionManager.TestRoutePath = routePath;
-        File.WriteAllText(routePath, """
-            {"vibe-claude":{"active":"Claude","codex_id":"old-codex","claude_id":"native-claude"},
-             "vibe-codex":{"active":"Codex","claude_id":"old-claude","codex_id":"native-codex"},
-             "vibe-open":{"active":"OpenCode","open_code_id":"ses_test"}}
-            """);
-        Check(DevezCode.TerminalSessionManager.ResolveDevezVibeProvider("vibe-claude") == "claude", "Devez Vibe 활성 Claude 식별 실패");
-        Check(DevezCode.TerminalSessionManager.ResolveDevezVibeProvider("claude:old-claude") == "codex", "이전 ID 접두사로 공급자 오판");
-        Check(DevezCode.TerminalSessionManager.ResolveDevezVibeProvider("old-codex") == "claude", "공급자 변경 후 역조회 실패");
-        var vc = new DevezCode.SessionItem { Id = "vibe-claude", Name = "Vibe Claude", AgentId = "devezvibe" };
-        var vx = new DevezCode.SessionItem { Id = "vibe-codex", Name = "Vibe Codex", AgentId = "devezvibe" };
-        var vo = new DevezCode.SessionItem { Id = "vibe-open", Name = "Vibe OpenCode", AgentId = "devezvibe" };
-        var fresh = new DevezCode.SessionItem { Id = "vibe-new", Name = "세션 3", AgentId = "devezvibe" };
-        DevezCode.SettingsService.SavedVibeIds[fresh.Id] = null;
-        DevezCode.DevezVibeStateService.TrackedIds[vc.Id] = "stale-tracked-id";
-        main._projects[0].Tabs.AddRange([vc, vx, vo, fresh]);
-        DevezCode.TerminalSessionManager.Instance.Alive.UnionWith([vc.Id, vx.Id, vo.Id, fresh.Id]);
-        var ca = Claude("scope-before"); var cb = Claude("scope-after");
-        store.Add(ca); store.Add(cb); store.Activate("claude", ca.Id);
-        DevezCode.MainWindow.Events.Clear();
-        codexCli.IsExternal = true; // 다른 공급자의 외부 세션은 변경을 막지 않는다.
-        DevezCode.ClaudeSdkSessionManager.Instance.Alive.Remove(starting.Id);
-        DevezCode.MainWindow.OnEvent = evt =>
-        {
-            if (evt == "suspend-sdk") DevezCode.ClaudeSdkSessionManager.Instance.Alive.Add(starting.Id);
-        };
-        AwaitOnDispatcher(() => main.SwitchCliAccountAsync("claude", cb.Id));
-        DevezCode.MainWindow.OnEvent = null;
-        var events = DevezCode.MainWindow.Events;
-        Check(events.Contains("start:" + vc.Id), "Claude 계정 전환 시 Vibe Claude 누락");
-        Check(events.Contains("start:" + fresh.Id), "대화 ID가 없는 새 세션이 계정 전환을 막음");
-        Check(events.Contains("stop-sdk:" + sdk.Id) && events.Contains("start-sdk:" + starting.Id), "Claude GUI 재시작 누락");
-        Check(!events.Contains("start:" + vx.Id) && !events.Contains("start:" + vo.Id) && !events.Contains("start:" + codexCli.Id), "다른 공급자 세션을 재시작");
-        Check(DevezCode.TerminalSessionManager.Instance.Alive.Contains(vx.Id) && DevezCode.TerminalSessionManager.Instance.Alive.Contains(vo.Id), "다른 공급자의 프로세스를 종료");
-        codexCli.IsExternal = false;
-        events.Clear();
-        AwaitOnDispatcher(() => main.SwitchCliAccountAsync("codex", store.Read().Accounts.First(a => a.Provider == "codex").Id));
-        Check(events.Contains("start:" + vx.Id) && !events.Contains("start:" + vc.Id), "Codex 계정 전환의 Vibe 대상 오류");
-        events.Clear();
-        DevezCode.DevezVibeStateService.LastMessages[fresh.Id] = "이미 보낸 첫 메시지";
-        Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("claude", ca.Id)), "첫 프롬프트 전송 후 추적 ID가 없는 방을 빈 세션으로 오판");
-        Check(events.Count == 0, "대화 흔적이 있는 미확인 세션을 종료");
-        DevezCode.DevezVibeStateService.LastMessages.Remove(fresh.Id);
-        fresh.IsBusy = true;
-        Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("claude", ca.Id)), "작업 중인 미확인 세션을 새 세션으로 오판");
-        fresh.IsBusy = false;
-        DevezCode.DevezVibeStateService.BusyRooms.Add(fresh.Id);
-        Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("claude", ca.Id)), "상태 파일의 작업 중 표시를 무시");
-        DevezCode.DevezVibeStateService.BusyRooms.Remove(fresh.Id);
-        var previousAuth = File.ReadAllBytes(store.ClaudeCredentialsPath);
-        File.WriteAllText(routePath, "{");
-        events.Clear();
-        Throws(() => AwaitOnDispatcher(() => main.SwitchCliAccountAsync("claude", ca.Id)), "공급자 미확인 시 전환 강행");
-        Check(events.Count == 0 && previousAuth.SequenceEqual(File.ReadAllBytes(store.ClaudeCredentialsPath)), "공급자 확인 실패가 세션 또는 인증을 변경");
-        File.WriteAllText(routePath, """{"a":{"active":"Claude","codex_id":"shared"},"b":{"active":"Codex","codex_id":"shared"}}""");
-        Check(DevezCode.TerminalSessionManager.ResolveDevezVibeProvider("shared") == null, "중복 역조회에서 공급자를 임의 선택");
-        Check(DevezCode.TerminalSessionManager.ResolveDevezVibeProvider("untracked") == null, "없는 라우트의 공급자를 추정");
     }
 
     private static void UiTests()
@@ -421,7 +355,7 @@ internal static class Program
         var providerList = (ItemsControl)view.FindName("Providers");
         var setBusy = typeof(AccountSettingsView).GetMethod("SetBusy", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         Check(spinners.Length == 2 && spinners.All(s => s.Visibility == Visibility.Collapsed), "대기 중에도 계정 스피너 표시");
-        setBusy.Invoke(view, [true, "계정을 변경하는 중입니다. 세션의 대화 기록을 저장한 뒤 다시 엽니다.", "claude"]);
+        setBusy.Invoke(view, [true, "계정 인증 정보를 변경하는 중입니다.", "claude"]);
         Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
         Check(spinners[0].IsVisible && !spinners[1].IsVisible && !providerList.IsEnabled, "변경 중인 공급자의 스피너 또는 중복 입력 차단 누락");
         Check(claudeTitle.TranslatePoint(new Point(), view).X > claudeTitleX
