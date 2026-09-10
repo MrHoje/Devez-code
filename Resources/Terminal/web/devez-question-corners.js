@@ -27,9 +27,12 @@
         const bodyLine = buffer.getLine(lineIndex + (top ? 1 : -1));
         const body = bodyLine && bodyLine.getCell(col);
         if (!right || right.getChars() !== (top ? '▄' : '▀') || right.isInverse() || !right.isFgRGB() ||
-            right.getFgColor() !== cell.getBgColor() || !body || body.getChars() !== '▌' ||
-            body.isInverse() || !body.isFgRGB() || body.getFgColor() !== cell.getFgColor() ||
-            !body.isBgRGB() || body.getBgColor() !== cell.getBgColor()) continue;
+            right.getFgColor() !== cell.getBgColor()) continue;
+        // 계획 패널이나 화면 경계가 본문을 가려도 남은 반 줄 모서리는 보정한다.
+        // 본문이 보일 때는 기존 RGB 검증을 유지한다.
+        if (body && body.getChars() === '▌' &&
+            (body.isInverse() || !body.isFgRGB() || body.getFgColor() !== cell.getFgColor() ||
+             !body.isBgRGB() || body.getBgColor() !== cell.getBgColor())) continue;
         const left = line.getCell(col - 1);
         result.push({
           row: row, col: col, top: top,

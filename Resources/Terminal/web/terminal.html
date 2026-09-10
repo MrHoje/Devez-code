@@ -3074,7 +3074,52 @@
 
   // WebView2 는 별도 HWND 라 WPF 부모의 PreviewMouseDown 이 터미널 클릭을 보지 못한다.
   // 터미널을 클릭하면 호스트 패널을 포커스 패널로 승격해 사이드바/파일탐색기 선택을 맞춘다.
-  // ── 우클릭: 누르는 즉시(mousedown) 선택 있으면 복사, 없으면 붙여넣기 — Windows Terminal 정합 ──
+  function handleDevezContextClick(entry, ev) {
+    if (!entry || entry.dead || entry.agent !== 'devezvibe' || !entry.devezContextClick
+        || ev.shiftKey || entry.term.buffer.active !== entry.term.buffer.alternate) return false;
+    const screen = entry.el.querySelector('.xterm-screen');
+    if (!screen || !screen.contains(ev.target)) return false;
+    const rect = screen.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || ev.clientX < rect.left || ev.clientX >= rect.right
+        || ev.clientY < rect.top || ev.clientY >= rect.bottom) return false;
+    const col = Math.floor((ev.clientX - rect.left) * entry.term.cols / rect.width) + 1;
+    const row = Math.floor((ev.clientY - rect.top) * entry.term.rows / rect.height) + 1;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    // xterm의 우버튼 중복 방지 필터를 거치지 않고 판별 요청을 한 번만 보낸다.
+    entry.devezContextPending = (entry.devezContextPending || 0) + 1;
+    // 누름을 직접 보냈으므로 해제도 함께 보낸다. 누락하면 ConPTY가 우버튼을 유지해
+    // 이후 이동·좌버튼 드래그까지 우버튼 드래그로 전달한다.
+    const report = '\x1b[<2;' + col + ';' + row;
+    post({ type: 'input', roomId: entry.roomId, data: report + 'M' + report + 'm' });
+    return true;
+  }
+
+  function handleDevezContextOsc(entry, data) {
+    if (entry.agent !== 'devezvibe') return false;
+    if (data === 'devez-context-v1;1' || data === 'devez-context-v1;0') {
+      entry.devezContextGeneration = (entry.devezContextGeneration || 0) + 1;
+      entry.devezContextClick = data.endsWith(';1');
+      entry.devezContextPending = 0;
+      return true;
+    }
+    if (data !== 'devez-context-paste-v1' && data !== 'devez-context-link-v1') return false;
+    if (!entry.devezContextClick || !entry.devezContextPending) return true;
+    entry.devezContextPending--;
+    if (data === 'devez-context-link-v1') return true;
+    const generation = entry.devezContextGeneration;
+    // OSC 파서가 화면 출력을 마친 뒤 원래 방에서만 클립보드를 처리한다.
+    setTimeout(function () {
+      if (entry.dead || !entry.devezContextClick || activeRoomId !== entry.roomId
+          || entry.devezContextGeneration !== generation
+          || terms[entry.roomId] !== entry) return;
+      if (entry.term.hasSelection()) doCopy(entry);
+      else post({ type: 'requestPaste', roomId: entry.roomId });
+    }, 0);
+    return true;
+  }
+
+  // ── 우클릭: 링크 판별을 지원하는 Devez Vibe는 판별 후, 나머지는 즉시 복사/붙여넣기 ──
   // 누름 시점 1회 처리 → 빠른 클릭·꾹 눌러도 즉시 붙여넣기, 뗄 때 추가 붙여넣기 없음.
   // (우버튼 SGR 마우스 리포트는 onData 에서 걸러 TUI 의 자체 붙여넣기 중복을 막는다)
   // 전환 커버가 올라오는 짧은 구간에도 현재 터미널에서 입력을 계속했다면, 이전 탭/프로젝트
@@ -3094,6 +3139,7 @@
         t.el && typeof t.el._recoverStaleImeOnPointerDown === 'function')
       t.el._recoverStaleImeOnPointerDown();
     if (e.button !== 2) return;
+    if (handleDevezContextClick(t, e)) return;
     if (t.term.hasSelection()) { doCopy(t); return; }
     post({ type: 'requestPaste', roomId: activeRoomId });
   }, { capture: true });
@@ -3202,6 +3248,7 @@
     // 다른 CLI의 OSC는 건드리지 않으며, clear 신호에서 오래된 행 정보를 함께 비운다.
     try {
       entry.copyOsc = term.parser.registerOscHandler(777, function (data) {
+        if (handleDevezContextOsc(entry, data)) return true;
         const layout = /^devez-layout-v1;(\d+)$/.exec(data || '');
         if (layout) {
           const cols = Number(layout[1]);
@@ -4471,6 +4518,8 @@
         const t = terms[msg.roomId];
         if (t) {
           t.dead = false;
+          t.devezContextClick = false;
+          t.devezContextGeneration = (t.devezContextGeneration || 0) + 1;
           t.inSync = false; t.syncChunks = []; t.syncCarry = null; // 잔여 sync 버퍼 폐기
           // 12ms 코얼레싱 버퍼/커서 표시 타이머도 폐기 — 남겨두면 이전 세션의 stale 바이트가
           // reset 직후의 새 터미널에 write 되어 재시작 첫 화면이 깨진다.

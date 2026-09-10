@@ -29,7 +29,7 @@ test('real xterm normal and alternate buffers identify only the paired corners',
       { row: 2, col: 2, top: false, line: '#34d3c7', fill: '#363636', outside: '#1f1f1e' }
     ]);
     assert.equal(term.buffer.active.getLine(1).translateToString(true).trim(), '▌ 답변');
-    await write(term, '\x1b[2;3H\x1b[0m일반 문자');
+    await write(term, '\x1b[1;3H\x1b[0m일반 문자\x1b[3;3H일반 문자');
     assert.deepEqual(corners.findCorners(term), []);
     term.dispose();
   }
@@ -97,6 +97,98 @@ function browserHarness(real) {
     const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback());
   }};
 }
+
+test('clipped answer corners stay patched when the body is hidden by a panel or viewport edge', async t => {
+  for (const top of [false, true]) {
+    for (const row of [0, 2, 5]) {
+      const real = makeTerm();
+      t.after(() => real.dispose());
+      await write(real, '\x1b[?1049h');
+      await write(real, '\x1b[2;1H\x1b[0m└─────────────┘');
+      await write(real, `\x1b[${row + 1};3H` + line + fill + (top ? '▖' : '▘') +
+        half + (top ? '▄▄' : '▀▀') + '\x1b[0m');
+      const before = real.buffer.active.getLine(row).translateToString();
+      const ui = browserHarness(real);
+      corners.install(ui.term, 'devezvibe');
+      ui.flush();
+      const layer = ui.screen.children[0];
+      assert.equal(layer.children.length, 1, `clipped ${top ? 'top' : 'bottom'} corner at row ${row}`);
+      const patch = layer.children[0];
+      assert.equal(patch.style.backgroundColor, '#1f1f1e');
+      assert.equal(patch.style.backgroundSize, '100% 50%');
+      assert.equal(patch.style.backgroundPosition, top ? 'left bottom' : 'left top');
+      assert.equal(real.buffer.active.getLine(row).translateToString(), before);
+      await write(real, `\x1b[${row + 1};1H\x1b[2K`);
+      ui.events.get('render')(); ui.flush();
+      assert.equal(layer.children.length, 0);
+      ui.term.addon.dispose();
+    }
+  }
+});
+
+test('clipped corners reject unrelated glyphs, wrong colours and inverse cells', async t => {
+  for (const change of [
+    '\x1b[3;4H\x1b[0mA',
+    '\x1b[3;4H' + half + '▄',
+    '\x1b[3;4H\x1b[38;2;1;2;3m▀',
+    '\x1b[3;4H\x1b[7m' + half + '▀',
+    '\x1b[3;3H\x1b[7m' + line + fill + '▘',
+    '\x1b[3;3H\x1b[0m▘',
+    '\x1b[3;3H' + line + fill + '▌'
+  ]) {
+    const real = makeTerm();
+    t.after(() => real.dispose());
+    await write(real, sample + '\x1b[1;1H\x1b[0m\x1b[2K\x1b[2;1H\x1b[2K' + change);
+    assert.deepEqual(corners.findCorners(real), [], JSON.stringify(change));
+  }
+});
+
+test('visible patches survive body occlusion and follow scrolling and buffer switches', async t => {
+  for (const alternate of [false, true]) {
+    const real = makeTerm();
+    t.after(() => real.dispose());
+    if (alternate) await write(real, '\x1b[?1049h');
+    await write(real, sample);
+    const ui = browserHarness(real);
+    corners.install(ui.term, 'devezvibe');
+    t.after(() => ui.term.addon.dispose());
+    ui.flush();
+    const layer = ui.screen.children[0];
+    const bottom = layer.children[1];
+    // The panel covers the answer body and top edge; only the bottom half-row remains.
+    await write(real, '\x1b[1;1H\x1b[0m\x1b[2K\x1b[2;1H\x1b[2K└─────────────┘');
+    ui.events.get('render')(); ui.flush();
+    assert.deepEqual(layer.children, [bottom]);
+    assert.equal(bottom.style.top, '40px');
+    assert.equal(bottom.style.backgroundPosition, 'left top');
+    ui.term.selected = true;
+    ui.events.get('selection')(); ui.flush();
+    assert.equal(layer.children.length, 0);
+    ui.term.selected = false;
+    ui.events.get('selection')(); ui.flush();
+    assert.equal(layer.children.length, 1);
+    await write(real, '\x1b[6;1H\r\n\r\n');
+    ui.events.get('scroll')(); ui.flush();
+    assert.equal(layer.children.length, 1);
+    assert.equal(layer.children[0].style.top, '0px');
+    await write(real, '\r\n');
+    ui.events.get('scroll')(); ui.flush();
+    assert.equal(layer.children.length, 0);
+    if (!alternate) {
+      real.scrollToTop();
+      ui.events.get('scroll')(); ui.flush();
+      assert.equal(layer.children.length, 1);
+      assert.equal(layer.children[0].style.top, '40px');
+      await write(real, '\x1b[?1049h');
+      ui.events.get('render')(); ui.flush();
+      assert.equal(layer.children.length, 0);
+      await write(real, '\x1b[?1049l');
+      real.scrollToTop();
+      ui.events.get('render')(); ui.flush();
+      assert.equal(layer.children.length, 1);
+    }
+  }
+});
 
 test('pixel patches follow resize, hide, selection and dispose without changing text', async () => {
   const real = makeTerm();

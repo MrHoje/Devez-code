@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.0", "2026-09-10", true, new[]
+          ("v1.27.1", "2026-09-10", true, new[]
+          {
+              "사소한 오류 수정",
+          }),
+          ("v1.27.0", "2026-09-10", false, new[]
           {
               "설정에 Claude·Codex 계정을 추가·삭제하고 선택할 수 있는 계정 관리 기능을 추가했습니다.",
           }),
