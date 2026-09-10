@@ -16,11 +16,12 @@ public partial class AccountSettingsView : UserControl
         _loading = true;
         try
         {
-            var data = CliAccountStore.Instance.Read();
-            foreach (var provider in data.Active.Keys.ToArray()) CliAccountStore.Instance.CaptureCurrent(provider);
-            data = CliAccountStore.Instance.Read();
+            var data = CliAccountStore.Instance.RefreshCurrentAccounts(out var failedProviders);
             Providers.ItemsSource = new[] { "claude", "codex" }.Select(provider => new ProviderRow(provider, data)).ToArray();
-            StatusText.Text = data.Accounts.Count == 0 ? "계정을 추가하거나 현재 CLI에 로그인된 계정을 가져오세요." : "";
+            StatusText.Text = failedProviders.Count > 0
+                ? string.Join(", ", failedProviders.Select(p => p == "claude" ? "Claude" : "Codex"))
+                    + " 현재 계정을 읽지 못했습니다. 기존 등록 목록은 유지됩니다."
+                : data.Accounts.Count == 0 ? "자동으로 가져올 계정 정보가 없습니다. 계정을 추가해 주세요." : "";
         }
         catch (Exception)
         {

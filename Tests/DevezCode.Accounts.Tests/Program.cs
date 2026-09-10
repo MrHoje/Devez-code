@@ -23,6 +23,7 @@ internal static class Program
         try
         {
             StoreTests();
+            AutomaticCurrentAccountTests();
             ReloadTests();
             if (args.Contains("--cli")) CliFormatTests();
             UiTests();
@@ -142,6 +143,62 @@ internal static class Program
         File.WriteAllBytes(storePath, [1, 2, 3]);
         Throws(() => store.Read(), "손상된 계정 파일을 빈 목록으로 오인");
         Check(File.ReadAllBytes(storePath).SequenceEqual(new byte[] { 1, 2, 3 }), "손상 파일 덮어쓰기");
+    }
+
+    private static void AutomaticCurrentAccountTests()
+    {
+        var home = Path.Combine(_root, "automatic-current");
+        var claudeHome = Path.Combine(home, ".claude");
+        var codexHome = Path.Combine(home, ".codex");
+        Directory.CreateDirectory(claudeHome);
+        Directory.CreateDirectory(codexHome);
+        var claude = Claude("2bbf8b1a-bb80-44f7-879f-e5aa7d2e24b6");
+        var codex = Codex("current-codex");
+        File.WriteAllText(Path.Combine(claudeHome, ".credentials.json"), claude.Credentials);
+        File.WriteAllText(claudeHome + ".json", new JsonObject { ["oauthAccount"] = JsonNode.Parse(claude.ClaudeAccount!) }.ToJsonString());
+        File.WriteAllText(Path.Combine(codexHome, "auth.json"), codex.Credentials);
+        var path = Path.Combine(home, "accounts.dat");
+        var store = new CliAccountStore(path, claudeHome, codexHome);
+        var first = store.RefreshCurrentAccounts(out var errors);
+        Check(errors.Count == 0 && first.Accounts.Count == 2, "첫 화면의 현재 계정 자동 인식 실패");
+        Check(first.Active.Count == 2, "첫 화면의 현재 계정 선택 누락");
+        var before = File.ReadAllBytes(path);
+        var second = store.RefreshCurrentAccounts(out _);
+        Check(second.Accounts.Count == 2 && second.Active["claude"] == first.Active["claude"], "반복 인식 시 중복 등록 또는 ID 변경");
+        Check(before.SequenceEqual(File.ReadAllBytes(path)), "변경 없는 새로고침에서 보관 파일 재작성");
+
+        var registered = new CliAccountStore(Path.Combine(home, "registered.dat"), claudeHome, codexHome);
+        registered.Add(claude); registered.Add(codex);
+        var imported = registered.RefreshCurrentAccounts(out _);
+        Check(imported.Accounts.Count == 2 && imported.Active["claude"] == claude.Id && imported.Active["codex"] == codex.Id,
+            "이미 등록된 현재 계정을 재사용하지 않음");
+        Check(imported.Accounts.Single(a => a.Id == claude.Id).Name == claude.Name, "자동 인식이 사용자 계정 이름을 변경");
+        var renamed = Claude(claude.Identity); renamed.Name = "다른 이름";
+        Throws(() => registered.Add(renamed), "이름만 바꾼 중복 계정 등록 허용");
+        var uppercase = Claude(claude.Identity.ToUpperInvariant());
+        Throws(() => registered.Add(uppercase), "UUID 대소문자 차이로 중복 등록 허용");
+        Parallel.For(0, 12, _ => registered.CaptureCurrent("claude"));
+        Check(registered.Read().Accounts.Count == 2, "동시 가져오기에서 중복 등록");
+        File.WriteAllText(registered.ClaudeCredentialsPath, uppercase.Credentials);
+        File.WriteAllText(claudeHome + ".json", new JsonObject { ["oauthAccount"] = JsonNode.Parse(uppercase.ClaudeAccount!) }.ToJsonString());
+        var recaptured = registered.RefreshCurrentAccounts(out _);
+        Check(recaptured.Accounts.Count == 2 && recaptured.Active["claude"] == claude.Id, "UUID 표기 변경으로 다른 계정 생성");
+        registered.Activate("claude", claude.Id);
+        Check(registered.Read().Active["claude"] == claude.Id, "UUID 표기 변경 후 계정 전환 실패");
+        File.WriteAllText(registered.ClaudeCredentialsPath, "{");
+        var partial = registered.RefreshCurrentAccounts(out errors);
+        Check(errors.SequenceEqual(new[] { "claude" }) && partial.Accounts.Count == 2 && partial.Active["codex"] == codex.Id,
+            "한 공급자의 인증 오류가 다른 공급자 목록을 지움");
+        var workspaceStore = new CliAccountStore(Path.Combine(home, "workspaces.dat"), claudeHome, codexHome);
+        workspaceStore.Add(codex);
+        var otherWorkspace = CliAccountStore.FromLogin("codex", new JsonObject
+        {
+            ["access_token"] = Jwt("current-codex", "current-codex@example.invalid", "another-workspace"),
+            ["id_token"] = Jwt("current-codex", "current-codex@example.invalid", "another-workspace"),
+            ["refresh_token"] = "test-other-workspace", ["expires_in"] = 3600
+        }.ToJsonString(), "다른 워크스페이스");
+        workspaceStore.Add(otherWorkspace);
+        Check(workspaceStore.Read().Accounts.Count == 2, "이메일이 같은 서로 다른 Codex 워크스페이스를 합침");
     }
 
     private static void CliFormatTests()

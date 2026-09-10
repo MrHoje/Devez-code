@@ -83,12 +83,32 @@ public sealed class CliAccountStore
         lock (_sync)
         {
             var data = Read();
-            var existing = data.Accounts.FirstOrDefault(a => a.Provider == account.Provider && a.Identity == account.Identity);
+            var existing = data.Accounts.FirstOrDefault(a => SameAccount(a, account));
             if (existing != null)
                 throw new InvalidOperationException("이미 등록된 계정입니다. 다른 계정으로 로그인하세요.");
             data.Accounts.Add(account);
             Save(data);
             return account.Id;
+        }
+    }
+
+    private static bool SameAccount(CliAccount left, CliAccount right)
+        => left.Provider == right.Provider && (left.Provider == "claude"
+            && Guid.TryParse(left.Identity, out var leftId) && Guid.TryParse(right.Identity, out var rightId)
+                ? leftId == rightId : string.Equals(left.Identity, right.Identity, StringComparison.Ordinal));
+
+    public AccountData RefreshCurrentAccounts(out List<string> failedProviders)
+    {
+        lock (_sync)
+        {
+            Read(); // 보관 파일 오류와 특정 CLI의 읽기 오류를 구분한다.
+            failedProviders = [];
+            foreach (var provider in new[] { "claude", "codex" })
+            {
+                try { CaptureCurrent(provider); }
+                catch { failedProviders.Add(provider); }
+            }
+            return Read();
         }
     }
 
@@ -100,7 +120,7 @@ public sealed class CliAccountStore
             var current = ReadCurrent(provider);
             if (current == null) return;
             var data = Read();
-            var saved = data.Accounts.FirstOrDefault(a => a.Provider == provider && a.Identity == current.Identity);
+            var saved = data.Accounts.FirstOrDefault(a => SameAccount(a, current));
             if (saved == null)
             {
                 saved = current;
@@ -108,8 +128,11 @@ public sealed class CliAccountStore
             }
             else
             {
+                if (saved.Credentials == current.Credentials && saved.ClaudeAccount == current.ClaudeAccount
+                    && saved.Email == current.Email && data.Active.GetValueOrDefault(provider) == saved.Id) return;
                 saved.Credentials = current.Credentials;
                 saved.ClaudeAccount = current.ClaudeAccount;
+                saved.Email = current.Email;
             }
             data.Active[provider] = saved.Id;
             Save(data);
@@ -202,7 +225,7 @@ public sealed class CliAccountStore
                 configWritten = true;
                 WriteAtomic(authPath, Encoding.UTF8.GetBytes(target.Credentials));
                 authWritten = true;
-                if (ReadCurrent(provider)?.Identity != target.Identity)
+                if (ReadCurrent(provider) is not { } activated || !SameAccount(activated, target))
                     throw new InvalidDataException("선택한 계정과 저장된 인증 정보가 일치하지 않습니다.");
                 data.Active[provider] = id;
                 Save(data);
