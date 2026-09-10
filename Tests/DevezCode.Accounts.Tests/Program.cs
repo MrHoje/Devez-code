@@ -413,6 +413,17 @@ internal static class Program
         window.Show();
         Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
         host.Measure(new Size(720, 960)); host.Arrange(new Rect(0, 0, 720, 960)); host.UpdateLayout();
+        var spinner = (System.Windows.Shapes.Ellipse)view.FindName("StatusSpinner");
+        var providerList = (ItemsControl)view.FindName("Providers");
+        var setBusy = typeof(AccountSettingsView).GetMethod("SetBusy", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        Check(spinner.Visibility == Visibility.Collapsed, "대기 중에도 계정 스피너 표시");
+        setBusy.Invoke(view, [true, "계정을 변경하는 중입니다. 세션의 대화 기록을 저장한 뒤 다시 엽니다."]);
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+        Check(spinner.IsVisible && !providerList.IsEnabled, "계정 변경 중 스피너 또는 중복 입력 차단 누락");
+        host.UpdateLayout(); SaveImage(host, "accounts-loading.png");
+        setBusy.Invoke(view, [false, ""]);
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+        Check(spinner.Visibility == Visibility.Collapsed && providerList.IsEnabled, "계정 변경 종료 후 로딩 표시가 남음");
         var combos = Descendants<ComboBox>(view).ToList();
         Check(combos.Count == 2, "공급자별 콤보박스 누락");
         Check(combos[0].SelectedValue as string == a.Id, "실제 콤보박스 선택값 바인딩 실패");

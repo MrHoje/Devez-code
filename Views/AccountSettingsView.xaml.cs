@@ -105,6 +105,12 @@ public partial class AccountSettingsView : UserControl
         IsBusy = busy;
         Providers.IsEnabled = !busy;
         StatusText.Text = message;
+        StatusSpinner.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        if (busy)
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (IsBusy) StatusText.BringIntoView();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private static string AccountError(Exception ex) => ex is InvalidOperationException or System.IO.InvalidDataException or AccountRestoreException

@@ -10,6 +10,8 @@
     <Compile Include="obj\SessionSwitchMethod.g.cs" />
     <None Include="obj\ThemePalette.json" CopyToOutputDirectory="PreserveNewest" Link="ThemePalette.json" />
     <Compile Include="..\..\Services\CliAccountStore.cs" Link="Services\CliAccountStore.cs" />
+    <Compile Include="..\..\Models\SpinnerActivator.cs" Link="Models\SpinnerActivator.cs" />
+    <Compile Include="..\..\Models\SpinnerSync.cs" Link="Models\SpinnerSync.cs" />
     <Compile Include="..\..\Services\ClaudeCredentialStore.cs" Link="Services\ClaudeCredentialStore.cs" />
     <Compile Include="..\..\Services\CodexCredentialStore.cs" Link="Services\CodexCredentialStore.cs" />
     <Compile Include="..\..\Views\AccountSettingsView.xaml.cs" Link="Views\AccountSettingsView.xaml.cs" />
