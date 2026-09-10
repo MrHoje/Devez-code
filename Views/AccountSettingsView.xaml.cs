@@ -1,4 +1,5 @@
 using System.Windows;
+using System.ComponentModel;
 using System.Windows.Controls;
 using DevezCode.Services;
 
@@ -34,7 +35,7 @@ public partial class AccountSettingsView : UserControl
     private void AddAccount_Click(object sender, RoutedEventArgs e)
     {
         if (IsBusy || sender is not FrameworkElement { DataContext: ProviderRow provider }) return;
-        SetBusy(true, "새 계정으로 로그인하는 중입니다. 현재 사용 중인 계정은 유지됩니다.");
+        SetBusy(true, "새 계정으로 로그인하는 중입니다. 현재 사용 중인 계정은 유지됩니다.", provider.Id);
         string message;
         try
         {
@@ -74,7 +75,7 @@ public partial class AccountSettingsView : UserControl
         if (_loading || IsBusy || sender is not ComboBox { DataContext: ProviderRow provider, SelectedItem: AccountRow account }
             || account.Id.Length == 0 || account.Id == provider.ActiveId) return;
         if (Application.Current.MainWindow is not MainWindow main) return;
-        SetBusy(true, "계정을 변경하는 중입니다. 세션의 대화 기록을 저장한 뒤 다시 엽니다.");
+        SetBusy(true, "계정을 변경하는 중입니다. 세션의 대화 기록을 저장한 뒤 다시 엽니다.", provider.Id);
         string message;
         try
         {
@@ -100,24 +101,38 @@ public partial class AccountSettingsView : UserControl
         catch (Exception ex) { StatusText.Text = AccountError(ex); }
     }
 
-    private void SetBusy(bool busy, string message = "")
+    private void SetBusy(bool busy, string message = "", string? providerId = null)
     {
         IsBusy = busy;
         Providers.IsEnabled = !busy;
         StatusText.Text = message;
-        StatusSpinner.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
-        if (busy)
+        foreach (var provider in Providers.Items.OfType<ProviderRow>())
+            provider.SetBusy(busy && provider.Id == providerId);
+    }
+
+    private void ProviderSpinner_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is true && sender is FrameworkElement spinner)
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (IsBusy) StatusText.BringIntoView();
+                if (IsBusy && spinner.IsVisible) spinner.BringIntoView();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private static string AccountError(Exception ex) => ex is InvalidOperationException or System.IO.InvalidDataException or AccountRestoreException
         ? ex.Message : "계정 작업을 완료하지 못했습니다. 저장 공간과 파일 접근 권한을 확인하고 다시 시도하세요.";
 
-    public sealed class ProviderRow
+    public sealed class ProviderRow : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler? PropertyChanged;
+        public Visibility BusyVisibility { get; private set; } = Visibility.Collapsed;
+        public void SetBusy(bool busy)
+        {
+            var visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+            if (BusyVisibility == visibility) return;
+            BusyVisibility = visibility;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BusyVisibility)));
+        }
         public string Id { get; }
         public string Name => Id == "claude" ? "Claude" : "Codex";
         public string ActiveId { get; }

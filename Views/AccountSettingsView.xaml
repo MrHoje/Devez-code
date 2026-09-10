@@ -30,15 +30,6 @@
             <TextBlock Text="계정을 변경하면 해당 공급자의 세션을 모두 재실행합니다.&#10;작성 중인 입력과 응답은 중단될 수 있습니다. 해당 공급자의 외부 터미널 세션도 먼저 닫아주세요."
                        TextWrapping="Wrap" FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
         </Border>
-        <DockPanel LastChildFill="True">
-            <Ellipse x:Name="StatusSpinner" DockPanel.Dock="Left" Width="18" Height="18" Margin="0,1,8,12"
-                     VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False"
-                     models:SpinnerActivator.Track="True" Stroke="{DynamicResource PrimaryBrush}"
-                     StrokeThickness="2" StrokeDashArray="18 100" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
-                <Ellipse.RenderTransform>
-                    <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                </Ellipse.RenderTransform>
-            </Ellipse>
             <TextBlock x:Name="StatusText" TextWrapping="Wrap" Margin="0,0,0,12"
                        AutomationProperties.LiveSetting="Polite" Foreground="{DynamicResource TextMutedBrush}">
                 <TextBlock.Style>
@@ -49,15 +40,25 @@
                     </Style>
                 </TextBlock.Style>
             </TextBlock>
-        </DockPanel>
         <ItemsControl x:Name="Providers">
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}"
                             BorderThickness="1" CornerRadius="10" Padding="20" Margin="0,0,0,16">
                         <StackPanel>
-                            <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}" Margin="0,0,0,12"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <Ellipse x:Name="ProviderSpinner" Width="16" Height="16" Margin="0,0,8,0"
+                                         VerticalAlignment="Center" Visibility="{Binding BusyVisibility}" IsHitTestVisible="False"
+                                         IsVisibleChanged="ProviderSpinner_IsVisibleChanged"
+                                         models:SpinnerActivator.Track="True" Stroke="{DynamicResource PrimaryBrush}"
+                                         StrokeThickness="1.8" StrokeDashArray="18 100" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                                <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
                             <TextBlock Text="사용할 계정" FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,6"/>
                             <ComboBox ItemsSource="{Binding Options}" SelectedValuePath="Id"
                                       IsEnabled="{Binding CanSwitch}"

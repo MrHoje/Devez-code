@@ -413,17 +413,31 @@ internal static class Program
         window.Show();
         Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
         host.Measure(new Size(720, 960)); host.Arrange(new Rect(0, 0, 720, 960)); host.UpdateLayout();
-        var spinner = (System.Windows.Shapes.Ellipse)view.FindName("StatusSpinner");
+        var spinners = Descendants<System.Windows.Shapes.Ellipse>(view).Where(s => s.Name == "ProviderSpinner").ToArray();
+        var claudeTitle = Descendants<TextBlock>(view).Single(t => t.Text == "Claude");
+        var codexTitle = Descendants<TextBlock>(view).Single(t => t.Text == "Codex");
+        var claudeTitleX = claudeTitle.TranslatePoint(new Point(), view).X;
+        var codexTitleX = codexTitle.TranslatePoint(new Point(), view).X;
         var providerList = (ItemsControl)view.FindName("Providers");
         var setBusy = typeof(AccountSettingsView).GetMethod("SetBusy", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-        Check(spinner.Visibility == Visibility.Collapsed, "대기 중에도 계정 스피너 표시");
-        setBusy.Invoke(view, [true, "계정을 변경하는 중입니다. 세션의 대화 기록을 저장한 뒤 다시 엽니다."]);
+        Check(spinners.Length == 2 && spinners.All(s => s.Visibility == Visibility.Collapsed), "대기 중에도 계정 스피너 표시");
+        setBusy.Invoke(view, [true, "계정을 변경하는 중입니다. 세션의 대화 기록을 저장한 뒤 다시 엽니다.", "claude"]);
         Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
-        Check(spinner.IsVisible && !providerList.IsEnabled, "계정 변경 중 스피너 또는 중복 입력 차단 누락");
+        Check(spinners[0].IsVisible && !spinners[1].IsVisible && !providerList.IsEnabled, "변경 중인 공급자의 스피너 또는 중복 입력 차단 누락");
+        Check(claudeTitle.TranslatePoint(new Point(), view).X > claudeTitleX
+            && codexTitle.TranslatePoint(new Point(), view).X == codexTitleX, "로딩 중인 공급자 이름만 오른쪽으로 이동해야 함");
         host.UpdateLayout(); SaveImage(host, "accounts-loading.png");
-        setBusy.Invoke(view, [false, ""]);
+        setBusy.Invoke(view, [false, "", null]);
         Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
-        Check(spinner.Visibility == Visibility.Collapsed && providerList.IsEnabled, "계정 변경 종료 후 로딩 표시가 남음");
+        Check(spinners.All(s => s.Visibility == Visibility.Collapsed) && providerList.IsEnabled, "계정 변경 종료 후 로딩 표시가 남음");
+        Check(claudeTitle.TranslatePoint(new Point(), view).X == claudeTitleX, "로딩 종료 후 공급자 이름 위치 미복원");
+        setBusy.Invoke(view, [true, "Codex 계정을 변경하는 중입니다.", "codex"]);
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+        Check(!spinners[0].IsVisible && spinners[1].IsVisible && codexTitle.TranslatePoint(new Point(), view).X > codexTitleX,
+            "Codex 변경 시 공급자별 로딩 표시 실패");
+        host.UpdateLayout(); SaveImage(host, "accounts-codex-loading.png");
+        setBusy.Invoke(view, [false, "", null]);
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
         var combos = Descendants<ComboBox>(view).ToList();
         Check(combos.Count == 2, "공급자별 콤보박스 누락");
         Check(combos[0].SelectedValue as string == a.Id, "실제 콤보박스 선택값 바인딩 실패");
