@@ -688,8 +688,12 @@ public partial class MainWindow : Window
             {
                 var s = FindOwnedSession(roomId, "devezvibe", "busy");
                 if (s == null) return;
+                bool observedTurn = busy; // 최신 파일이 이미 idle이어도 관측한 짧은 턴은 완료 대상이다.
+                if (_devezVibeState.ReadRoomActivity(roomId) is { } current)
+                    (busy, loading, compacting) = current;
                 MarkSessionActivity(roomId);
                 bool was = s?.IsBusy ?? false;
+                bool wasWaiting = s?.IsWaitingChoice ?? false;
                 // 프롬프트 응답이 아닌 구간(transcript 복원 로딩 · 컨텍스트 압축) — 완료기록 대상이 아니다.
                 bool quiet = loading || compacting;
                 bool wasQuiet = _devezVibeQuietRooms.Contains(roomId);
@@ -703,12 +707,13 @@ public partial class MainWindow : Window
                     // 복원 로딩은 스피너를 켜지 않는다 — 다른 에이전트도 resume 때 조용하고,
                     // dvz 는 그 구간을 로딩 커버로 이미 표시한다.
                     s.IsBusy = busy || compacting;
-                    if (!busy) s.IsWaitingChoice = false;
+                    s.IsWaitingChoice = _devezVibeState.ReadRoomWaiting(roomId) ?? wasWaiting;
+                    NotifyIfSessionWaiting(s, wasWaiting, s.IsWaitingChoice, notificationDelayMs: 1500);
                 }
                 // 복원 완료의 loading→idle, /compact 종료의 compacting→idle 은 응답 완료가 아니다.
                 // quiet→running 은 실제 턴 시작이므로 이후 running→idle 완료는 정상 기록한다.
                 if (quiet || !wasQuiet)
-                    NotifyIfSessionFinished(s, was, busy, () => _devezVibeState.IsRoomBusy(roomId));
+                    NotifyIfSessionFinished(s, was || wasWaiting || observedTurn, busy || s!.IsWaitingChoice, () => _devezVibeState.IsRoomBusy(roomId));
                 // dvz 는 Claude Agent SDK(=~/.claude OAuth 동일 계정)를 쓰지만 statusLine 훅이 없어
                 // 사용량 실시간 소스가 없다. 턴 종료와 압축 종료에서만 갱신을 요청한다(복원 loading→idle 제외).
                 if (!busy && !quiet && (wasCompacting || (was && !wasQuiet))) _usageApi.RequestRefreshSoon();
@@ -720,10 +725,13 @@ public partial class MainWindow : Window
             {
                 var s = FindOwnedSession(roomId, "devezvibe", "waiting");
                 if (s == null) return;
+                waiting = _devezVibeState.ReadRoomWaiting(roomId) ?? waiting;
                 MarkSessionActivity(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 NotifyIfSessionWaiting(s, wasWaiting, waiting, notificationDelayMs: 1500);
+                if (waiting || (wasWaiting && !s!.IsBusy))
+                    NotifyIfSessionFinished(s, wasWaiting, waiting, () => _devezVibeState.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
             });
         _devezVibeState.SessionChanged += (roomId, sid) =>

@@ -22,8 +22,8 @@
   .term-container.agent-gajae { padding-bottom: 14px; padding-right: 1px; }
   .term-container.active { display: block; }
   .term-container .xterm { height: 100%; }
-  /* Alt 로 xterm 이 column-select 상태를 표시해도, 세션에서는 텍스트 선택 커서를 유지한다. */
-  .term-container .xterm.column-select.focus { cursor: default; }
+  /* 마우스 모드·링크 호버·열 선택·입력 textarea 상태와 무관하게 화살표를 유지한다. */
+  .term-container, .term-container * { cursor: default !important; }
   /* 스크롤바 숨김 (휠 스크롤은 동작) */
   .xterm .xterm-viewport { scrollbar-width: none; }
   .xterm .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }

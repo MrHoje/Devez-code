@@ -27,6 +27,9 @@ public sealed class DevezVibeStateService : IDisposable
     private FileSystemWatcher? _busyWatcher;
     private FileSystemWatcher? _waitingWatcher;
     private FileSystemWatcher? _sessionWatcher;
+    private readonly object _stateLock = new();
+    private readonly Dictionary<string, string> _lastActivity = new();
+    private readonly Dictionary<string, bool> _lastWaiting = new();
 
     /// <summary>(roomId, message) — 마지막 user prompt (1줄 요약, 200자).</summary>
     public event Action<string, string>? MessageChanged;
@@ -213,67 +216,114 @@ public sealed class DevezVibeStateService : IDisposable
     }
 
     private void EmitBusy(string path)
+        => EmitBusySnapshot(path, settled: false);
+
+    private void EmitBusySnapshot(string path, bool settled)
     {
-        var room = Path.GetFileNameWithoutExtension(path);
-        if (string.IsNullOrEmpty(room)) return;
-        var status = TryRead(path);
-        if (status == null) return;
-        // rename 직전의 빈 파일을 idle 로 오인 방지 — 짧게 뒤 재확인, 그래도 비면 idle 확정(stuck-ON 방지).
-        if (string.IsNullOrWhiteSpace(status)) { _ = ReEmitBusyAfterSettleAsync(path, room); return; }
-        bool loading = status.Equals("loading", StringComparison.OrdinalIgnoreCase);
-        bool busy = status.Equals("running", StringComparison.OrdinalIgnoreCase);
-        bool compacting = status.Equals("compacting", StringComparison.OrdinalIgnoreCase);
-        BusyChanged?.Invoke(room, busy, loading, compacting);
+        // 읽기와 발행을 함께 직렬화해야 먼저 읽은 running이 idle 뒤에 도착하지 않는다.
+        lock (_stateLock)
+        {
+            var room = Path.GetFileNameWithoutExtension(path);
+            if (string.IsNullOrEmpty(room)) return;
+            var status = TryRead(path)?.ToLowerInvariant();
+            if (status == null) return;
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                if (!settled) { _ = ReEmitBusyAfterSettleAsync(path); return; }
+                status = "idle";
+            }
+            if (status is not ("running" or "idle" or "loading" or "compacting")) return;
+            if (_lastActivity.TryGetValue(room, out var previous) && previous == status) return;
+            _lastActivity[room] = status;
+            BusyChanged?.Invoke(room, status == "running", status == "loading", status == "compacting");
+        }
     }
 
-    private async System.Threading.Tasks.Task ReEmitBusyAfterSettleAsync(string path, string room)
+    private async System.Threading.Tasks.Task ReEmitBusyAfterSettleAsync(string path)
     {
         try
         {
             await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
-            var status = TryRead(path);
-            bool loading = !string.IsNullOrWhiteSpace(status)
-                && status!.Equals("loading", StringComparison.OrdinalIgnoreCase);
-            bool busy = !string.IsNullOrWhiteSpace(status)
-                && status!.Equals("running", StringComparison.OrdinalIgnoreCase);
-            bool compacting = !string.IsNullOrWhiteSpace(status)
-                && status!.Equals("compacting", StringComparison.OrdinalIgnoreCase);
-            BusyChanged?.Invoke(room, busy, loading, compacting);
+            EmitBusySnapshot(path, settled: true);
         }
         catch { /* best effort */ }
     }
 
-    /// <summary>완료 정착 재확인 — busy 파일이 running 이면 아직 진행 중(완료 토스트 보류).</summary>
+    /// <summary>UI 큐에서 늦게 처리되는 이벤트보다 현재 파일 상태를 우선한다.</summary>
+    public (bool Busy, bool Loading, bool Compacting)? ReadRoomActivity(string roomId)
+    {
+        lock (_stateLock)
+        {
+            var room = Sanitize(roomId);
+            var status = TryRead(Path.Combine(BusyDir, room + ".txt"))?.ToLowerInvariant();
+            if (status is not ("running" or "idle" or "loading" or "compacting"))
+                _lastActivity.TryGetValue(room, out status);
+            return status switch
+            {
+                "running" => (true, false, false),
+                "loading" => (false, true, false),
+                "compacting" => (false, false, true),
+                "idle" => (false, false, false),
+                _ => null,
+            };
+        }
+    }
+
+    public bool? ReadRoomWaiting(string roomId)
+    {
+        lock (_stateLock)
+        {
+            var room = Sanitize(roomId);
+            return TryRead(Path.Combine(WaitingDir, room + ".txt"))?.ToLowerInvariant() switch
+            {
+                "waiting" => true,
+                "ready" => false,
+                _ => _lastWaiting.TryGetValue(room, out var waiting) ? waiting : null,
+            };
+        }
+    }
+
+    /// <summary>턴 또는 질문이 남아 있으면 완료 토스트를 보류한다.</summary>
     public bool IsRoomBusy(string roomId)
     {
         if (string.IsNullOrWhiteSpace(roomId)) return false;
         try
         {
-            var status = TryRead(Path.Combine(BusyDir, Sanitize(roomId) + ".txt"));
-            return !string.IsNullOrWhiteSpace(status)
-                && status.Equals("running", StringComparison.OrdinalIgnoreCase);
+            return ReadRoomActivity(roomId)?.Busy == true || ReadRoomWaiting(roomId) == true;
         }
         catch { return false; }
     }
 
     private void EmitWaiting(string path)
+        => EmitWaitingSnapshot(path, settled: false);
+
+    private void EmitWaitingSnapshot(string path, bool settled)
     {
-        var room = Path.GetFileNameWithoutExtension(path);
-        if (string.IsNullOrEmpty(room)) return;
-        var status = TryRead(path);
-        if (string.IsNullOrWhiteSpace(status)) { _ = ReEmitWaitingAfterSettleAsync(path, room); return; }
-        WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+        lock (_stateLock)
+        {
+            var room = Path.GetFileNameWithoutExtension(path);
+            if (string.IsNullOrEmpty(room)) return;
+            var status = TryRead(path)?.ToLowerInvariant();
+            if (status == null) return;
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                if (!settled) { _ = ReEmitWaitingAfterSettleAsync(path); return; }
+                status = "ready";
+            }
+            if (status is not ("waiting" or "ready")) return;
+            bool waiting = status == "waiting";
+            if (_lastWaiting.TryGetValue(room, out var previous) && previous == waiting) return;
+            _lastWaiting[room] = waiting;
+            WaitingChoiceChanged?.Invoke(room, waiting);
+        }
     }
 
-    private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path, string room)
+    private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path)
     {
         try
         {
             await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
-            var status = TryRead(path);
-            WaitingChoiceChanged?.Invoke(room,
-                !string.IsNullOrWhiteSpace(status)
-                && status!.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+            EmitWaitingSnapshot(path, settled: true);
         }
         catch { /* best effort */ }
     }

@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.1", "2026-09-10", true, new[]
+          ("v1.27.2", "2026-09-10", true, new[]
+          {
+              "Codex 선택지 답변을 기다리는 동안 완료로 표시되던 문제를 수정했습니다.",
+          }),
+          ("v1.27.1", "2026-09-10", false, new[]
           {
               "사소한 오류 수정",
           }),
