@@ -34,8 +34,6 @@ public partial class AccountSettingsView : UserControl
     private void AddAccount_Click(object sender, RoutedEventArgs e)
     {
         if (IsBusy || sender is not FrameworkElement { DataContext: ProviderRow provider }) return;
-        var name = PromptDialog.Show("계정 추가", "구분하기 쉬운 계정 이름을 입력하세요.", defaultValue: provider.Name + " 계정", maxLength: 80);
-        if (string.IsNullOrWhiteSpace(name)) return;
         SetBusy(true, "새 계정으로 로그인하는 중입니다. 현재 사용 중인 계정은 유지됩니다.");
         string message;
         try
@@ -46,7 +44,7 @@ public partial class AccountSettingsView : UserControl
             login.ShowDialog();
             if (login.Captured && login.TokenResponse is { } response)
             {
-                CliAccountStore.Instance.Add(CliAccountStore.FromLogin(provider.Id, response, name.Trim()));
+                CliAccountStore.Instance.Add(CliAccountStore.FromLogin(provider.Id, response));
                 message = "계정을 추가했습니다. 사용할 계정에서 선택하면 적용됩니다.";
             }
             else message = "계정 추가를 취소했거나 로그인하지 못했습니다. 기존 계정은 유지됩니다.";

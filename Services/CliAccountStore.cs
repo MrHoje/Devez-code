@@ -16,7 +16,7 @@ public sealed class CliAccount
     public string Identity { get; set; } = "";
     public string Credentials { get; set; } = "";
     public string? ClaudeAccount { get; set; }
-    public string DisplayName => string.IsNullOrEmpty(Email) || Name == Email ? Name : $"{Name} · {Email}";
+    public string DisplayName => string.IsNullOrWhiteSpace(Email) ? "이메일 확인 필요" : Email.Trim();
     public override string ToString() => DisplayName;
 }
 
@@ -242,7 +242,7 @@ public sealed class CliAccountStore
         }
     }
 
-    public static CliAccount FromLogin(string provider, string response, string name)
+    public static CliAccount FromLogin(string provider, string response, string name = "계정")
     {
         var token = JsonNode.Parse(response)!.AsObject();
         if (provider == "codex")

@@ -6802,9 +6802,20 @@ public partial class MainWindow : Window
             string? sessionProvider = agent;
             if (agent == "devezvibe")
             {
-                var sessionId = DevezVibeStateService.LoadTrackedSessionId(session.Id)
-                    ?? SettingsService.LoadDevezVibeRoomSession(session.Id);
-                sessionProvider = TerminalSessionManager.ResolveDevezVibeProvider(sessionId);
+                var trackedId = DevezVibeStateService.LoadTrackedSessionId(session.Id);
+                var savedId = SettingsService.LoadDevezVibeRoomSession(session.Id);
+                sessionProvider = TerminalSessionManager.ResolveDevezVibeProvider(trackedId)
+                    ?? TerminalSessionManager.ResolveDevezVibeProvider(savedId);
+                // 첫 메시지 전에는 대화 ID와 라우트가 없다. 이런 새 내부 세션은 인증을 새로 읽도록
+                // 재시작하되, 프롬프트나 작업 흔적이 있는 세션을 새 세션으로 간주하지 않는다.
+                if (sessionProvider == null && !session.IsExternal && !session.IsBusy
+                    && string.IsNullOrWhiteSpace(trackedId) && string.IsNullOrWhiteSpace(savedId)
+                    && !DevezVibeStateService.IsBusyRunning(session.Id)
+                    && string.IsNullOrWhiteSpace(DevezVibeStateService.LoadLastMessage(session.Id)))
+                {
+                    all.Add(session);
+                    continue;
+                }
                 if (sessionProvider == null && (session.IsExternal || TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }))
                     throw new InvalidOperationException($"'{session.Name}'의 Devez Vibe 공급자를 확인하지 못했습니다. 해당 세션을 다시 열거나 닫은 뒤 계정을 변경하세요.");
             }

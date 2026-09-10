@@ -70,11 +70,17 @@ namespace DevezCode
     {
         public static bool LoadClaudeGuiMode() => true;
         public static string LoadAgentForRoom(string id) => id.StartsWith("sdk") ? "claude" : "codex";
-        public static string? LoadDevezVibeRoomSession(string id) => id;
+        public static Dictionary<string, string?> SavedVibeIds = [];
+        public static string? LoadDevezVibeRoomSession(string id) => SavedVibeIds.TryGetValue(id, out var value) ? value : id;
     }
     public static class DevezVibeStateService
     {
-        public static string? LoadTrackedSessionId(string room) => null;
+        public static Dictionary<string, string?> TrackedIds = [];
+        public static Dictionary<string, string> LastMessages = [];
+        public static HashSet<string> BusyRooms = [];
+        public static string? LoadTrackedSessionId(string room) => TrackedIds.GetValueOrDefault(room);
+        public static string? LoadLastMessage(string room) => LastMessages.GetValueOrDefault(room);
+        public static bool IsBusyRunning(string room) => BusyRooms.Contains(room);
         public static string StripBackendPrefix(string sid) => sid.StartsWith("claude:") ? sid[7..] : sid;
     }
     public partial class TerminalSessionManager
@@ -112,10 +118,6 @@ namespace DevezCode
 
 namespace DevezCode.Views
 {
-    public static class PromptDialog
-    {
-        public static string? Show(string title, string text, string defaultValue, int maxLength) => null;
-    }
     public static class ConfirmDialog
     {
         public static bool Show(string title, string text, string okLabel, bool danger) => false;
