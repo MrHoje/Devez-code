@@ -131,13 +131,20 @@ public abstract class BrowserPopupWindowBase : Window
         _footerHost.Visibility = Visibility.Visible;
     }
 
-    protected async Task InitializeBrowserAsync()
+    protected async Task InitializeBrowserAsync(bool privateLogin = false)
     {
         var userDataDir = System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "DevezCode", "WebView2");
         var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
-        await _view.EnsureCoreWebView2Async(env);
+        if (privateLogin)
+        {
+            var options = env.CreateCoreWebView2ControllerOptions();
+            options.ProfileName = "AccountLogin";
+            options.IsInPrivateModeEnabled = true;
+            await _view.EnsureCoreWebView2Async(env, options);
+        }
+        else await _view.EnsureCoreWebView2Async(env);
         _view.CoreWebView2.Profile.PreferredColorScheme = App.IsDarkTheme(App.CurrentTheme)
             ? CoreWebView2PreferredColorScheme.Dark
             : CoreWebView2PreferredColorScheme.Light;

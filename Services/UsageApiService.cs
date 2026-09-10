@@ -26,8 +26,8 @@ public sealed class UsageApiService : IDisposable
     // 토큰 후보 경로: claude CLI 파일(있으면 최신) → DevezCode 자체 로그인(ClaudeLoginWindow) 파일.
     private static IEnumerable<string> CredentialPaths()
     {
-        yield return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
+        yield return CliAccountStore.Instance.ClaudeCredentialsPath;
+        if (CliAccountStore.Instance.HasActive("claude")) yield break;
         yield return ClaudeCredentialStore.StorePath;
     }
 
@@ -70,6 +70,20 @@ public sealed class UsageApiService : IDisposable
     /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
     public void RefreshNow() => _ = PollAsync(waitForTurn: true);
 
+    public async Task ResetForAccountChangeAsync()
+    {
+        await _pollGate.WaitAsync();
+        try
+        {
+            _dropGuard.Reset();
+            _guardSeeded = false;
+            _lastSuccessfulSubscriptionType = null;
+            Interlocked.Exchange(ref _lastAttemptTicks, 0);
+            if (File.Exists(FallbackPath)) File.Delete(FallbackPath);
+        }
+        finally { _pollGate.Release(); }
+    }
+
     /// <summary>턴 완료처럼 사용량이 방금 변한 시점에 갱신을 요청한다. dvz(Devez Vibe)처럼
     /// statusLine 훅이 없는 에이전트는 이 호출이 없으면 다음 3분 주기까지 카드가 그대로다.
     /// 최소 요청 간격(<see cref="MinRequestGap"/>)을 지키기 위해 이르면 남은 시간 뒤로 1건만 예약한다
@@ -109,6 +123,7 @@ public sealed class UsageApiService : IDisposable
     /// claude CLI 파일은 claude 가 관리하므로 건드리지 않는다. 실패 시 기존 토큰 유지(다음에 재로그인 유도).</summary>
     private async Task EnsureFreshClaudeAsync()
     {
+        if (CliAccountStore.Instance.HasActive("claude")) return;
         if (ClaudeCredentialStore.Read() is not { } c) return;
         if (string.IsNullOrEmpty(c.refresh)) return;
         if (c.expiresMs - DateTimeOffset.Now.ToUnixTimeMilliseconds() > 5 * 60 * 1000) return; // 아직 충분

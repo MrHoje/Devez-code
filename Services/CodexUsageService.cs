@@ -28,7 +28,8 @@ public sealed class CodexUsageService : IDisposable
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        yield return Path.Combine(home, ".codex", "auth.json");
+        yield return CliAccountStore.Instance.CodexCredentialsPath;
+        if (CliAccountStore.Instance.HasActive("codex")) yield break;
         yield return CodexCredentialStore.StorePath;
         yield return Path.Combine(home, ".local", "share", "opencode", "auth.json");
         yield return Path.Combine(appData, "opencode", "auth.json");
@@ -68,6 +69,23 @@ public sealed class CodexUsageService : IDisposable
     /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
     public void RefreshNow() => _ = PollAsync(waitForTurn: true, resetRejected: true);
 
+    public async Task ResetForAccountChangeAsync()
+    {
+        await _pollGate.WaitAsync();
+        try
+        {
+            _dropGuard.Reset();
+            _guardSeeded = false;
+            _guardAccountKey = null;
+            _forceZeroUntilConfirmed = false;
+            _lastPublished = null;
+            _lastCredits = null;
+            _lastCreditsAccountKey = null;
+            _rejectedTokens.Clear();
+        }
+        finally { _pollGate.Release(); }
+    }
+
     /// <summary>Codex OAuth 토큰이 있어 연결된 상태인지(DevezCode 자체 로그인 또는 opencode).</summary>
     public static bool IsConnected() => ReadAuth().token != null;
 
@@ -79,6 +97,7 @@ public sealed class CodexUsageService : IDisposable
     /// opencode auth.json 은 opencode 가 관리하므로 건드리지 않는다. 실패 시 기존 토큰 유지(재로그인 유도).</summary>
     private async Task EnsureFreshAsync()
     {
+        if (CliAccountStore.Instance.HasActive("codex")) return; // CLI가 같은 refresh token을 단독 갱신한다.
         if (CodexCredentialStore.Read() is not { } c) return;
         if (string.IsNullOrEmpty(c.refresh)) return;
         if (c.expiresMs - DateTimeOffset.Now.ToUnixTimeMilliseconds() > 5 * 60 * 1000) return;

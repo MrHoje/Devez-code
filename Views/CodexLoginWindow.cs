@@ -22,9 +22,11 @@ public sealed class CodexLoginWindow : UsageLoginWindowBase
     private readonly string _verifier;
     private readonly string _state;
     private bool _done;
+    private readonly bool _captureOnly;
 
-    public CodexLoginWindow(Window? owner) : base(owner, "ChatGPT(Codex) 로그인")
+    public CodexLoginWindow(Window? owner, bool captureOnly = false) : base(owner, "ChatGPT(Codex) 로그인")
     {
+        _captureOnly = captureOnly;
         _verifier = RandomUrlSafe(32);
         _state = RandomUrlSafe(16);
 
@@ -35,7 +37,8 @@ public sealed class CodexLoginWindow : UsageLoginWindowBase
     {
         try
         {
-            await InitializeBrowserAsync();
+            await InitializeBrowserAsync(_captureOnly);
+            if (!IsLoaded) return;
 
             _view.CoreWebView2.NavigationStarting += OnNavigationStarting;
 
@@ -48,16 +51,20 @@ public sealed class CodexLoginWindow : UsageLoginWindowBase
                       $"&codex_cli_simplified_flow=true&originator=opencode";
             _view.CoreWebView2.Navigate(url);
         }
-        catch (Exception ex)
+        catch
         {
-            Title = "WebView2 를 시작할 수 없습니다: " + ex.Message;
+            if (IsLoaded)
+            {
+                ConfirmDialog.Alert("Codex 로그인", "로그인 창을 열지 못했습니다. 다시 시도하거나 현재 CLI 계정 가져오기를 사용하세요.");
+                Close();
+            }
         }
     }
 
     /// <summary>redirect(localhost:1455)로의 이동을 가로채 code 를 받아 토큰으로 교환한다(실제 서버 불필요).</summary>
     private async void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
-        if (_done || !e.Uri.StartsWith(Redirect, StringComparison.OrdinalIgnoreCase)) return;
+        if (_done || !IsOAuthCallback(e.Uri, Redirect)) return;
         e.Cancel = true; // localhost 로의 실제 요청은 막고 직접 처리
         _done = true;
         try
@@ -65,10 +72,11 @@ public sealed class CodexLoginWindow : UsageLoginWindowBase
             var (code, state) = ParseCallback(e.Uri);
             if (code == null || state != _state) { Close(); return; }
             await ExchangeAsync(code);
+            if (!IsLoaded) return;
             Captured = true;
             DialogResult = true;
         }
-        catch { /* 실패 — 그냥 닫는다 */ }
+        catch { if (IsLoaded) ConfirmDialog.Alert("Codex 로그인", "로그인을 완료하지 못했습니다. 다시 시도하세요."); }
         Close();
     }
 
@@ -101,7 +109,8 @@ public sealed class CodexLoginWindow : UsageLoginWindowBase
         });
         using var res = await http.PostAsync(TokenUrl, body);
         res.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+        var response = await res.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(response);
         var r = doc.RootElement;
         var access = r.GetProperty("access_token").GetString()
                      ?? throw new InvalidOperationException("access_token 없음");
@@ -109,8 +118,13 @@ public sealed class CodexLoginWindow : UsageLoginWindowBase
         var expiresSec = r.TryGetProperty("expires_in", out var ei) && ei.ValueKind == JsonValueKind.Number
             ? ei.GetInt64() : 3600;
         var expiresMs = DateTimeOffset.Now.ToUnixTimeMilliseconds() + expiresSec * 1000;
-        CodexCredentialStore.Save(access, refresh, expiresMs);
-        CodexCredentialStore.Enable();
+        if (!IsLoaded) return;
+        if (_captureOnly) TokenResponse = response;
+        else
+        {
+            CodexCredentialStore.Save(access, refresh, expiresMs);
+            CodexCredentialStore.Enable();
+        }
     }
 
     private static string RandomUrlSafe(int bytes)

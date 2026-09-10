@@ -942,6 +942,8 @@ public partial class SettingsDialog : UserControl
         CatThemeBtn.Foreground     = key == "theme"      ? primary : text;
         CatAgentBtn.Background     = key == "agent"      ? active : Brushes.Transparent;
         CatAgentBtn.Foreground     = key == "agent"      ? primary : text;
+        CatAccountBtn.Background   = key == "account"    ? active : Brushes.Transparent;
+        CatAccountBtn.Foreground   = key == "account"    ? primary : text;
         CatCleanerBtn.Background   = key == "cleaner"    ? active : Brushes.Transparent;
         CatCleanerBtn.Foreground   = key == "cleaner"    ? primary : text;
         CatSidePanelBtn.Background = key == "sidepanel"  ? active : Brushes.Transparent;
@@ -967,6 +969,7 @@ public partial class SettingsDialog : UserControl
         BrowserPanel.Visibility    = key == "browser"    ? Visibility.Visible : Visibility.Collapsed;
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility      = key == "agent"      ? Visibility.Visible : Visibility.Collapsed;
+        AccountPanel.Visibility    = key == "account"    ? Visibility.Visible : Visibility.Collapsed;
         CleanerPanel.Visibility    = key == "cleaner"    ? Visibility.Visible : Visibility.Collapsed;
         SidePanelPanel.Visibility  = key == "sidepanel"  ? Visibility.Visible : Visibility.Collapsed;
         UsagePanel.Visibility      = key == "usage"      ? Visibility.Visible : Visibility.Collapsed;
@@ -982,6 +985,7 @@ public partial class SettingsDialog : UserControl
         if (key == "wake") EnterWake();
         if (key == "sidepanel") LoadSidePanelSettings();
         if (key == "usage") LoadFooterUsageSettings();
+        if (key == "account") AccountPanel.RefreshAccounts();
         if (key == "notify") LoadNotifySettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
         if (key == "cleaner") EnterCleaner();
@@ -2182,6 +2186,7 @@ public partial class SettingsDialog : UserControl
     /// 세션 재시작 여부를 여기서 묻는다(재시작하지 않아도 저장은 유지된다).</summary>
     public void TryCloseWithConfirm()
     {
+        if (AccountPanel.IsBusy) { SetActiveCategory("account"); return; }
         FlushAutoSave();   // 디바운스 대기 중인 변경 확정
 
         if (_themeReloadPending)

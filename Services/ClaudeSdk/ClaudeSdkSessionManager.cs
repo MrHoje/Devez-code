@@ -60,6 +60,7 @@ public sealed class ClaudeSdkSessionManager
     private readonly Dictionary<string, ManagedSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<ClaudeSdkEvent>> _retainedEvents = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly HashSet<string> _accountSwitchRooms = new(StringComparer.OrdinalIgnoreCase);
     private System.Windows.Threading.DispatcherTimer? _busyWatchdog;
 
     public event Action<string, ClaudeSdkEvent>? EventReceived;
@@ -67,6 +68,19 @@ public sealed class ClaudeSdkSessionManager
     public bool IsStarted(string roomId)
     {
         lock (_sessions) return _sessions.TryGetValue(roomId, out var session) && session.Bridge.IsRunning;
+    }
+
+    public async Task SuspendStartsForAccountChangeAsync(IEnumerable<string> roomIds)
+    {
+        lock (_sessions) _accountSwitchRooms.UnionWith(roomIds);
+        // 이미 시작 중인 브리지가 완성될 때까지 기다려 종료 대상 스냅샷에서 빠지지 않게 한다.
+        await _gate.WaitAsync();
+        _gate.Release();
+    }
+
+    public void ResumeStartsAfterAccountChange(IEnumerable<string> roomIds)
+    {
+        lock (_sessions) _accountSwitchRooms.ExceptWith(roomIds);
     }
 
     public long GetWorkingStartedAtUnixMs(string roomId)
@@ -96,6 +110,7 @@ public sealed class ClaudeSdkSessionManager
     {
         lock (_sessions)
         {
+            if (_accountSwitchRooms.Contains(item.Id)) return;
             if (_sessions.TryGetValue(item.Id, out var existing) && existing.Bridge.IsRunning) return;
         }
 
@@ -104,6 +119,7 @@ public sealed class ClaudeSdkSessionManager
         {
             lock (_sessions)
             {
+                if (_accountSwitchRooms.Contains(item.Id)) return;
                 if (_sessions.TryGetValue(item.Id, out var existing) && existing.Bridge.IsRunning) return;
             }
 
@@ -190,7 +206,11 @@ public sealed class ClaudeSdkSessionManager
         if (string.IsNullOrWhiteSpace(text) && attachments.Count == 0) return false;
         await EnsureStartedAsync(item, cwd);
         ManagedSession? session;
-        lock (_sessions) _sessions.TryGetValue(item.Id, out session);
+        lock (_sessions)
+        {
+            if (_accountSwitchRooms.Contains(item.Id)) return false;
+            _sessions.TryGetValue(item.Id, out session);
+        }
         if (session is not { Bridge.IsRunning: true }) return false;
 
         var trimmed = text.Trim();

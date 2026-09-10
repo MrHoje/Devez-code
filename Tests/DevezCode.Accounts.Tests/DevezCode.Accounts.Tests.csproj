@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="obj\SessionSwitchMethod.g.cs" />
+    <None Include="obj\ThemePalette.json" CopyToOutputDirectory="PreserveNewest" Link="ThemePalette.json" />
+    <Compile Include="..\..\Services\CliAccountStore.cs" Link="Services\CliAccountStore.cs" />
+    <Compile Include="..\..\Services\ClaudeCredentialStore.cs" Link="Services\ClaudeCredentialStore.cs" />
+    <Compile Include="..\..\Services\CodexCredentialStore.cs" Link="Services\CodexCredentialStore.cs" />
+    <Compile Include="..\..\Views\AccountSettingsView.xaml.cs" Link="Views\AccountSettingsView.xaml.cs" />
+    <Compile Include="..\..\Views\BrowserPopupWindowBase.cs" Link="Views\BrowserPopupWindowBase.cs" />
+    <Compile Include="..\..\Views\UsageLoginWindowBase.cs" Link="Views\UsageLoginWindowBase.cs" />
+    <Compile Include="..\..\Views\ClaudeLoginWindow.cs" Link="Views\ClaudeLoginWindow.cs" />
+    <Compile Include="..\..\Views\CodexLoginWindow.cs" Link="Views\CodexLoginWindow.cs" />
+    <Page Include="..\..\Views\AccountSettingsView.xaml" Link="Views\AccountSettingsView.xaml" />
+    <Page Include="..\..\Styles\AppStyles.xaml" Link="Styles\AppStyles.xaml" />
+    <Page Include="..\..\Resources\Icons.xaml" Link="Resources\Icons.xaml" />
+    <Resource Include="..\..\Fonts\*.ttf" Link="Fonts\%(Filename)%(Extension)" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
+  </ItemGroup>
+  <Target Name="GenerateReloadFixture" BeforeTargets="PrepareForBuild">
+    <Exec Command="python generate_reload_fixture.py" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+</Project>

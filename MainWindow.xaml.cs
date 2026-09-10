@@ -1067,6 +1067,7 @@ public partial class MainWindow : Window
     /// 모든 세션을 graceful 종료(claude/codex transcript flush 기회)한 뒤 실제로 닫는다.</summary>
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (_accountSwitchRunning) { e.Cancel = true; return; }
         // 설정 화면이 열린 채 종료되는 경우 — 디바운스 대기 중인 변경만 확정한다(저장 유실 방지).
         // 오버레이는 닫지 않는다: 닫으면 ResumeTerminal 로 WebView2 가 되살아나 종료 오버레이를 뚫는다.
         _settingsView?.FlushPendingSave();
@@ -1627,10 +1628,16 @@ public partial class MainWindow : Window
    }
 
     private const double UsageBarTrack = 102; // 사용량 패널 막대 트랙 폭(XAML 과 일치)
+    private DateTime _claudeUsageCutoff;
+    private DateTimeOffset _codexUsageCutoff;
+    private bool _awaitingClaudeAccountUsage;
 
     private void OnRlSnapshot(Models.RateLimitSnapshot snap, bool fromApi)
         => Dispatcher.InvokeAsync(() =>
         {
+            if (snap.CapturedAt < _claudeUsageCutoff) return;
+            if (!fromApi && _awaitingClaudeAccountUsage) return;
+            if (fromApi) _awaitingClaudeAccountUsage = false;
             if (fromApi) _rlApi = snap; else _rlHook = snap;
             ReevaluateClaudeUsage();
         });
@@ -1722,6 +1729,7 @@ public partial class MainWindow : Window
         switch (u.Provider)
         {
             case "codex":
+                if (u.CapturedAt < _codexUsageCutoff) return;
                 _lastCodex = u;
                 SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct,
                     CxSevenBar, CxSevenPct, u, "Codex",
@@ -2451,7 +2459,8 @@ public partial class MainWindow : Window
     private int _pendingGlobalTabDelta;
     private readonly List<Action> _pendingWorkspaceContinuations = [];
     private readonly Queue<Action> _pendingWorkspaceCommands = new();
-    private bool IsWorkspaceNavigationBlocked => _terminalVisualTransitionGate.CurrentCount == 0
+    private bool _accountSwitchRunning;
+    private bool IsWorkspaceNavigationBlocked => _accountSwitchRunning || _terminalVisualTransitionGate.CurrentCount == 0
         || _overlaySuspended || _rightOverlayOpen || _rightOverlayTerminalSuspended;
     internal bool IsTerminalVisualTransitionBusy => IsWorkspaceNavigationBlocked;
 
@@ -6778,6 +6787,129 @@ public partial class MainWindow : Window
         {
             _sessionReloadGate.Release();
         }
+    }
+
+    /// <summary>인증을 바꾸기 전에 기존 프로세스의 갱신·대화 쓰기를 끝내고, 같은 방 ID로 다시 시작한다.</summary>
+    public async Task SwitchCliAccountAsync(string provider, string accountId)
+    {
+        if (_accountSwitchRunning) throw new InvalidOperationException("다른 계정으로 변경 중입니다.");
+        var store = CliAccountStore.Instance;
+        store.ValidateActivation(provider, accountId);
+        var all = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList();
+        if (all.Any(s => s.IsExternal))
+            throw new InvalidOperationException("외부 터미널에서 실행 중인 세션을 먼저 닫아 주세요.");
+
+        _accountSwitchRunning = true;
+        await _sessionReloadGate.WaitAsync();
+        var running = new List<SessionItem>();
+        var errors = new List<string>();
+        bool stopped = false;
+        bool allowRestart = true;
+        try
+        {
+            TerminalSessionManager.Instance.SuspendStartsForAccountChange(all.Select(s => s.Id));
+            foreach (var pane in _panes)
+                pane.BeginSessionReload(all, "계정 변경 중\n대화를 저장하고 세션을 다시 여는 중입니다.");
+            await ClaudeSdkSessionManager.Instance.SuspendStartsForAccountChangeAsync(all.Select(s => s.Id));
+            running = all.Where(s => TerminalSessionManager.Instance.Get(s.Id) is { IsAlive: true }
+                || ClaudeSdkSessionManager.Instance.IsStarted(s.Id)).ToList();
+            stopped = true; // 일부 종료만 성공해도 finally에서 살아 있는 방과 종료된 방을 구분해 복구한다.
+            await Task.WhenAll(
+                TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(running.Select(s => s.Id)),
+                Task.WhenAll(running.Where(s => ClaudeSdkSessionManager.Instance.IsStarted(s.Id))
+                    .Select(s => ClaudeSdkSessionManager.Instance.StopAsync(s.Id))));
+            store.Activate(provider, accountId);
+            if (provider == "codex")
+            {
+                CodexCredentialStore.Enable();
+                await _codex.ResetForAccountChangeAsync();
+                _codexUsageCutoff = DateTimeOffset.Now;
+                _lastCodex = null;
+                CodexPanel.Visibility = Visibility.Collapsed;
+                _codex.RefreshNow();
+            }
+            else
+            {
+                await _usageApi.ResetForAccountChangeAsync();
+                _claudeUsageCutoff = DateTime.Now;
+                _awaitingClaudeAccountUsage = true;
+                _rlApi = null;
+                _rlHook = null;
+                ReevaluateClaudeUsage();
+                _usageApi.RefreshNow();
+            }
+            UpdateFooterDivider();
+            RefreshUsagePanelIfVisible();
+        }
+        catch (AccountRestoreException)
+        {
+            allowRestart = false;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                var remaining = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().Select(s => s.Id).ToHashSet();
+                foreach (var session in running.Where(s => remaining.Contains(s.Id)))
+                {
+                    if (TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }
+                        || ClaudeSdkSessionManager.Instance.IsStarted(session.Id)) continue;
+                    TerminalSessionManager.Instance.ClearDisposedRoom(session.Id);
+                    session.IsAlive = false;
+                    session.IsBusy = false;
+                    session.IsWaitingChoice = false;
+                }
+                foreach (var pane in _panes)
+                {
+                    try { pane.CompleteSessionReload(all, restartActive: false); }
+                    catch { errors.Add("세션 화면"); }
+                }
+                TerminalSessionManager.Instance.ResumeStartsAfterAccountChange(all.Select(s => s.Id));
+                ClaudeSdkSessionManager.Instance.ResumeStartsAfterAccountChange(all.Select(s => s.Id));
+                if (stopped && allowRestart)
+                {
+                    await Task.Delay(150);
+                    foreach (var session in running.Where(s => remaining.Contains(s.Id)))
+                    {
+                        try
+                        {
+                            var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId;
+                            if (SettingsService.LoadClaudeGuiMode() && agentId == "claude")
+                            {
+                                var project = _projects.First(p => p.Tabs.Contains(session));
+                                await ClaudeSdkSessionManager.Instance.EnsureStartedAsync(session, project.Path);
+                            }
+                            else PaneFor(session).PreloadSession(session);
+                        }
+                        catch { errors.Add(session.Name); }
+                    }
+                    // preload는 WebView2 메시지로 비동기 실행된다. 요청 전송만으로 재실행 성공으로 보지 않는다.
+                    var deadline = DateTime.UtcNow.AddSeconds(15);
+                    bool Started(SessionItem s) => TerminalSessionManager.Instance.Get(s.Id) is { IsAlive: true }
+                        || ClaudeSdkSessionManager.Instance.IsStarted(s.Id);
+                    var expected = running.Where(s => remaining.Contains(s.Id)).ToList();
+                    while (expected.Any(s => !Started(s)) && DateTime.UtcNow < deadline)
+                        await Task.Delay(100);
+                    errors.AddRange(expected.Where(s => !Started(s)).Select(s => s.Name));
+                }
+            }
+            finally
+            {
+                _accountSwitchRunning = false;
+                TerminalSessionManager.Instance.ResumeStartsAfterAccountChange(all.Select(s => s.Id));
+                ClaudeSdkSessionManager.Instance.ResumeStartsAfterAccountChange(all.Select(s => s.Id));
+                _sessionReloadGate.Release();
+                foreach (var pane in _panes)
+                {
+                    try { pane.CompleteSessionReload(all, restartActive: allowRestart); }
+                    catch { errors.Add("표시 중인 세션"); }
+                }
+                SchedulePendingWorkspaceNavigationDrain();
+            }
+        }
+        if (errors.Count > 0)
+            throw new InvalidOperationException("계정은 변경했지만 일부 세션을 다시 열지 못했습니다. 해당 탭을 다시 열어 주세요: " + string.Join(", ", errors));
     }
 
     private async Task ReloadAllSessionsForThemeCoreAsync()
