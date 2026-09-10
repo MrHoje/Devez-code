@@ -377,8 +377,20 @@ public sealed class CliAccountStore
         {
             using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             { file.Write(bytes); file.Flush(flushToDisk: true); }
-            if (File.Exists(path)) File.Replace(temp, path, null); // 기존 인증 파일의 접근 권한을 유지한다.
-            else File.Move(temp, path);
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    if (File.Exists(path)) File.Replace(temp, path, null); // 기존 인증 파일의 접근 권한을 유지한다.
+                    else File.Move(temp, path);
+                    break;
+                }
+                catch (IOException ex) when (attempt < 3 && File.Exists(temp)
+                    && (ex.HResult & 0xffff) is 32 or 33 or 1175)
+                {
+                    System.Threading.Thread.Sleep(25 * (attempt + 1));
+                }
+            }
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }

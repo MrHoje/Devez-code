@@ -16,6 +16,19 @@ method = method.replace("CodexCredentialStore.Enable();", 'Record("usage-enabled
 out = Path(__file__).parent / "obj" / "SessionSwitchMethod.g.cs"
 out.parent.mkdir(exist_ok=True)
 content = "using DevezCode.Services;\nusing System.Windows;\nnamespace DevezCode;\npublic partial class MainWindow {\n" + method + "\n}\n"
+terminal_source = (root / "Services/Terminal/TerminalSessionManager.cs").read_text(encoding="utf-8-sig")
+def extract_terminal_method(signature):
+    start = terminal_source.index(signature)
+    opening = terminal_source.index('{', start)
+    depth = 1
+    end = opening + 1
+    while depth:
+        depth += (terminal_source[end] == '{') - (terminal_source[end] == '}')
+        end += 1
+    return terminal_source[start:end]
+content += "public partial class TerminalSessionManager {\n" + extract_terminal_method("    public static string? ResolveDevezVibeProvider(") + "\n"
+content += extract_terminal_method("    private static bool TryFindDevezVibeRouteByBackingId(") + "\n}\n"
+content = "#nullable enable\nusing System.IO;\n" + content
 if not out.exists() or out.read_text(encoding="utf-8") != content:
     temp = out.with_suffix(".tmp")
     temp.write_text(content, encoding="utf-8")

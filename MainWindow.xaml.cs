@@ -6795,9 +6795,23 @@ public partial class MainWindow : Window
         if (_accountSwitchRunning) throw new InvalidOperationException("다른 계정으로 변경 중입니다.");
         var store = CliAccountStore.Instance;
         store.ValidateActivation(provider, accountId);
-        var all = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList();
+        var all = new List<SessionItem>();
+        foreach (var session in _projects.SelectMany(p => p.Tabs).OfType<SessionItem>())
+        {
+            var agent = string.IsNullOrWhiteSpace(session.AgentId) ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId;
+            string? sessionProvider = agent;
+            if (agent == "devezvibe")
+            {
+                var sessionId = DevezVibeStateService.LoadTrackedSessionId(session.Id)
+                    ?? SettingsService.LoadDevezVibeRoomSession(session.Id);
+                sessionProvider = TerminalSessionManager.ResolveDevezVibeProvider(sessionId);
+                if (sessionProvider == null && (session.IsExternal || TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }))
+                    throw new InvalidOperationException($"'{session.Name}'의 Devez Vibe 공급자를 확인하지 못했습니다. 해당 세션을 다시 열거나 닫은 뒤 계정을 변경하세요.");
+            }
+            if (string.Equals(sessionProvider, provider, StringComparison.OrdinalIgnoreCase)) all.Add(session);
+        }
         if (all.Any(s => s.IsExternal))
-            throw new InvalidOperationException("외부 터미널에서 실행 중인 세션을 먼저 닫아 주세요.");
+            throw new InvalidOperationException("변경할 공급자를 사용하는 외부 터미널 세션을 먼저 닫아 주세요.");
 
         _accountSwitchRunning = true;
         await _sessionReloadGate.WaitAsync();

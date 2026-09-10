@@ -1171,6 +1171,26 @@ public sealed class TerminalSessionManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezVibe", "session-routes.json");
 
+    /// <summary>표시 ID의 접두사가 아니라 마지막으로 저장된 활성 공급자를 확인한다.</summary>
+    public static string? ResolveDevezVibeProvider(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return null;
+        try
+        {
+            var path = DevezVibeRouteStorePath();
+            if (!File.Exists(path)) return null;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var doc = System.Text.Json.JsonDocument.Parse(stream);
+            if (!doc.RootElement.TryGetProperty(sessionId, out var route)
+                && !TryFindDevezVibeRouteByBackingId(doc.RootElement, sessionId, out route)) return null;
+            return route.TryGetProperty("active", out var active) ? active.GetString() switch
+            {
+                "Claude" => "claude", "Codex" => "codex", "OpenCode" => "opencode", _ => null
+            } : null;
+        }
+        catch { return null; }
+    }
+
     /// <summary>dvz 추적 ID 를 실제 대화가 있는 세션 ID 로 바로잡는다. 라우트에 적힌 활성 백엔드
     /// 세션을 먼저 고르고, 라우트가 없을 때만 추적 ID 자체를 쓴다.
     /// <para>추적 ID 를 먼저 채택하면 대화 도중 provider 를 바꾼 방이 방을 만든 백엔드의 옛 세션으로

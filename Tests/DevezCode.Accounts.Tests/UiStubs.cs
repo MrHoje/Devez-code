@@ -70,9 +70,17 @@ namespace DevezCode
     {
         public static bool LoadClaudeGuiMode() => true;
         public static string LoadAgentForRoom(string id) => id.StartsWith("sdk") ? "claude" : "codex";
+        public static string? LoadDevezVibeRoomSession(string id) => id;
     }
-    public class TerminalSessionManager
+    public static class DevezVibeStateService
     {
+        public static string? LoadTrackedSessionId(string room) => null;
+        public static string StripBackendPrefix(string sid) => sid.StartsWith("claude:") ? sid[7..] : sid;
+    }
+    public partial class TerminalSessionManager
+    {
+        public static string TestRoutePath = "";
+        private static string DevezVibeRouteStorePath() => TestRoutePath;
         public static TerminalSessionManager Instance = new();
         public HashSet<string> Alive = [];
         public bool FailStop;

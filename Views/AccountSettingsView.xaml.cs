@@ -81,7 +81,7 @@ public partial class AccountSettingsView : UserControl
         try
         {
             await main.SwitchCliAccountAsync(provider.Id, account.Id);
-            message = $"{account.Name} 계정으로 변경했습니다. 열린 세션을 다시 시작했습니다.";
+            message = $"{account.Name} 계정으로 변경했습니다. 해당 공급자의 세션을 다시 시작했습니다.";
         }
         catch (Exception ex) { message = AccountError(ex); }
         SetBusy(false);
