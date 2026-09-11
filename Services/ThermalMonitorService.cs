@@ -10,6 +10,9 @@ namespace DevezCode.Services;
 public sealed class ThermalMonitorService : IDisposable
 {
     private System.Threading.Timer? _poll;
+    // 써멀존 카운터 캐시 — PerformanceCounter/PerformanceCounterCategory 생성은 perflib 조회라 비싸다.
+    // 3초마다 새로 만들면 유휴 CPU를 계속 먹으므로 한 번 만들어 재사용하고, 전부 실패할 때만 다시 만든다.
+    private System.Diagnostics.PerformanceCounter[]? _zoneCounters;
     private int _failCount;
     private bool _stopped;
     private float _smoothedTemp = float.NaN;
@@ -38,6 +41,7 @@ public sealed class ThermalMonitorService : IDisposable
     {
         _poll?.Dispose();
         _poll = null;
+        ResetCounters();
     }
 
     private void Capture()
@@ -83,39 +87,75 @@ public sealed class ThermalMonitorService : IDisposable
     }
 
     /// <summary>\Thermal Zone Information\Temperature 의 모든 존을 읽어 최댓값(°C)을 반환.
-    /// 가장 뜨거운 존이 CPU 에 가장 가깝고, 최댓값은 결정론적이라 존 간 널뛰기가 없다.</summary>
-    private static float? ReadThermalZone()
+    /// 가장 뜨거운 존이 CPU 에 가장 가깝고, 최댓값은 결정론적이라 존 간 널뛰기가 없다.
+    /// 카운터 객체는 캐시해 재사용한다 — RawValue 읽기는 싸지만 카운터/카테고리 생성은 perflib 조회라 비싸다.
+    /// 캐시된 존이 전부 실패하면 캐시를 버려 다음 폴링에서 다시 만든다(존 추가·제거 대응).</summary>
+    private float? ReadThermalZone()
     {
+        var counters = _zoneCounters ??= CreateCounters();
+        if (counters.Length == 0) { ResetCounters(); return null; }
+
         float max = float.NaN;
-
-        try
+        foreach (var counter in counters)
         {
-            var category = new System.Diagnostics.PerformanceCounterCategory("Thermal Zone Information");
-            foreach (var inst in category.GetInstanceNames())
-            {
-                if (TryReadCounter(inst) is float v && (float.IsNaN(max) || v > max)) max = v;
-            }
+            if (TryReadCounter(counter) is float v && (float.IsNaN(max) || v > max)) max = v;
         }
-        catch { }
 
-        if (!float.IsNaN(max)) return max;
-
-        // 열거 실패 시 고정 인스턴스명 폴백(역시 최댓값)
-        string[] fallbackInstances = { "_TZ.TZ00", "_TZ.TZ01", "_tz.tz00", "_tz.tz01", "TZ00", "TZ01", "tz00", "tz01" };
-        foreach (var inst in fallbackInstances)
-        {
-            if (TryReadCounter(inst) is float v && (float.IsNaN(max) || v > max)) max = v;
-        }
-        return float.IsNaN(max) ? null : max;
+        if (float.IsNaN(max)) { ResetCounters(); return null; } // 다음 폴링에서 재생성
+        return max;
     }
 
-    private static float? TryReadCounter(string instanceName)
+    /// <summary>써멀존 카운터를 한 번 만들어 배열로 돌려준다. 인스턴스를 열거해 만들고, 하나도 못 만들면
+    /// 기존과 동일하게 고정 인스턴스명으로 한 번 더 시도한다.
+    /// 생성 직후 RawValue 를 한 번 읽어 실재하지 않는 인스턴스는 캐시에 남기지 않는다.</summary>
+    private static System.Diagnostics.PerformanceCounter[] CreateCounters()
+    {
+        string[] instances;
+        try
+        {
+            instances = new System.Diagnostics.PerformanceCounterCategory("Thermal Zone Information").GetInstanceNames();
+        }
+        catch { instances = System.Array.Empty<string>(); }
+
+        var list = new System.Collections.Generic.List<System.Diagnostics.PerformanceCounter>(instances.Length);
+        AddCounters(list, instances);
+        if (list.Count == 0)
+            AddCounters(list, new[] { "_TZ.TZ00", "_TZ.TZ01", "_tz.tz00", "_tz.tz01", "TZ00", "TZ01", "tz00", "tz01" });
+        return list.ToArray();
+    }
+
+    private static void AddCounters(
+        System.Collections.Generic.List<System.Diagnostics.PerformanceCounter> list, string[] instanceNames)
+    {
+        foreach (var inst in instanceNames)
+        {
+            try
+            {
+                var counter = new System.Diagnostics.PerformanceCounter(
+                    "Thermal Zone Information", "Temperature", inst, true);
+                _ = counter.RawValue;
+                list.Add(counter);
+            }
+            catch { }
+        }
+    }
+
+    /// <summary>캐시된 카운터를 모두 정리한다. 다음 ReadThermalZone 이 새로 만든다.</summary>
+    private void ResetCounters()
+    {
+        var counters = _zoneCounters;
+        _zoneCounters = null;
+        if (counters == null) return;
+        foreach (var counter in counters)
+        {
+            try { counter.Dispose(); } catch { }
+        }
+    }
+
+    private static float? TryReadCounter(System.Diagnostics.PerformanceCounter counter)
     {
         try
         {
-            using var counter = new System.Diagnostics.PerformanceCounter(
-                "Thermal Zone Information", "Temperature", instanceName, true);
-            counter.ReadOnly = true;
             long raw = counter.RawValue;
             if (raw <= 0) return null;
 
