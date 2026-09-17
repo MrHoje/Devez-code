@@ -355,6 +355,7 @@ public partial class MainWindow : Window
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
         Sidebar.SessionHideRequested += HideSessionFromSidebar;
+        Sidebar.SessionShutdownRequested += ShutdownSession;
         Sidebar.SessionForkRequested += ForkSession;
         Sidebar.SessionExternalRequested += OpenSessionInExternalTerminal;
         Sidebar.SessionExportRequested += ExportSession;
@@ -3722,6 +3723,7 @@ public partial class MainWindow : Window
         pane.HideSessionRequested += HideSessionFromSidebar;
         pane.HideStopFinished += OnPaneHideStopFinished;
         pane.StopTrackingSessionRequested += StopTrackingSession;
+        pane.ShutdownSessionRequested += ShutdownSession;
         pane.DeleteSessionRequested += DeleteSession;
         pane.TabDragHoverMoved = OnTabDragHoverMoved;
         pane.TryCommitCrossDrop = OnTryCommitCrossTabDrop;
@@ -6163,6 +6165,33 @@ public partial class MainWindow : Window
                 new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
     }
 
+    /// <summary>세션 메뉴 "세션 종료" — 목록·대화 기록은 그대로 두고 실행 중인 프로세스만 정상 종료해
+    /// 아직 열지 않은(미로드) 상태로 되돌린다. 다시 열면 resume 으로 이어진다.</summary>
+    private async void ShutdownSession(SessionItem session)
+    {
+        if (DeferWorkspaceNavigationIfBusy(() => ShutdownSession(session))) return;
+        if (session.IsExternal)
+        {
+            ConfirmDialog.Alert("세션 종료 불가",
+                "외부 터미널에서 실행 중인 세션입니다.\n외부 탭을 닫은 후 다시 시도하세요.",
+                iconKey: "IconExternalLink");
+            return;
+        }
+        if (session.IsLocked || TerminalSessionManager.Instance.IsGracefulStopping(session.Id)) return;
+        bool running = ClaudeSdkSessionManager.Instance.IsStarted(session.Id)
+            || TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true };
+        if (!running) return;
+        if ((session.IsBusy || session.IsWaitingChoice)
+            && !ConfirmDialog.Show("세션 종료",
+                $"'{session.Name}' 세션이 작업 중입니다. 지금 종료할까요?\n대화 기록은 보존되어 다시 열면 이어집니다.",
+                okLabel: "종료"))
+            return;
+
+        // 화면에서 먼저 내려야(활성 해제) 종료 후 같은 탭을 다시 눌렀을 때 ActivateSession 이 resume 한다.
+        foreach (var pane in _panes) pane.UnloadSession(session);
+        await StopIdleSessionAsync(session, "menu");
+    }
+
     private void StopTrackingSession(SessionItem session)
     {
         if (DeferWorkspaceNavigationIfBusy(() => StopTrackingSession(session))) return;
@@ -6586,12 +6615,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task StopIdleSessionAsync(SessionItem session)
+    /// <summary>reason="idle" 은 유휴 자동 종료, "menu" 는 사용자의 "세션 종료" — 처리는 동일하다.</summary>
+    private async Task StopIdleSessionAsync(SessionItem session, string reason = "idle")
     {
         var roomId = session.Id;
         var idleMinutes = _sessionLastActivityUtc.TryGetValue(roomId, out var last)
             ? (DateTime.UtcNow - last).TotalMinutes : 0;
-        DiagLog.Write($"IdleSessionShutdown start room={roomId} agent={session.AgentId} idleMin={idleMinutes:F1}");
+        DiagLog.Write($"IdleSessionShutdown start room={roomId} agent={session.AgentId} reason={reason} idleMin={idleMinutes:F1}");
 
         // 양쪽 xterm 배선을 먼저 끊어 Exited 자동 재진입을 막는다. GracefulDispose가 종료중 플래그를
         // 세운 뒤 await하므로 이후 사용자가 열면 WorkspacePane이 완료 후 resume 대기 경로를 탄다.

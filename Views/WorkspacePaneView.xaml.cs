@@ -92,6 +92,8 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>세션 숨김/닫기/삭제는 부모-자식 서브트리 단위 처리를 위해 MainWindow에 위임.</summary>
     public event Action<SessionItem>? HideSessionRequested;
     public event Action<SessionItem>? StopTrackingSessionRequested;
+    /// <summary>세션 탭 우클릭 "세션 종료" — 목록은 두고 프로세스만 정상 종료(MainWindow 위임).</summary>
+    public event Action<SessionItem>? ShutdownSessionRequested;
     public event Action<SessionItem>? DeleteSessionRequested;
     /// <summary>탭 드래그 중 매 이동 — 셸이 커서(screen)가 반대 패널 위면 그 패널에 삽입 프리뷰(탭 밀기)를 그리고
     /// true(크로스 중) 반환. 그러면 소스 패널은 자기 재정렬 프리뷰를 억제한다. ghostWidth=미는 폭.</summary>
@@ -2830,6 +2832,16 @@ public partial class WorkspacePaneView : UserControl
     public void HideSession(SessionItem session)
         => HideSessionRequested?.Invoke(session);
 
+    /// <summary>"세션 종료" — 이 패널이 그 세션을 보고 있으면 화면에서 내려 미로드 상태로 되돌린다.
+    /// 탭은 그대로 남고, 다시 누르면 ActivateSession 이 resume 으로 새로 연다.
+    /// 숨김 지연 종료 예약이 걸려 있으면 함께 취소한다(즉시 종료로 대체).</summary>
+    public void UnloadSession(SessionItem session)
+    {
+        CancelPendingHideStop(session.Id);
+        _pendingReactivateAfterHideStop.Remove(session.Id);
+        if (ReferenceEquals(_activeSession, session)) ClearActiveSession();
+    }
+
     /// <summary>셸이 서브트리 숨김 상태를 적용한 뒤 각 패널의 활성 탭을 표시 가능한 이웃으로 교체.</summary>
     public void OnSessionsHidden(IReadOnlyCollection<SessionItem> hiddenSessions)
     {
@@ -3481,6 +3493,10 @@ public partial class WorkspacePaneView : UserControl
 
             if (!s.IsLocked && !s.IsExternal)
             {
+                var shutdownItem = new MenuItem { Header = "세션 종료", Icon = BuildMenuIcon("IconLogOut") };
+                shutdownItem.Click += (_, _) => ShutdownSessionRequested?.Invoke(s);
+                cm.Items.Add(shutdownItem);
+
                 var closeItem = new MenuItem { Header = "닫기", Icon = BuildMenuIcon("IconX") };
                 closeItem.Click += (_, _) => StopTrackingSession(s);
                 cm.Items.Add(closeItem);
