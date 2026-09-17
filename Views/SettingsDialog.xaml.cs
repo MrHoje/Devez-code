@@ -103,7 +103,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.2", "2026-09-10", true, new[]
+          ("v1.27.3", "2026-09-17", true, new[]
+          {
+              "세션 우클릭·탭 메뉴에 세션 종료를 추가해 대화 기록은 남기고 실행 중인 세션만 내릴 수 있게 했습니다.",
+              "유휴 상태에서 불필요하게 돌던 화면 갱신을 제거해 자원 사용을 줄였습니다.",
+          }),
+          ("v1.27.2", "2026-09-10", false, new[]
           {
               "Codex 선택지 답변을 기다리는 동안 완료로 표시되던 문제를 수정했습니다.",
           }),
