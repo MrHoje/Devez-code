@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -357,6 +357,7 @@ public partial class MainWindow : Window
         Sidebar.SessionHideRequested += HideSessionFromSidebar;
         Sidebar.SessionShutdownRequested += ShutdownSession;
         Sidebar.SessionForkRequested += ForkSession;
+        Sidebar.SessionCopyIdRequested += CopySessionId;
         Sidebar.SessionExternalRequested += OpenSessionInExternalTerminal;
         Sidebar.SessionExportRequested += ExportSession;
         Sidebar.SessionLockRequested += ToggleSessionLock;
@@ -6396,6 +6397,8 @@ public partial class MainWindow : Window
     }
 
     private void ForkSession(SessionItem session) => PaneFor(session).ForkSession(session);
+
+    private void CopySessionId(SessionItem session) => PaneFor(session).CopySessionId(session);
 
     private void ToggleSessionLock(SessionItem session)
     {

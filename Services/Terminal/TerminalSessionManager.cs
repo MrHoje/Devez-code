@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using DevezCode.Services;
 
 namespace DevezCode.Services.Terminal;
@@ -2854,6 +2854,28 @@ public sealed class TerminalSessionManager
         catch (Exception) { }
         try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".good.txt")); }
         catch (Exception) { }
+    }
+
+    /// <summary>방이 현재 가리키는 CLI 세션 ID(에이전트별 추적값 우선, 없으면 settings 스냅샷).
+    /// 세션ID 복사·진단용. 아직 대화가 없으면 null.</summary>
+    public static string? CurrentSessionId(string roomId, string agentId)
+    {
+        var sid = agentId switch
+        {
+            "claude"      => LoadTrackedSessionId(roomId) ?? SettingsService.LoadClaudeCodeRoomSession(roomId),
+            "opencode"    => OpenCodePluginInstaller.LoadTrackedSessionId(roomId) ?? SettingsService.LoadOpenCodeRoomSession(roomId),
+            "gajae"       => FindLatestGajaeSessionId(GajaeSessionDir(roomId)) ?? SettingsService.LoadGajaeRoomSession(roomId),
+            "codex"       => SettingsService.LoadCodexRoomSession(roomId),
+            "grok"        => GrokHookService.LoadTrackedSessionId(roomId) ?? SettingsService.LoadGrokRoomSession(roomId),
+            "kimi"        => KimiHookService.LoadTrackedSessionId(roomId) ?? SettingsService.LoadKimiRoomSession(roomId),
+            "antigravity" => AntigravityHookService.LoadTrackedSessionId(roomId) ?? SettingsService.LoadAntigravityRoomSession(roomId),
+            // dvz 추적값은 백엔드 접두사(claude:)가 붙을 수 있다 — 붙은 채로는 어디에도 못 쓰므로 벗겨서 준다.
+            "devezvibe"   => DevezVibeStateService.LoadTrackedSessionId(roomId)
+                             ?? SettingsService.LoadDevezVibeRoomSession(roomId),
+            _             => null,
+        };
+        if (string.IsNullOrWhiteSpace(sid)) return null;
+        return agentId == "devezvibe" ? DevezVibeStateService.StripBackendPrefix(sid!.Trim()) : sid!.Trim();
     }
 
     /// <summary>훅이 기록한 방의 최신 세션 ID. 없거나 UUID가 아니면 null.</summary>

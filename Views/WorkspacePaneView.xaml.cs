@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -1439,6 +1439,22 @@ public partial class WorkspacePaneView : UserControl
         if (isolatedSameProj) IsolateTab(session);
         OpenSession(session, forceImeReattach: true);
         if (isolatedSameProj) IsolatedTabOpened?.Invoke(this, session);
+    }
+
+    /// <summary>세션ID 복사 — 이 방이 현재 가리키는 CLI 세션 ID 를 클립보드에 넣는다(재개·디버깅용).</summary>
+    public void CopySessionId(SessionItem session)
+    {
+        var agentId = string.IsNullOrEmpty(session.AgentId)
+            ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId;
+        var sid = TerminalSessionManager.CurrentSessionId(session.Id, agentId);
+        if (string.IsNullOrWhiteSpace(sid))
+        {
+            ConfirmDialog.Alert("세션ID 없음",
+                "아직 세션 ID가 없습니다.\n한 번 이상 대화한 세션만 복사할 수 있어요.");
+            return;
+        }
+        try { Clipboard.SetText(sid); }
+        catch (Exception) { ConfirmDialog.Alert("복사 실패", "클립보드에 복사하지 못했습니다."); }
     }
 
     /// <summary>세션 클릭 — 필요하면 프로젝트 전환 후 해당 세션 활성화.</summary>
@@ -3442,6 +3458,10 @@ public partial class WorkspacePaneView : UserControl
             var forkItem = new MenuItem { Header = "포크", Icon = BuildMenuIcon("IconGitBranch") };
             forkItem.Click += (_, _) => ForkSession(s);
             cm.Items.Add(forkItem);
+
+            var copyIdItem = new MenuItem { Header = "세션ID 복사", Icon = BuildMenuIcon("IconCopy") };
+            copyIdItem.Click += (_, _) => CopySessionId(s);
+            cm.Items.Add(copyIdItem);
 
             var exportItem = new MenuItem { Header = "내보내기", Icon = BuildMenuIcon("IconFileText") };
             exportItem.Click += (_, _) => ExportSessionRequested?.Invoke(s);

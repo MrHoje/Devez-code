@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -111,6 +111,7 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionShutdownRequested;
     /// <summary>세션 메뉴 "포크" 요청(MainWindow 위임) — 원본 대화를 복사한 새 세션 생성.</summary>
     public event Action<SessionItem>? SessionForkRequested;
+    public event Action<SessionItem>? SessionCopyIdRequested;
     /// <summary>세션 메뉴 "외부 터미널로 열기" 요청(MainWindow 위임).</summary>
     public event Action<SessionItem>? SessionExternalRequested;
     /// <summary>세션 메뉴 "내보내기" 요청(MainWindow 위임) — 대화를 .md 로 저장.</summary>
@@ -1825,6 +1826,11 @@ public partial class SidebarView : UserControl
     private void SessionFork_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<SessionItem>(sender) is { } s) SessionForkRequested?.Invoke(s);
+    }
+
+    private void SessionCopyId_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is { } s) SessionCopyIdRequested?.Invoke(s);
     }
 
     private void SessionExport_Click(object sender, RoutedEventArgs e)
