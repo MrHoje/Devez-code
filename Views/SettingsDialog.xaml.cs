@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.4", "2026-09-17", true, new[]
+          ("v1.27.5", "2026-09-18", true, new[]
+          {
+              "터미널이 이모지 폭을 틀리게 계산해 이모지가 든 줄을 다시 그릴 때 이후 줄이 한 칸씩 밀리고 오른쪽 끝에 글자가 남던 문제를 수정했습니다.",
+          }),
+          ("v1.27.4", "2026-09-17", false, new[]
           {
               "세션 우클릭·탭 메뉴에 세션ID 복사를 추가해 현재 세션의 ID를 바로 클립보드에 담을 수 있게 했습니다.",
           }),
