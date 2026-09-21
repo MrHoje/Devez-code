@@ -12,6 +12,7 @@
     <Compile Include="..\..\Services\AgentEventOwnership.cs" Link="AgentEventOwnership.cs" />
     <Compile Include="..\..\Services\PathCommandProcess.cs" Link="PathCommandProcess.cs" />
     <Compile Include="..\..\Services\ClaudeTranscriptSnapshotParser.cs" Link="ClaudeTranscriptSnapshotParser.cs" />
+    <Compile Include="..\..\Services\CodexTranscriptMetadata.cs" Link="CodexTranscriptMetadata.cs" />
     <Compile Include="..\..\Services\ModelEffortService.cs" Link="ModelEffortService.cs" />
     <Compile Include="..\..\Services\InstallerPackage.cs" Link="InstallerPackage.cs" />
     <Compile Include="..\..\Services\AtomicFile.cs" Link="AtomicFile.cs" />

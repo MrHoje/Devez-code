@@ -4,6 +4,7 @@ $settings = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Services\Setti
 $workspace = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Services\WorkspaceStore.cs') -Raw
 $pane = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Views\WorkspacePaneView.xaml.cs') -Raw
 $window = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\MainWindow.xaml.cs') -Raw
+$terminal = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Services\Terminal\TerminalSessionManager.cs') -Raw
 
 function Assert-Match([string]$text, [string]$pattern, [string]$message) {
     if ($text -notmatch $pattern) { throw $message }
@@ -44,5 +45,26 @@ if ($add -match 'SaveClaudeCodeRoomDir\(session\.Id|SaveAgentForRoom\(session\.I
 
 Assert-Match $pane 'private void RecordActiveTab[\s\S]*?WorkspaceStore\.SaveDeferred\(Projects\);' `
     'Tab switches must not wait for durable workspace I/O on the UI thread.'
+
+$forkStart = $pane.IndexOf('public void ForkSession(SessionItem source)', [StringComparison]::Ordinal)
+$forkEnd = $pane.IndexOf('public void CopySessionId(SessionItem session)', $forkStart, [StringComparison]::Ordinal)
+if ($forkStart -lt 0 -or $forkEnd -le $forkStart) { throw 'Could not isolate ForkSession.' }
+$fork = $pane.Substring($forkStart, $forkEnd - $forkStart)
+Assert-Match $fork 'ClaudeSessionRestoreService\.Load\(source\.Id, proj\.Path\)' `
+    'Claude fork must read the source model and effort.'
+Assert-Match $fork 'ReadDevezVibeSessionModelEffort\(srcSid, proj\.Path\)' `
+    'Devez Vibe fork must resolve the active backend model and effort.'
+Assert-Match $fork 'LoadTrackedSessionId\(source\.Id\) \?\? SettingsService\.LoadDevezVibeRoomSession\(source\.Id\)' `
+    'Devez Vibe fork must prefer the live tracked backend session.'
+Assert-Match $fork 'SaveAgentRoomModel\(session\.Id, "codex", forkModel\)' `
+    'Codex fork must persist the source model for launch.'
+Assert-Match $fork 'SaveAgentRoomEffort\(session\.Id, "devezvibe", forkEffort\)' `
+    'Devez Vibe fork must persist the source effort for launch.'
+Assert-Match $terminal 'model_reasoning_effort=\\"\{selectedEffort\}\\"' `
+    'Codex resume must receive the persisted fork effort.'
+Assert-Match $terminal '--theme \{theme\}\{selection\} -r \{sessionId\}' `
+    'Devez Vibe resume must receive the persisted fork selection.'
+Assert-Match $terminal 'ClaudeTranscriptSnapshotParser\.CloneForFork\(content, oldId, newId\)' `
+    'Claude fork must omit transient artifact panel state.'
 
 Write-Output 'PASS: settings, workspace, shutdown, and new-session persistence wiring is guarded.'

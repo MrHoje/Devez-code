@@ -120,6 +120,33 @@ Check(restoredClaude.Effort == "xhigh", "Claude effort restore");
 Check(restoredClaude.PermissionMode == "auto", "Claude permission restore");
 Check(restoredClaude.ContextTokens == 60, "Claude context input tokens restore");
 Check(restoredClaude.ContextWindow == 1_000_000, "Claude context window restore");
+var forkedClaude = ClaudeTranscriptSnapshotParser.CloneForFork(string.Join('\n', new[]
+{
+    "{\"type\":\"user\",\"sessionId\":\"old-id\",\"message\":{\"content\":\"keep\"}}",
+    "{\"type\":\"frame-link\",\"sessionId\":\"old-id\",\"artifactCount\":1}",
+    "{\"type\":\"assistant\",\"sessionId\":\"old-id\",\"message\":{\"content\":\"answer\"}}",
+}), "old-id", "new-id");
+Check(!forkedClaude.Contains("frame-link", StringComparison.Ordinal),
+    "Claude fork drops artifact panel state");
+Check(!forkedClaude.Contains("old-id", StringComparison.Ordinal)
+      && forkedClaude.Split("new-id").Length - 1 == 2,
+    "Claude fork rewrites retained session ids");
+var codexMetadataPath = Path.Combine(Path.GetTempPath(), $"devezcode-codex-meta-{Guid.NewGuid():N}.jsonl");
+try
+{
+    File.WriteAllLines(codexMetadataPath, new[]
+    {
+        "{\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-old\",\"effort\":\"low\"}}",
+        "{\"type\":\"event_msg\",\"payload\":{\"type\":\"thread_settings_applied\",\"thread_settings\":{\"model\":\"gpt-parent\",\"reasoning_effort\":\"max\"}}}",
+        "{\"type\":\"turn_context\"",
+    });
+    var codexMetadata = CodexTranscriptMetadata.ReadLatest(codexMetadataPath);
+    Check(codexMetadata == ("gpt-parent", "max"), "Codex latest model and effort restore");
+}
+finally
+{
+    try { File.Delete(codexMetadataPath); } catch { }
+}
 var interruptedClaude = ClaudeTranscriptSnapshotParser.ParseLines(new[]
 {
     """{"type":"assistant","message":{"content":[{"type":"text","text":"partial answer\n[Request interrupted by user for tool use]"}]}}""",
@@ -174,6 +201,12 @@ if (args.Length == 1 && File.Exists(args[0]))
     Check(realTranscript.Effort is "low" or "medium" or "high" or "xhigh" or "max",
         "real Claude transcript effort");
     Check(realTranscript.ContextTokens is > 0, "real Claude transcript context");
+}
+if (args.Length == 2 && args[0] == "--codex" && File.Exists(args[1]))
+{
+    var realCodex = CodexTranscriptMetadata.ReadLatest(args[1]);
+    Check(!string.IsNullOrWhiteSpace(realCodex.Model), "real Codex transcript model");
+    Check(!string.IsNullOrWhiteSpace(realCodex.Effort), "real Codex transcript effort");
 }
 
 var codexStart = PathCommandProcess.Create(

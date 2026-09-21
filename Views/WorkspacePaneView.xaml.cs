@@ -1377,7 +1377,7 @@ public partial class WorkspacePaneView : UserControl
                    : agentId == "codex"    ? SettingsService.LoadCodexRoomSession(source.Id)
                    : agentId == "grok"     ? SettingsService.LoadGrokRoomSession(source.Id)
                    : agentId == "kimi"     ? (SettingsService.LoadKimiRoomSession(source.Id) ?? KimiHookService.LoadTrackedSessionId(source.Id))
-                   : agentId == "devezvibe" ? (SettingsService.LoadDevezVibeRoomSession(source.Id) ?? DevezVibeStateService.LoadTrackedSessionId(source.Id))
+                   : agentId == "devezvibe" ? (DevezVibeStateService.LoadTrackedSessionId(source.Id) ?? SettingsService.LoadDevezVibeRoomSession(source.Id))
                    : null;
         if (agentId != "gajae" && string.IsNullOrWhiteSpace(srcSid))
         {
@@ -1385,6 +1385,19 @@ public partial class WorkspacePaneView : UserControl
                 "아직 대화가 없어 포크할 수 없습니다.\n한 번 이상 대화한 세션만 포크할 수 있어요.");
             return;
         }
+
+        string? forkModel = null;
+        string? forkEffort = null;
+        if (agentId == "claude")
+        {
+            var state = ClaudeSessionRestoreService.Load(source.Id, proj.Path);
+            forkModel = ModelEffortService.ToModelValue(state.Model) ?? state.Model;
+            forkEffort = state.Effort;
+        }
+        else if (agentId == "codex")
+            (forkModel, forkEffort) = LoadCodexSessionModelEffort(source.Id);
+        else if (agentId == "devezvibe")
+            (forkModel, forkEffort) = TerminalSessionManager.ReadDevezVibeSessionModelEffort(srcSid, proj.Path);
 
         var session = new SessionItem { Name = source.Name + " (fork)", AgentId = agentId };
 
@@ -1422,13 +1435,26 @@ public partial class WorkspacePaneView : UserControl
         if (agentId == "gajae")
             SettingsService.SaveGajaeRoomSession(session.Id, forkedId!);   // 미리 확정 추적(마커 불필요)
         else if (agentId == "claude")
+        {
             SettingsService.SaveClaudeCodeRoomSession(session.Id, forkedId!); // 즉시 독립 세션 → 바로 resume
+            SettingsService.SaveClaudeCodeRoomModel(session.Id, forkModel);
+            SettingsService.SaveClaudeCodeRoomEffort(session.Id, forkEffort);
+            ModelEffortService.SavePersistedConfiguration(session.Id, forkModel, forkEffort, forkedId);
+        }
         else if (agentId == "codex")
+        {
             SettingsService.SaveCodexRoomSession(session.Id, forkedId!);   // 복사한 새 세션 id 로 바로 resume
+            SettingsService.SaveAgentRoomModel(session.Id, "codex", forkModel);
+            SettingsService.SaveAgentRoomEffort(session.Id, "codex", forkEffort);
+        }
         else if (agentId == "kimi")
             SettingsService.SaveKimiRoomSession(session.Id, forkedId!);    // 복사한 새 세션 id 로 바로 resume
         else if (agentId == "devezvibe")
+        {
             SettingsService.SaveDevezVibeRoomSession(session.Id, forkedId!); // 복사한 rollout id 로 바로 -r
+            SettingsService.SaveAgentRoomModel(session.Id, "devezvibe", forkModel);
+            SettingsService.SaveAgentRoomEffort(session.Id, "devezvibe", forkEffort);
+        }
         else
             SettingsService.SaveRoomForkSource(session.Id, srcSid!);        // opencode/grok: 첫 실행에 --fork 소비
         SetActiveTabRef(proj, "S:" + session.Id);
@@ -2323,68 +2349,12 @@ public partial class WorkspacePaneView : UserControl
                     return (cached.Model, cached.Effort);
             }
 
-            var (model, effort) = ReadLatestCodexTurnContext(path);
+            var (model, effort) = CodexTranscriptMetadata.ReadLatest(path);
             lock (CodexSessionMetaLock)
                 CodexSessionMetaCache[path] = (info.LastWriteTimeUtc, info.Length, model, effort);
             return (model, effort);
         }
         catch { return (null, null); }
-    }
-
-    /// <summary>파일 끝 64KB부터 역방향으로 넓혀 최신 모델 상태 이벤트 하나만 찾는다.
-    /// 큰 rollout 전체를 매 턴 파싱하지 않아 읽기 전용 표시 갱신이 UI를 막지 않는다.</summary>
-    private static (string? Model, string? Effort) ReadLatestCodexTurnContext(string path)
-    {
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var length = fs.Length;
-        if (length == 0) return (null, null);
-        long window = Math.Min(length, 64 * 1024L);
-        while (true)
-        {
-            var start = length - window;
-            fs.Seek(start, SeekOrigin.Begin);
-            var bytes = new byte[checked((int)window)];
-            int read = 0;
-            while (read < bytes.Length)
-            {
-                var n = fs.Read(bytes, read, bytes.Length - read);
-                if (n == 0) break;
-                read += n;
-            }
-            var text = System.Text.Encoding.UTF8.GetString(bytes, 0, read);
-            var lines = text.Split('\n');
-            for (int i = lines.Length - 1; i >= 0; i--)
-            {
-                // 중간 바이트에서 시작한 첫 줄은 불완전할 수 있으므로 다음 확장 구간에서 처리한다.
-                if (start > 0 && i == 0) continue;
-                var line = lines[i].TrimEnd('\r');
-                if (line.Length == 0 || (!line.Contains("\"turn_context\"", StringComparison.Ordinal)
-                    && !line.Contains("\"thread_settings_applied\"", StringComparison.Ordinal))) continue;
-                try
-                {
-                    using var doc = JsonDocument.Parse(line);
-                    var root = doc.RootElement;
-                    if (!root.TryGetProperty("payload", out var payload)) continue;
-                    if (root.TryGetProperty("type", out var type) && type.GetString() == "turn_context")
-                    {
-                        var model = payload.TryGetProperty("model", out var modelNode) ? modelNode.GetString() : null;
-                        var effort = payload.TryGetProperty("effort", out var effortNode) ? effortNode.GetString() : null;
-                        return (model, effort);
-                    }
-                    if (payload.TryGetProperty("type", out var eventType)
-                        && eventType.GetString() == "thread_settings_applied"
-                        && payload.TryGetProperty("thread_settings", out var settings))
-                    {
-                        var model = settings.TryGetProperty("model", out var modelNode) ? modelNode.GetString() : null;
-                        var effort = settings.TryGetProperty("reasoning_effort", out var effortNode) ? effortNode.GetString() : null;
-                        return (model, effort);
-                    }
-                }
-                catch { /* append 중인 마지막 불완전 라인은 건너뜀 */ }
-            }
-            if (start == 0) return (null, null);
-            window = Math.Min(length, window * 4);
-        }
     }
 
     private static (string? Model, string? Effort) LoadCodexConfiguredDefaults(string? projectDir)

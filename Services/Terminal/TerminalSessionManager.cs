@@ -419,6 +419,10 @@ public sealed class TerminalSessionManager
         SettingsService.MarkAgentRoomLaunched(roomId, "codex"); // 추적용
 
         string options = "--no-alt-screen";
+        var selectedModel = SettingsService.LoadAgentRoomModel(roomId, "codex");
+        var selectedEffort = SettingsService.LoadAgentRoomEffort(roomId, "codex");
+        if (IsSafeFlagValue(selectedModel)) options += $" --model {selectedModel}";
+        if (IsSafeFlagValue(selectedEffort)) options += $" -c model_reasoning_effort=\"{selectedEffort}\"";
 
         // 배치 본문. 저장된 session_id(훅이 기록) 가 있으면 무조건 resume(실패 시 fresh 폴백).
         // launched 플래그에 의존하지 않는다 — 작업 중 강제 종료로 플래그가 유실돼도 session_id 가
@@ -912,9 +916,14 @@ public sealed class TerminalSessionManager
         // 이 배치는 내부 ConPTY 전용이다. Process 전역 환경을 잠깐 바꾸면 같은 순간 열리는 외부
         // Windows Terminal이 프로필을 잘못 상속할 수 있으므로, dvz를 실행하는 이 cmd 안에서만 설정한다.
         const string widthProfile = "set \"DEVEZCODE_TERM_WIDTH_PROFILE=xterm6-unicode6-paw2\"\r\n";
+        var selectedModel = SettingsService.LoadAgentRoomModel(roomId, "devezvibe");
+        var selectedEffort = SettingsService.LoadAgentRoomEffort(roomId, "devezvibe");
+        string selection = "";
+        if (IsSafeFlagValue(selectedModel)) selection += $" --model {selectedModel}";
+        if (IsSafeFlagValue(selectedEffort)) selection += $" --effort {selectedEffort}";
         string body = widthProfile + (string.IsNullOrEmpty(sessionId)
-            ? $"chcp 65001 >nul\r\ncall {command} --theme {theme}\r\nexit"
-            : $"chcp 65001 >nul\r\ncall {command} --theme {theme} -r {sessionId}\r\nexit");
+            ? $"chcp 65001 >nul\r\ncall {command} --theme {theme}{selection}\r\nexit"
+            : $"chcp 65001 >nul\r\ncall {command} --theme {theme}{selection} -r {sessionId}\r\nexit");
 
         try
         {
@@ -1210,6 +1219,45 @@ public sealed class TerminalSessionManager
         }
         catch { }
         return ids;
+    }
+
+    /// <summary>DevezCode 포크가 dvz 원본의 현재 제공자 모델·effort를 새 방에 전달할 때 사용한다.</summary>
+    public static (string? Model, string? Effort) ReadDevezVibeSessionModelEffort(
+        string? trackedId, string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(trackedId)) return (null, null);
+        string? routedModel = null;
+        string? routedEffort = null;
+        try
+        {
+            var path = DevezVibeRouteStorePath();
+            if (File.Exists(path))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+                if (doc.RootElement.TryGetProperty(trackedId!, out var route)
+                    || TryFindDevezVibeRouteByBackingId(doc.RootElement, trackedId!, out route))
+                {
+                    routedModel = route.TryGetProperty("claude_model", out var modelNode)
+                        ? modelNode.GetString() : null;
+                    routedEffort = route.TryGetProperty("claude_effort", out var effortNode)
+                        ? effortNode.GetString() : null;
+                }
+            }
+        }
+        catch { }
+
+        var activeId = ResolveDevezVibeResumeId(trackedId, workingDir) ?? trackedId;
+        if (activeId.StartsWith("claude:", StringComparison.Ordinal))
+        {
+            var rawId = DevezVibeStateService.StripBackendPrefix(activeId);
+            var transcript = ClaudeTranscriptSnapshotParser.ParseFile(
+                FindClaudeTranscriptPath(workingDir, rawId));
+            return (ModelEffortService.ToModelValue(routedModel ?? transcript.Model),
+                routedEffort ?? transcript.Effort);
+        }
+
+        var codexPath = FindCodexTranscriptPath(activeId);
+        return codexPath == null ? (null, null) : CodexTranscriptMetadata.ReadLatest(codexPath);
     }
 
     /// <summary>백엔드 세션 ID 로 그 세션을 품은 라우트를 찾는다. provider 를 바꾼 뒤 기록된 추적 ID 는
@@ -1652,7 +1700,9 @@ public sealed class TerminalSessionManager
             using (var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             using (var sr = new StreamReader(fs))
                 content = sr.ReadToEnd();
-            content = content.Replace(oldId, newId);
+            // frame-link는 현재 열린 아티팩트 패널의 UI 상태다. 포크 transcript에 남기면
+            // 부모에서 X로 닫았어도 새 세션 복원 시 패널이 다시 열린다.
+            var forked = ClaudeTranscriptSnapshotParser.CloneForFork(content, oldId, newId);
 
             // 복사본은 반드시 "fork 방이 실행될 cwd(workingDir)의 인코딩 폴더"에 심어야 한다 — claude --resume 은
             // 그 폴더에서만 <id>.jsonl 을 찾는다. srcPath 는 전역 폴백 스캔으로 다른 프로젝트 폴더에서 왔을 수
@@ -1660,7 +1710,7 @@ public sealed class TerminalSessionManager
             var destDir = ClaudeProjectDir(workingDir) ?? Path.GetDirectoryName(srcPath)!;
             Directory.CreateDirectory(destDir);
             var newPath = Path.Combine(destDir, newId + ".jsonl");
-            File.WriteAllText(newPath, content);
+            File.WriteAllText(newPath, forked);
             return newId;
         }
         catch { return null; }

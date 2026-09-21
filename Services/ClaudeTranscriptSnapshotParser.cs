@@ -32,6 +32,32 @@ public static class ClaudeTranscriptSnapshotParser
     private const int MetadataProbeChars = 4096;
     private const int MaxRestorableLineChars = 8 * 1024 * 1024;
 
+    /// <summary>포크 transcript의 세션 ID를 바꾸고, 대화가 아닌 현재 아티팩트 패널 UI 상태를 제외한다.</summary>
+    public static string CloneForFork(string content, string oldSessionId, string newSessionId)
+    {
+        var forked = new StringBuilder(content.Length);
+        using var reader = new StringReader(content);
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            if (IsFrameLink(line)) continue;
+            forked.AppendLine(line.Replace(oldSessionId, newSessionId));
+        }
+        return forked.ToString();
+    }
+
+    private static bool IsFrameLink(string line)
+    {
+        if (!line.Contains("\"frame-link\"", StringComparison.Ordinal)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(line);
+            return document.RootElement.TryGetProperty("type", out var type)
+                   && type.GetString() == "frame-link";
+        }
+        catch (JsonException) { return false; }
+    }
+
     public static ClaudeTranscriptSnapshot ParseFile(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return ClaudeTranscriptSnapshot.Empty;
