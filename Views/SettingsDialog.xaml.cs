@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.5", "2026-09-18", true, new[]
+          ("v1.27.6", "2026-09-21", true, new[]
+          {
+              "Devez Vibe 세션에서 컨텍스트 압축이 끝나면 완료기록에 직전 프롬프트 대신 Context compacted 로 남도록 수정했습니다.",
+          }),
+          ("v1.27.5", "2026-09-18", false, new[]
           {
               "터미널이 이모지 폭을 틀리게 계산해 이모지가 든 줄을 다시 그릴 때 이후 줄이 한 칸씩 밀리고 오른쪽 끝에 글자가 남던 문제를 수정했습니다.",
           }),

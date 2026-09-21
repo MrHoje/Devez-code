@@ -520,7 +520,7 @@ public partial class MainWindow : Window
             {
                 var s = FindOwnedSession(roomId, "gajae", "goal-completed");
                 if (s == null) return;
-                AddGoalCompletionRecord(s, objective, completedAt);
+                AddSilentCompletionRecord(s, objective, completedAt);
             });
 
         // 가재코드 — 'ask' 선택지 응답 대기(❗). gjc 는 스피너 라인이 출력 버퍼를 도배해 화면 폴링이 불가하므로
@@ -716,6 +716,10 @@ public partial class MainWindow : Window
                 // quiet→running 은 실제 턴 시작이므로 이후 running→idle 완료는 정상 기록한다.
                 if (quiet || !wasQuiet)
                     NotifyIfSessionFinished(s, was || wasWaiting || observedTurn, busy || s!.IsWaitingChoice, () => _devezVibeState.IsRoomBusy(roomId));
+                // 압축 종료는 응답 완료가 아니라 알림 없이 전용 카드 1장만 남긴다 — 직전 프롬프트가
+                // 완료기록에 다시 찍히지 않게 문구를 고정한다(auto-compact 의 compacting→running 도 포함).
+                if (wasCompacting && !compacting && s != null)
+                    AddSilentCompletionRecord(s, "Context compacted", DateTime.Now);
                 // dvz 는 Claude Agent SDK(=~/.claude OAuth 동일 계정)를 쓰지만 statusLine 훅이 없어
                 // 사용량 실시간 소스가 없다. 턴 종료와 압축 종료에서만 갱신을 요청한다(복원 loading→idle 제외).
                 if (!busy && !quiet && (wasCompacting || (was && !wasQuiet))) _usageApi.RequestRefreshSoon();
@@ -5288,10 +5292,10 @@ public partial class MainWindow : Window
         UpdateSessionHistoryEmpty();
     }
 
-    /// <summary>goal 모드 골 단위 완료 카드(transcript 백필). 일반 완료 카드와 같은 목록에 쌓이되
-    /// 내용은 사용자 프롬프트가 아니라 완료된 골의 목표문, 시각은 transcript 기록 시각을 쓴다.
-    /// 지연 flush 로 뒤늦게 파싱된 과거 완료라 토스트/작업표시줄 알림은 내지 않는다.</summary>
-    private void AddGoalCompletionRecord(SessionItem s, string objective, DateTime completedAt)
+    /// <summary>알림 없는 완료 카드. 일반 완료 카드와 같은 목록에 쌓이되 내용은 사용자 프롬프트가
+    /// 아니라 전달받은 문구(goal 모드의 목표문, 압축 종료 표시 등)를 쓴다. 프롬프트 응답 완료가
+    /// 아니므로 토스트/작업표시줄 알림은 내지 않는다.</summary>
+    private void AddSilentCompletionRecord(SessionItem s, string objective, DateTime completedAt)
     {
         var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
         var projName = proj?.Name ?? "";
