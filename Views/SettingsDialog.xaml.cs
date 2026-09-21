@@ -1688,7 +1688,11 @@ public partial class SettingsDialog : UserControl
     // ── 계정 사용량 로그인/재연결 — OAuth 창을 띄운다(갱신은 설정 닫힐 때 MainWindow 가 RefreshNow). ──
     private void ClaudeLogin_Click(object sender, RoutedEventArgs e)
     {
-        new ClaudeLoginWindow(Window.GetWindow(this)).ShowDialog();
+        // 계정 전환은 설정을 닫기 전에 바로 보여야 하므로 MainWindow 경로로 로그인 + 즉시 갱신.
+        if (Application.Current.MainWindow is MainWindow main)
+            main.LoginClaude();
+        else
+            new ClaudeLoginWindow(Window.GetWindow(this)).ShowDialog();
         UpdateConnectionBadges();
     }
 

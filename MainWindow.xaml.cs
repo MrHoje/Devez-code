@@ -2187,7 +2187,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Claude(claude.ai) OAuth 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>
-    private void LoginClaude()
+    public void LoginClaude()
     {
         var win = new Views.ClaudeLoginWindow(this);
         win.ShowDialog();
@@ -2196,8 +2196,17 @@ public partial class MainWindow : Window
             _rlApi = null;
             _rlHook = null;
             ReevaluateClaudeUsage();
-            _usageApi.RefreshNow();
+            _ = RefreshClaudeAfterLoginAsync();
         }
+    }
+
+    /// <summary>재로그인은 계정이 바뀌었을 수 있으므로 이전 계정 기준값(드롭 가드·폴백)을
+    /// 비운 뒤 재조회한다 — 새 계정의 낮은 사용률이 급락으로 보류되지 않게 한다.</summary>
+    private async Task RefreshClaudeAfterLoginAsync()
+    {
+        try { await _usageApi.ResetForAccountChangeAsync(); }
+        catch (Exception ex) { DiagLog.Write($"ClaudeUsage reset after login failed: {ex.GetType().Name}"); }
+        _usageApi.RefreshNow();
     }
 
     /// <summary>마지막 스냅샷으로 각 푸터 사용량 패널 가시성을 다시 평가.</summary>
