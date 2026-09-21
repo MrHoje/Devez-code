@@ -3,9 +3,10 @@
 ## 최우선 규칙: 프로세스 강제 종료 금지
 
 * **빌드·게시·배포를 위해 실행 중인 DevezCode 프로세스를 절대로 강제 종료하지 않는다.** `taskkill /F`, `Stop-Process -Force`, `Process.Kill` 등 강제 종료 수단은 사용 금지.
-* 빌드 전에 현재 작업을 수행하는 **본 세션 자체가 DevezCode 내부에서 실행 중인지** 반드시 확인한다.
-* 본 세션이 DevezCode 내부에서 실행 중이면 앱 종료로 본 세션이 끊길 수 있으므로, 사용자의 명시적 요청 없이 임의로 앱을 종료하거나 빌드·게시·배포·재시작하지 않는다.
-* 빌드가 필요하면 먼저 정상 종료를 요청하고 프로세스가 완전히 종료된 것을 확인한 뒤 빌드한다.
+* 빌드 전에 현재 세션의 프로세스 조상과 실행 중인 모든 `DevezCode.exe`의 `ExecutablePath`를 확인해 **설치본과 작업 트리 빌드본을 구분한다.** 단순히 본 세션이 DevezCode 내부인지 여부만으로 빌드 가능 여부를 판단하지 않는다.
+* 실행 경로가 현재 저장소 밖의 설치 위치(예: `%LocalAppData%\DevezCode\DevezCode.exe`)이면 **설치본**이다. 설치본은 작업 트리의 빌드 대상을 잠그지 않으므로 종료·재시작하지 않고 빌드할 수 있다.
+* 실행 경로가 현재 저장소 아래이거나 이번 빌드가 덮어쓸 산출물 경로와 같으면 **작업 트리 빌드본**이다. 이 경우에만 먼저 정상 종료를 요청하고 프로세스가 완전히 종료된 것을 확인한 뒤 빌드한다.
+* 본 세션을 호스팅하는 작업 트리 빌드본은 종료하면 세션이 끊기므로 임의로 종료하지 않는다. 실행 경로를 확인할 수 없거나 설치본·빌드본 판별이 모호하면 빌드하지 말고 사용자에게 확인한다.
 * 정상 종료가 되지 않거나 제한 시간 내에 끝나지 않으면 강제 종료하거나 빌드를 진행하지 말고, 작업을 중단한 뒤 사용자에게 알린다.
 * 이 규칙은 아래의 모든 빌드·재시작·배포 절차보다 우선한다.
 
@@ -19,21 +20,19 @@
 코드 변경 후 항상 다음 프로세스를 따르십시오:
 
 ```powershell
-# 1. 실행 중인 앱에 정상 종료를 요청하고 완전히 종료될 때까지 대기.
-$process = Get-Process -Name DevezCode -ErrorAction SilentlyContinue
-if ($process) {
-    $process.CloseMainWindow() | Out-Null
-    if (-not $process.WaitForExit(30000)) {
-        throw "DevezCode가 정상 종료되지 않아 빌드를 중단합니다. 강제 종료하지 마십시오."
-    }
-}
+# 1. 실행 중인 앱의 경로를 확인하고 설치본과 작업 트리 빌드본을 구분.
+Get-CimInstance Win32_Process -Filter "Name='DevezCode.exe'" |
+    Select-Object ProcessId, ParentProcessId, ExecutablePath, CommandLine
 
-# 2. Release 빌드.
+# 2. 이번 빌드 산출물을 사용하는 작업 트리 빌드본만 정상 종료 후 완전히 종료될 때까지 대기.
+# 설치본과 본 세션을 호스팅하는 프로세스는 종료하거나 재시작하지 않는다.
+
+# 3. Release 빌드.
 dotnet build -c Release --nologo -v quiet
 if ($LASTEXITCODE -ne 0) { throw "Release 빌드가 실패했습니다." }
 
-# 3. 빌드가 성공한 경우에만 앱 재시작.
-Start-Process "bin\DevezCode.exe"
+# 4. 작업 트리 빌드본을 정상 종료했던 경우에만 빌드 성공 후 재시작.
+# Start-Process "bin\DevezCode.exe"
 ```
 
 빌드가 실패하면 앱을 재시작하지 마십시오. 먼저 빌드 오류를 수정하십시오.

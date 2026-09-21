@@ -752,6 +752,12 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="경로 복사" Tag="{Binding}" Click="CopyProjectPath_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconCopy}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <MenuItem Header="Git 저장소 열기"
                                   CommandParameter="GitRemote"
                                   IsEnabled="False"

@@ -1558,6 +1558,12 @@ public partial class SidebarView : UserControl
         catch { ConfirmDialog.Alert("디렉토리 열기", "탐색기를 열 수 없습니다."); }
     }
 
+    private void CopyProjectPath_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is not { } p || string.IsNullOrEmpty(p.Path)) return;
+        try { Clipboard.SetText(p.Path); } catch { }
+    }
+
     private void OpenGitRemote_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { Tag: string url } item) return;
