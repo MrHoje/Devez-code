@@ -103,7 +103,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.6", "2026-09-21", true, new[]
+          ("v1.27.7", "2026-09-21", true, new[]
+          {
+              "프로젝트 카드 우클릭 메뉴에 프로젝트 경로 복사를 추가했습니다.",
+              "세션을 포크할 때 부모 세션에서 실제 사용 중인 모델과 추론 수준을 Claude·Codex·Devez Vibe에 이어가도록 수정했습니다.",
+              "Claude에서 닫은 아티팩트 패널이 포크한 세션에서 다시 열리던 문제를 수정했습니다.",
+          }),
+          ("v1.27.6", "2026-09-21", false, new[]
           {
               "Devez Vibe 세션에서 컨텍스트 압축이 끝나면 완료기록에 직전 프롬프트 대신 Context compacted 로 남도록 수정했습니다.",
           }),
