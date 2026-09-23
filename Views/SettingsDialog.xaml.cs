@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.8", "2026-09-21", true, new[]
+          ("v1.27.9", "2026-09-23", true, new[]
+          {
+              "GPT-6 계열 모델의 예상 비용 단가를 갱신했습니다.",
+          }),
+          ("v1.27.8", "2026-09-21", false, new[]
           {
               "설정에서 Claude 계정을 다시 연결하면 사용량을 설정 창을 닫기 전에 바로 갱신하도록 수정했습니다.",
           }),
