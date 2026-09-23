@@ -151,7 +151,8 @@ public sealed class ModelEffortService : IDisposable
 
     /// <summary>GUI에서 바꾼 model/effort를 같은 런타임 상태 파일에 반영해 다음 재개 때 옛 CLI 값이 우선하지 않게 한다.</summary>
     public static void SavePersistedConfiguration(
-        string roomId, string? model, string? effort, string? sessionId)
+        string roomId, string? model, string? effort, string? sessionId,
+        long? contextTokens = null, long? contextWindow = null)
     {
         try
         {
@@ -159,8 +160,8 @@ public sealed class ModelEffortService : IDisposable
             var current = ParseMetadataFile(path);
             var sameSession = string.IsNullOrWhiteSpace(current.SessionId)
                               || string.Equals(current.SessionId, sessionId, StringComparison.OrdinalIgnoreCase);
-            var contextTokens = sameSession ? current.ContextTokens : null;
-            var contextWindow = sameSession ? current.ContextWindow : null;
+            contextTokens ??= sameSession ? current.ContextTokens : null;
+            contextWindow ??= sameSession ? current.ContextWindow : null;
             var content = string.Join('\n',
                 model ?? current.Model ?? "",
                 effort ?? current.Effort ?? "",

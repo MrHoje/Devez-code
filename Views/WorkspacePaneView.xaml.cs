@@ -1388,11 +1388,12 @@ public partial class WorkspacePaneView : UserControl
 
         string? forkModel = null;
         string? forkEffort = null;
+        ClaudeSessionRestoreState? claudeState = null;
         if (agentId == "claude")
         {
-            var state = ClaudeSessionRestoreService.Load(source.Id, proj.Path);
-            forkModel = ModelEffortService.ToModelValue(state.Model) ?? state.Model;
-            forkEffort = state.Effort;
+            claudeState = ClaudeSessionRestoreService.Load(source.Id, proj.Path);
+            forkModel = ModelEffortService.ToModelValue(claudeState.Model) ?? claudeState.Model;
+            forkEffort = claudeState.Effort;
         }
         else if (agentId == "codex")
             (forkModel, forkEffort) = LoadCodexSessionModelEffort(source.Id);
@@ -1439,7 +1440,9 @@ public partial class WorkspacePaneView : UserControl
             SettingsService.SaveClaudeCodeRoomSession(session.Id, forkedId!); // 즉시 독립 세션 → 바로 resume
             SettingsService.SaveClaudeCodeRoomModel(session.Id, forkModel);
             SettingsService.SaveClaudeCodeRoomEffort(session.Id, forkEffort);
-            ModelEffortService.SavePersistedConfiguration(session.Id, forkModel, forkEffort, forkedId);
+            // 원본 방의 컨텍스트 값도 넘긴다 — 없으면 새 방은 transcript만으로 계산해 창 크기가 기본값으로 보인다.
+            ModelEffortService.SavePersistedConfiguration(session.Id, forkModel, forkEffort, forkedId,
+                claudeState?.ContextTokens, claudeState?.ContextWindow);
         }
         else if (agentId == "codex")
         {
