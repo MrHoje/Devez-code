@@ -916,11 +916,17 @@ public sealed class TerminalSessionManager
         // 이 배치는 내부 ConPTY 전용이다. Process 전역 환경을 잠깐 바꾸면 같은 순간 열리는 외부
         // Windows Terminal이 프로필을 잘못 상속할 수 있으므로, dvz를 실행하는 이 cmd 안에서만 설정한다.
         const string widthProfile = "set \"DEVEZCODE_TERM_WIDTH_PROFILE=xterm6-unicode6-paw2\"\r\n";
-        var selectedModel = SettingsService.LoadAgentRoomModel(roomId, "devezvibe");
-        var selectedEffort = SettingsService.LoadAgentRoomEffort(roomId, "devezvibe");
+        // dvz가 이미 연 세션은 그 세션이 마지막에 쓴 model/effort로 재개한다. 방 콤보 값을 넘기면 명시
+        // 인자가 우선해 세션 안 /model 변경이 방을 만들 때 고른 값으로 되돌아간다. 새 세션과, dvz가
+        // 아직 모르는 포크 사본에만 콤보(포크 원본의) 값을 넘긴다.
         string selection = "";
-        if (IsSafeFlagValue(selectedModel)) selection += $" --model {selectedModel}";
-        if (IsSafeFlagValue(selectedEffort)) selection += $" --effort {selectedEffort}";
+        if (string.IsNullOrEmpty(sessionId) || !IsKnownDevezVibeSession(sessionId))
+        {
+            var selectedModel = SettingsService.LoadAgentRoomModel(roomId, "devezvibe");
+            var selectedEffort = SettingsService.LoadAgentRoomEffort(roomId, "devezvibe");
+            if (IsSafeFlagValue(selectedModel)) selection += $" --model {selectedModel}";
+            if (IsSafeFlagValue(selectedEffort)) selection += $" --effort {selectedEffort}";
+        }
         string body = widthProfile + (string.IsNullOrEmpty(sessionId)
             ? $"chcp 65001 >nul\r\ncall {command} --theme {theme}{selection}\r\nexit"
             : $"chcp 65001 >nul\r\ncall {command} --theme {theme}{selection} -r {sessionId}\r\nexit");
@@ -1219,6 +1225,20 @@ public sealed class TerminalSessionManager
         }
         catch { }
         return ids;
+    }
+
+    /// <summary>dvz 라우트 저장소에 이 세션이 있으면 dvz가 마지막 model/effort를 기억하고 있다.</summary>
+    private static bool IsKnownDevezVibeSession(string sessionId)
+    {
+        try
+        {
+            var path = DevezVibeRouteStorePath();
+            if (!File.Exists(path)) return false;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            return doc.RootElement.TryGetProperty(sessionId, out _)
+                || TryFindDevezVibeRouteByBackingId(doc.RootElement, sessionId, out _);
+        }
+        catch { return false; }
     }
 
     /// <summary>DevezCode 포크가 dvz 원본의 현재 제공자 모델·effort를 새 방에 전달할 때 사용한다.</summary>

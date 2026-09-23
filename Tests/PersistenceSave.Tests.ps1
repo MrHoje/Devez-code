@@ -64,6 +64,8 @@ Assert-Match $terminal 'model_reasoning_effort=\\"\{selectedEffort\}\\"' `
     'Codex resume must receive the persisted fork effort.'
 Assert-Match $terminal '--theme \{theme\}\{selection\} -r \{sessionId\}' `
     'Devez Vibe resume must receive the persisted fork selection.'
+Assert-Match $terminal 'string\.IsNullOrEmpty\(sessionId\) \|\| !IsKnownDevezVibeSession\(sessionId\)' `
+    'Devez Vibe resume of a known session must keep the model it last used.'
 Assert-Match $terminal 'ClaudeTranscriptSnapshotParser\.CloneForFork\(content, oldId, newId\)' `
     'Claude fork must omit transient artifact panel state.'
 
