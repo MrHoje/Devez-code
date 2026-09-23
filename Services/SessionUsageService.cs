@@ -70,8 +70,10 @@ public static class SessionUsageService
         if (m.Contains("opus")) return new Price(5, 25, DefW5m, DefW1h, DefRead);
         if (m.Contains("sonnet")) return new Price(3, 15, DefW5m, DefW1h, DefRead); // Sonnet 5 정가(인트로 $2/$10 은 2026-08 까지 — 정가 기준 표시)
         if (m.Contains("haiku")) return new Price(1, 5, DefW5m, DefW1h, DefRead);
-        // OpenAI 공식 표준 단가, 2026-09-09 확인. 장문·서비스 등급은 요청별로 적용.
+        // OpenAI 공식 표준 단가, 2026-09-23 확인. 장문·서비스 등급은 요청별로 적용.
         if (m.Contains("gpt-6-astra")) return new Price(10, 50, DefW5m, DefW1h, DefRead);
+        if (m.Contains("gpt-6-sol")) return new Price(2, 10, DefW5m, DefW1h, DefRead);
+        if (m.Contains("gpt-6-luna")) return new Price(0.1, 0.5, DefW5m, DefW1h, DefRead);
         // GPT-5.6 티어별(2026-07-30 인하 반영). cached read ×0.1, cache write ×1.25(5.6부터 write 과금).
         if (m.Contains("gpt-5.6-terra")) return new Price(2, 12, DefW5m, DefW1h, DefRead);
         if (m.Contains("gpt-5.6-luna")) return new Price(0.2, 1.2, DefW5m, DefW1h, DefRead);
@@ -217,6 +219,8 @@ public static class SessionUsageService
         if (s.Contains("haiku")) return "Haiku";
         if (s.Contains("fable")) return "Fable";
         if (s.Contains("gpt-6-astra")) return "6 Astra";
+        if (s.Contains("gpt-6-sol")) return "6 Sol";
+        if (s.Contains("gpt-6-luna")) return "6 Luna";
         if (s.Contains("gpt-5.6-sol")) return "5.6 Sol";
         if (s.Contains("gpt-5.6-terra")) return "5.6 Terra";
         if (s.Contains("gpt-5.6-luna")) return "5.6 Luna";
@@ -299,7 +303,7 @@ public static class SessionUsageService
             if (PriceFor(model) is not { } p) { partial = true; return; }
             var m = model!.ToLowerInvariant();
             bool longContext = requestKnown && usage.Input > 272_000
-                && (m.Contains("gpt-6-astra") || m.Contains("gpt-5.6"));
+                && (m.Contains("gpt-6-") || m.Contains("gpt-5.6"));
             var serviceTier = tier?.ToLowerInvariant();
             double speed = serviceTier switch { "priority" or "fast" => 2, "flex" or "batch" => 0.5, _ => 1 };
             partial |= serviceTier is not (null or "" or "default" or "standard" or "priority" or "fast" or "flex" or "batch");

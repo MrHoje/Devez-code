@@ -37,8 +37,9 @@ Test("아스트라 기본 단가와 캐시 쓰기 및 추론 출력 중복 제�
     True(SessionUsageService.FormatInline(t).Contains("$0.01"), "상단 비용 표시 없음");
 });
 
-foreach (var (model, price) in new[] { ("gpt-5.6-sol", .006), ("gpt-5.6-terra", .0032), ("gpt-5.6-luna", .00032) })
+foreach (var (model, price) in new[] { ("gpt-6-sol", .003), ("gpt-6-luna", .00015), ("gpt-5.6-sol", .006), ("gpt-5.6-terra", .0032), ("gpt-5.6-luna", .00032) })
     Test($"모델 기본 단가 {model}", () => Cost(price, Parse(Context(model), Event(1000, 100))));
+Test("GPT-6 Sol 장문 할증", () => Cost(1.089504, Parse(Context("gpt-6-sol"), Event(272001, 100))));
 
 Test("장문 경계 272000은 표준", () => Cost(2.725, Parse(Context(), Event(272000, 100))));
 Test("장문 경계 272001은 입력 두 배 출력 한 배 반", () => Cost(5.44752, Parse(Context(), Event(272001, 100))));
