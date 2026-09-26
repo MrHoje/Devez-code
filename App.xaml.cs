@@ -158,8 +158,8 @@ public partial class App : Application
             return;
         }
 
-        // 모든 WPF 세로 스크롤에서 작은 트랙패드 델타만 누적하고 120단위 마우스 휠은 그대로 둔다.
-        PrecisionWheelScroll.RegisterGlobally();
+        // 터미널 밖 모든 WPF 세로 스크롤을 픽셀 단위 감속 애니메이션으로 움직인다.
+        SmoothWheelScroll.Register();
 
         // ContextMenu 는 우클릭으로 열되, 열린 MenuItem 은 좌클릭으로만 선택한다.
         EventManager.RegisterClassHandler(typeof(MenuItem), UIElement.PreviewMouseRightButtonDownEvent,
