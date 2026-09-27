@@ -103,7 +103,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.11", "2026-09-26", true, new[]
+          ("v1.27.12", "2026-09-27", true, new[]
+          {
+              "Codex 세션 삭제 후 마우스 포인터가 사라질 수 있던 문제를 수정했습니다.",
+          }),
+          ("v1.27.11", "2026-09-26", false, new[]
           {
               "터미널을 제외한 프로젝트 목록, 완료기록, 설정 등의 스크롤이 부드럽게 움직이도록 개선했습니다.",
               "DevezVibe 세션을 다시 열 때 세션 안에서 바꾼 모델이 원래대로 돌아가던 문제를 수정했습니다.",
