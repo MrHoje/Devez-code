@@ -6383,6 +6383,8 @@ public partial class MainWindow : Window
         if (subtree.Count == 0) return;
         var owners = subtree.ToDictionary(s => s, PaneFor);
         var removedRoomIds = subtree.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        bool restoreCodexCursor = purge && subtree.Any(s =>
+            (string.IsNullOrEmpty(s.AgentId) ? SettingsService.LoadAgentForRoom(s.Id) : s.AgentId) == "codex");
         int removedIndex = subtree.Select(project.Tabs.IndexOf).Where(i => i >= 0).DefaultIfEmpty(0).Min();
 
         // 응답 대기(❗) 중인 세션을 닫기/삭제하면 완료기록으로 내리고, 대기 플래그를 꺼 대기 카드도 즉시 제거한다.
@@ -6394,6 +6396,9 @@ public partial class MainWindow : Window
                 pane.CancelSessionHide(item.Id);
         foreach (var item in subtree)
             owners[item].DisposeSessionProcess(item, purge);
+        // Computer Use can replace the system pointer; killing Codex's Job skips its restore path.
+        if (restoreCodexCursor && !SystemParametersInfo(0x0057, 0, IntPtr.Zero, 0))
+            DiagLog.Write($"Codex cursor restore failed: {Marshal.GetLastWin32Error()}");
 
         foreach (var item in subtree.OrderByDescending(project.Tabs.IndexOf))
             project.Tabs.Remove(item);
@@ -8217,6 +8222,8 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] private static extern IntPtr SetCapture(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT pt);
+    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint action, uint param, IntPtr value, uint flags);
     [DllImport("user32.dll")] private static extern int GetDoubleClickTime();
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
 
