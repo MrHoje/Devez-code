@@ -196,6 +196,8 @@ public static class SettingsService
         public bool MinimizeOnClose { get; set; } = false;
         // 좌측 프로젝트 목록 열 수(1 또는 2). 2면 좌측 패널 최소너비 2배 + 카드 2열 그리드 + 가로 드래그.
         public int ProjectColumns { get; set; } = 1;
+        // 좌측 프로젝트 카드가 접혔을 때 경로 줄 표시 여부. 기본 true.
+        public bool ShowCollapsedProjectPath { get; set; } = true;
         // 메인 창 위치/크기 + 최대화 상태(재시작 시 복원). 화면 밖이면 복원 안 함. 로컬 전용.
         public double? WindowLeft   { get; set; }
         public double? WindowTop    { get; set; }
@@ -1257,6 +1259,8 @@ public static class SettingsService
 
     public static int LoadProjectColumns() => Current.ProjectColumns == 2 ? 2 : 1;
     public static void SaveProjectColumns(int v) { Current.ProjectColumns = v == 2 ? 2 : 1; Save(); }
+    public static bool LoadShowCollapsedProjectPath() => Current.ShowCollapsedProjectPath;
+    public static void SaveShowCollapsedProjectPath(bool v) { Current.ShowCollapsedProjectPath = v; Save(); }
 
     // ── 메인 창 위치/크기 (재시작 복원) ──────────────────────────
     public static (double? left, double? top, double? width, double? height, bool maximized) LoadWindowPlacement()

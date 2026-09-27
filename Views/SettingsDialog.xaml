@@ -539,6 +539,26 @@
                                     </Grid>
                                 </Border>
 
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="프로젝트 접힌 상태에서 경로 보기" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="끄면 왼쪽 프로젝트 카드를 접었을 때 경로 줄을 숨겨 카드 높이를 줄입니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ShowCollapsedProjectPathToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="ShowCollapsedProjectPathToggle_Changed" Unchecked="ShowCollapsedProjectPathToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
                                 <Border Padding="0" CornerRadius="0"
                                         BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>

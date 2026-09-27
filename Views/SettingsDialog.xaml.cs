@@ -54,6 +54,7 @@ public partial class SettingsDialog : UserControl
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
     private int    _originalProjectColumns;
+    private bool   _originalShowCollapsedProjectPath;
     private string _selectedTheme;
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
@@ -75,6 +76,7 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedUseFullScreen;
     private bool   _selectedMinimizeOnClose;
     private int    _selectedProjectColumns;
+    private bool   _selectedShowCollapsedProjectPath;
     // DeepSeek 연결 토글 — 다른 설정과 동일하게 [저장] 시점에만 디스크 반영(끄고 저장 시 키 삭제).
     private bool   _originalDeepSeekEnabled;
     private bool   _selectedDeepSeekEnabled;
@@ -946,6 +948,9 @@ public partial class SettingsDialog : UserControl
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
         SelectComboByTag(ProjectColumnsCombo, _selectedProjectColumns.ToString());
+        _originalShowCollapsedProjectPath = SettingsService.LoadShowCollapsedProjectPath();
+        _selectedShowCollapsedProjectPath = _originalShowCollapsedProjectPath;
+        ShowCollapsedProjectPathToggle.IsChecked = _selectedShowCollapsedProjectPath;
         (_originalHkMod, _originalHkPrev, _originalHkNext) = SettingsService.LoadTabHotkey();
         _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
         UpdateShortcutVisual();
@@ -1273,6 +1278,11 @@ public partial class SettingsDialog : UserControl
     private void PreloadAllSessionsToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedPreloadAllSessions = PreloadAllSessionsToggle.IsChecked == true;
+    }
+
+    private void ShowCollapsedProjectPathToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedShowCollapsedProjectPath = ShowCollapsedProjectPathToggle.IsChecked == true;
     }
 
     private void ClaudeGuiModeToggle_Changed(object sender, RoutedEventArgs e)
@@ -2371,6 +2381,12 @@ public partial class SettingsDialog : UserControl
             SettingsService.SaveProjectColumns(_selectedProjectColumns);
             (Application.Current.MainWindow as MainWindow)?.ApplyProjectColumns(_selectedProjectColumns);
         }
+        if (_selectedShowCollapsedProjectPath != _originalShowCollapsedProjectPath)
+        {
+            SettingsService.SaveShowCollapsedProjectPath(_selectedShowCollapsedProjectPath);
+            if (Application.Current.MainWindow is MainWindow mw)
+                mw.Sidebar.ShowCollapsedProjectPath = _selectedShowCollapsedProjectPath;
+        }
         UpdateAgentEnabledInSettings();
         SaveWakeSchedulesIfChanged();
 
@@ -2457,6 +2473,7 @@ public partial class SettingsDialog : UserControl
         _originalUseFullScreen = _selectedUseFullScreen;
         _originalMinimizeOnClose = _selectedMinimizeOnClose;
         _originalProjectColumns = _selectedProjectColumns;
+        _originalShowCollapsedProjectPath = _selectedShowCollapsedProjectPath;
         _originalHkMod = _selectedHkMod; _originalHkPrev = _selectedHkPrev; _originalHkNext = _selectedHkNext;
         _originalEnabledAgents = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);

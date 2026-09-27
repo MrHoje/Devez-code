@@ -3270,6 +3270,7 @@ public partial class MainWindow : Window
         Views.MiniBrowserWindow.OpenStateChanged += UpdatePanelToggleVisual;
         UpdatePanelToggleVisual();
         ApplyProjectColumns(SettingsService.LoadProjectColumns()); // 저장된 열 수 복원(최소/현재 폭 반영)
+        Sidebar.ShowCollapsedProjectPath = SettingsService.LoadShowCollapsedProjectPath();
     }
 
     private void UpdatePanelToggleVisual()

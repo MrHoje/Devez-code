@@ -1005,7 +1005,8 @@
                             </Button>
                             </StackPanel>
                             <!-- 경로 (2행, 전체 폭). 버튼이 1행으로 빠졌으므로 잘림 없이 표시. -->
-                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                            <TextBlock x:Name="ProjectPathText"
+                                       Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                        Text="{Binding Path}" Margin="0,1,0,0"
                                        TextTrimming="CharacterEllipsis"
                                        FontSize="{DynamicResource Fs11}"
@@ -1223,6 +1224,14 @@
                     <Setter TargetName="ProjectHeaderIndicator" Property="Visibility" Value="Visible"/>
                     <Setter TargetName="ProjectMarker" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="ProjectBusySpinner" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+                <!-- 접힘 + 설정 "접힌 상태에서 경로 보기" 끔 → 경로 줄 제거(카드 높이 축소). -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsExpanded}" Value="False"/>
+                        <Condition Binding="{Binding ShowCollapsedProjectPath, RelativeSource={RelativeSource AncestorType={x:Type local:SidebarView}}}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="ProjectPathText" Property="Visibility" Value="Collapsed"/>
                 </MultiDataTrigger>
                 <!-- 프로젝트 카드 호버: 활성/보관함 모두 같은 보더색 변경 -->
                 <MultiDataTrigger>

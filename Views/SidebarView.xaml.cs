@@ -28,6 +28,20 @@ public partial class SidebarView : UserControl
         private set => SetValue(SearchHighlightQueryProperty, value);
     }
 
+    /// <summary>접힌 프로젝트 카드의 경로 줄 표시 여부. 설정 &gt; 프로젝트에서 전환.</summary>
+    public static readonly DependencyProperty ShowCollapsedProjectPathProperty =
+        DependencyProperty.Register(
+            nameof(ShowCollapsedProjectPath),
+            typeof(bool),
+            typeof(SidebarView),
+            new PropertyMetadata(true));
+
+    public bool ShowCollapsedProjectPath
+    {
+        get => (bool)GetValue(ShowCollapsedProjectPathProperty);
+        set => SetValue(ShowCollapsedProjectPathProperty, value);
+    }
+
     public SidebarView()
     {
         InitializeComponent();
