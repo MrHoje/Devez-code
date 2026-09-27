@@ -266,6 +266,7 @@
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="37"/>
+                            <RowDefinition Height="Auto"/>
                             <!-- 응답 대기 줄이 생기면 자동으로 높이가 늘어나도록 Auto (단일 줄이면 MinHeight 35 유지). -->
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -280,6 +281,13 @@
                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextBrush}"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button x:Name="HistorySearchToggleBtn" Click="HistorySearchToggleBtn_Click"
+                                        Width="22" Height="22"
+                                        Style="{StaticResource IconButton}"
+                                        ToolTip="검색">
+                                    <Path Style="{StaticResource LucideButtonIcon}"
+                                          Data="{StaticResource IconSearch}" Width="12" Height="12"/>
+                                </Button>
                                      <Button x:Name="TogglePromptBtn" Click="TogglePromptBtn_Click"
                                          Width="22" Height="22">
                                     <Button.Style>
@@ -335,8 +343,87 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
+                        <!-- 검색 행 — 기본 숨김(Height=0). 돋보기 클릭 시 프로젝트 영역과 같은 방식으로 펼침. -->
+                        <Border x:Name="HistorySearchRow" Grid.Row="1" Height="0" ClipToBounds="True">
+                            <Border Margin="8,8,8,4" Height="35" VerticalAlignment="Top"
+                                    Background="{DynamicResource PanelSoftBrush}"
+                                    BorderBrush="{DynamicResource LineBrush}"
+                                    BorderThickness="1" CornerRadius="8">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                                          Data="{StaticResource IconSearch}"
+                                          Stroke="{DynamicResource TextMutedBrush}"
+                                          Width="13" Height="13"
+                                          Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1">
+                                        <TextBox x:Name="HistorySearchBox" IsEnabled="False"
+                                                 Margin="6,0,0,0" Padding="0,0,0,0" VerticalContentAlignment="Center"
+                                                 Background="Transparent" BorderThickness="0"
+                                                 FocusVisualStyle="{x:Null}"
+                                                 Foreground="{DynamicResource TextBrush}"
+                                                 CaretBrush="{DynamicResource TextBrush}"
+                                                 FontSize="{DynamicResource Fs13}"
+                                                 FontFamily="{StaticResource PretendardFont}"
+                                                 PreviewKeyDown="HistorySearchBox_PreviewKeyDown"
+                                                 TextChanged="HistorySearchBox_TextChanged">
+                                            <TextBox.Resources>
+                                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                                            </TextBox.Resources>
+                                        </TextBox>
+                                        <TextBlock Text="프로젝트 / 세션 / 프롬프트 검색"
+                                                   IsHitTestVisible="False"
+                                                   Margin="6,0,0,0" Padding="0" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   FontSize="{DynamicResource Fs13}"
+                                                   FontFamily="{StaticResource PretendardFont}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Text, ElementName=HistorySearchBox}" Value="">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                    <Button Grid.Column="2"
+                                            Width="20" Height="20" Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Click="HistorySearchClear_Click" Cursor="Arrow"
+                                            Background="Transparent" BorderThickness="0"
+                                            IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                            ToolTip="지우기">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" Width="20" Height="20" CornerRadius="4"
+                                                        Background="{TemplateBinding Background}">
+                                                    <Path Style="{StaticResource LucideButtonIcon}"
+                                                          Data="{StaticResource IconX}"
+                                                          Width="11" Height="11"
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                          Stretch="Uniform"
+                                                          Stroke="{DynamicResource TextMutedBrush}"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                        </Border>
                         <!-- 세션 타이틀 영역과 동일 사이즈 패널 -->
-                        <Border Grid.Row="1" MinHeight="35"
+                        <Border Grid.Row="2" MinHeight="35"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
                             <StackPanel VerticalAlignment="Center" Margin="9,6,12,6">
                                 <!-- 진행중 줄: 스피너 + 텍스트 -->
@@ -369,7 +456,7 @@
                         <!-- 대기 카드는 위에 고정, 완료기록만 자체 스크롤 + 가상화(VirtualizedCardList).
                              비가상화 목록은 창 크기가 바뀔 때 카드 전부를 재배치해 최대화 전환의 첫 프레임이
                              늦어지고, 그동안 DWM 이 이전 화면을 확대해 겹쳐 보여준다("당겨짐" 깜빡임). -->
-                        <Grid Grid.Row="2">
+                        <Grid Grid.Row="3">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
@@ -650,7 +737,7 @@
                                        FontSize="{DynamicResource Fs12}"
                                        Foreground="{DynamicResource TextMutedBrush}"/>
                         </Grid>
-                        <Rectangle x:Name="SessionHistoryFadeTop" Grid.Row="2" Height="24" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
+                        <Rectangle x:Name="SessionHistoryFadeTop" Grid.Row="3" Height="24" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
                                    Visibility="Collapsed"
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>
@@ -660,7 +747,7 @@
                                 </LinearGradientBrush>
                             </Rectangle.OpacityMask>
                         </Rectangle>
-                        <Rectangle x:Name="SessionHistoryFadeBottom" Grid.Row="2" Height="24" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+                        <Rectangle x:Name="SessionHistoryFadeBottom" Grid.Row="3" Height="24" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
                                    Visibility="Collapsed"
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>

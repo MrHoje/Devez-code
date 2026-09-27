@@ -617,6 +617,9 @@ public partial class SidebarView : UserControl
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
         };
         SearchRow.BeginAnimation(FrameworkElement.HeightProperty, anim);
+        // 닫힌 검색창이 포커스를 쥔 채 입력을 받지 않도록 비활성화하고 필터도 해제한다.
+        SidebarSearchBox.IsEnabled = _searchOpen;
+        if (!_searchOpen && SidebarSearchBox.Text.Length > 0) SidebarSearchBox.Clear();
 
         if (_searchOpen)
         {

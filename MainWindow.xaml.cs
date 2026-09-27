@@ -5403,12 +5403,80 @@ public partial class MainWindow : Window
 
     private void UpdateSessionHistoryEdgeFlags()
     {
-        int last = _sessionDoneRecords.Count - 1;
-        for (int i = 0; i <= last; i++)
+        // 검색 필터가 걸려 있으면 보이는 카드 기준으로 첫/마지막 여백을 준다.
+        var first = _sessionDoneRecords.FirstOrDefault(MatchesHistorySearch);
+        var last = _sessionDoneRecords.LastOrDefault(MatchesHistorySearch);
+        foreach (var r in _sessionDoneRecords)
         {
-            _sessionDoneRecords[i].IsFirstInHistory = i == 0;
-            _sessionDoneRecords[i].IsLastInHistory = i == last;
+            r.IsFirstInHistory = ReferenceEquals(r, first);
+            r.IsLastInHistory = ReferenceEquals(r, last);
         }
+    }
+
+    // ── 완료기록 검색 (돋보기 토글) — 프로젝트 영역 검색과 같은 동작 ──
+    private bool _historySearchOpen;
+    private string _historySearchQuery = "";
+
+    private bool MatchesHistorySearch(SessionCompletionRecord r)
+        => _historySearchQuery.Length == 0
+           || r.ProjectName.Contains(_historySearchQuery, StringComparison.OrdinalIgnoreCase)
+           || r.SessionName.Contains(_historySearchQuery, StringComparison.OrdinalIgnoreCase)
+           || (r.LastMessage ?? "").Contains(_historySearchQuery, StringComparison.OrdinalIgnoreCase);
+
+    private void HistorySearchToggleBtn_Click(object sender, RoutedEventArgs e)
+        => SetHistorySearchOpen(!_historySearchOpen);
+
+    private void SetHistorySearchOpen(bool open)
+    {
+        _historySearchOpen = open;
+        HistorySearchToggleBtn.Tag = open ? "active" : null;
+        HistorySearchRow.BeginAnimation(FrameworkElement.HeightProperty, new DoubleAnimation
+        {
+            To = open ? 47 : 0,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+        });
+        // 닫힌 검색창이 포커스를 쥔 채 입력을 받지 않도록 비활성화하고 필터도 해제한다.
+        HistorySearchBox.IsEnabled = open;
+        if (open)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                HistorySearchBox.Focus();
+                HistorySearchBox.SelectAll();
+            }), System.Windows.Threading.DispatcherPriority.Input);
+        }
+        else
+        {
+            if (HistorySearchBox.Text.Length > 0) HistorySearchBox.Clear();
+            ScheduleTerminalFocusRestore();
+        }
+    }
+
+    private void HistorySearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _historySearchQuery = HistorySearchBox.Text.Trim();
+        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_sessionDoneRecords);
+        if (_historySearchQuery.Length == 0) view.Filter = null;
+        else if (view.Filter == null) view.Filter = o => MatchesHistorySearch((SessionCompletionRecord)o);
+        else view.Refresh();
+        UpdateSessionHistoryEdgeFlags();
+        UpdateSessionHistoryEmpty();
+    }
+
+    private void HistorySearchClear_Click(object sender, RoutedEventArgs e)
+    {
+        HistorySearchBox.Clear();
+        HistorySearchBox.Focus();
+    }
+
+    /// <summary>검색창 Esc: 검색어가 있으면 먼저 지우고, 비어 있으면 검색 행을 접는다.</summary>
+    private void HistorySearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        if (HistorySearchBox.Text.Length > 0) HistorySearchBox.Clear();
+        else SetHistorySearchOpen(false);
+        e.Handled = true;
     }
 
     private void SessionHistoryScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -5426,7 +5494,10 @@ public partial class MainWindow : Window
     }
 
     private void UpdateSessionHistoryEmpty()
-        => SessionHistoryEmpty.Visibility = _sessionDoneRecords.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    {
+        SessionHistoryEmpty.Text = _sessionDoneRecords.Count == 0 ? "완료된 세션 기록이 없습니다." : "검색 결과가 없습니다.";
+        SessionHistoryEmpty.Visibility = _sessionDoneRecords.Any(MatchesHistorySearch) ? Visibility.Collapsed : Visibility.Visible;
+    }
 
 
 

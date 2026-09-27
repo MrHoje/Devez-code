@@ -1556,7 +1556,7 @@
                           Width="13" Height="13"
                           Margin="10,0,0,0" VerticalAlignment="Center"/>
                     <Grid Grid.Column="1">
-                        <TextBox x:Name="SidebarSearchBox"
+                        <TextBox x:Name="SidebarSearchBox" IsEnabled="False"
                                  Margin="6,0,0,0" Padding="0,0,0,0" VerticalContentAlignment="Center"
                                  Background="Transparent" BorderThickness="0"
                                  FocusVisualStyle="{x:Null}"
