@@ -105,7 +105,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.12", "2026-09-27", true, new[]
+          ("v1.27.13", "2026-09-28", true, new[]
+          {
+              "설정 > 프로젝트에 프로젝트 카드를 접었을 때 경로를 표시할지 고르는 옵션을 추가했습니다.",
+              "세션 완료기록에 검색 기능을 추가했습니다.",
+              "프로젝트 검색창을 닫아도 검색어가 남아 입력되던 문제를 수정했습니다.",
+              "세션 완료기록 보관 개수를 30개에서 200개로 늘렸습니다.",
+          }),
+          ("v1.27.12", "2026-09-27", false, new[]
           {
               "Codex 세션 삭제 후 마우스 포인터가 사라질 수 있던 문제를 수정했습니다.",
           }),
