@@ -911,6 +911,7 @@ public partial class MainWindow : Window
                 MoveGlobalTabHotkey(next);
                 BringToForegroundFromHotkey();
             }, HandleGlobalSessionHotkey);
+            StartElevatedDragWatch();
         };
 
         // 창 위치/크기는 닫히기 직전(Closing)에 저장한다 — RestoreBounds 가 유효한 시점.
@@ -2856,6 +2857,50 @@ public partial class MainWindow : Window
         _focusedPane.DismissFileDropOverlay();
     }
 
+    // 관리자(높은 무결성) 창에는 일반 권한 탐색기의 OLE 드래그가 UIPI 로 막혀 DragOver 자체가 오지 않는다.
+    // 대신 다른 앱에서 누른 마우스 버튼을 유지한 채 커서가 이 창의 패널 위로 오면 외부 드래그로 보고
+    // 그 패널의 드롭 오버레이에 안내를 띄운다(놓기는 여전히 불가 — 안내 전용).
+    private static readonly bool IsElevated = new System.Security.Principal.WindowsPrincipal(
+            System.Security.Principal.WindowsIdentity.GetCurrent())
+        .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    private System.Windows.Threading.DispatcherTimer? _elevatedDragTimer;
+    private bool _externalPressSeen;
+
+    private void StartElevatedDragWatch()
+    {
+        if (!IsElevated || _elevatedDragTimer != null) return;
+        _elevatedDragTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        _elevatedDragTimer.Tick += (_, _) => CheckElevatedExternalDrag();
+        _elevatedDragTimer.Start();
+    }
+
+    private void CheckElevatedExternalDrag()
+    {
+        const int VK_LBUTTON = 0x01, VK_RBUTTON = 0x02;
+        bool pressed = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 || (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        WorkspacePaneView? target = null;
+        if (pressed && GetCursorPos(out var p))
+        {
+            bool overUs = GetAncestor(WindowFromPoint(p), GA_ROOT) == new WindowInteropHelper(this).Handle;
+            // 이 창 안에서 누른 버튼(클릭·앱 내부 드래그)은 제외 — 창 밖에서 눌린 적이 있어야 외부 드래그다.
+            if (!overUs) _externalPressSeen = true;
+            GetWindowThreadProcessId(GetForegroundWindow(), out var fgPid);
+            if (overUs && _externalPressSeen && fgPid != Environment.ProcessId && _settingsView == null)
+                target = PaneA.IsVisible && PaneA.ContainsScreenPoint(p.X, p.Y) ? PaneA
+                       : PaneB.IsVisible && PaneB.ContainsScreenPoint(p.X, p.Y) ? PaneB : null;
+        }
+        else _externalPressSeen = false;
+
+        foreach (var pane in new[] { PaneA, PaneB })
+        {
+            if (ReferenceEquals(pane, target)) pane.ShowFileDropOverlay(elevatedNotice: true);
+            else pane.DismissElevatedDropNotice();
+        }
+    }
+
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
     private static string[] GetTitleBarDroppedFiles(DragEventArgs e)
     {
         try
@@ -2983,6 +3028,7 @@ public partial class MainWindow : Window
             0x48 => "hideSession",
             0x4E => "renameSession",
             0x2E => "deleteSession",
+            0x4F => "openFile",
             _ => null,
         };
         if (action != null) _focusedPane?.InvokeSessionAction(action);

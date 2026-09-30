@@ -691,14 +691,33 @@
 
             <StackPanel MaxWidth="620" Margin="20"
                         HorizontalAlignment="Stretch" VerticalAlignment="Center">
-                <TextBlock Text="파일을 놓을 위치를 선택하세요"
+                <TextBlock x:Name="FileDropTitle" Text="파일을 놓을 위치를 선택하세요"
                            Margin="0,0,0,16"
                            HorizontalAlignment="Center"
                            FontSize="{DynamicResource Fs15}" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextBrush}"
+                           TextAlignment="Center" TextWrapping="Wrap"
                            IsHitTestVisible="False"/>
 
-                <Grid Height="250">
+                <!-- 관리자 권한 실행 안내: 탐색기 드래그가 UIPI 로 막혀 드롭 존 대신 표시한다. -->
+                <StackPanel x:Name="ElevatedDropNotice" Visibility="Collapsed" IsHitTestVisible="False">
+                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTriangleAlert}"
+                          Width="34" Height="34" Stretch="Uniform"
+                          Stroke="{DynamicResource WarningBrush}"
+                          HorizontalAlignment="Center"/>
+                    <TextBlock Text="Windows 보안 정책상 일반 권한 탐색기의 파일은 관리자 권한 창에 놓을 수 없습니다."
+                               Margin="0,16,0,0"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               TextAlignment="Center" TextWrapping="Wrap"/>
+                    <TextBlock Text="Ctrl+Shift+O로 파일을 열거나, 탐색기에서 복사(Ctrl+C)한 뒤 세션에 붙여넣으세요(Ctrl+V)."
+                               Margin="0,6,0,0"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               TextAlignment="Center" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <Grid x:Name="FileDropZones" Height="250">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="12"/>

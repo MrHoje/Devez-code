@@ -41,9 +41,9 @@ public static class GlobalTabHotkey
     private const int VK_SHIFT   = 0x10;
     private const int VK_CONTROL = 0x11;
     private const int VK_MENU    = 0x12;
-    // Ctrl+Shift 세션 관리 단축키 — T(새 세션) W(닫기) H(숨김) N(이름변경) Delete(삭제).
+    // Ctrl+Shift 세션 관리 단축키 — T(새 세션) W(닫기) H(숨김) N(이름변경) Delete(삭제) O(파일 열기).
     // 복사/붙여넣기/스크롤(Ctrl+Shift+C/V/A/방향키)은 터미널 자체 동작이라 가로채지 않는다.
-    private static readonly int[] SessionVks = { 0x54, 0x57, 0x48, 0x4E, 0x2E };
+    private static readonly int[] SessionVks = { 0x54, 0x57, 0x48, 0x4E, 0x2E, 0x4F };
 
     private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
 

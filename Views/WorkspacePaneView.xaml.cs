@@ -176,7 +176,7 @@ public partial class WorkspacePaneView : UserControl
         _terminal.FileOpenRequested += OnTerminalFileOpenRequested;
         _terminal.BrowserUrlOpenRequested += OnTerminalBrowserUrlOpenRequested;
         // Explorer 파일이 WebView2 터미널에 들어오면 HWND를 숨기고 패널 전체 드롭 선택 화면으로 전환.
-        _terminal.ExternalFileDragEntered += ShowFileDropOverlay;
+        _terminal.ExternalFileDragEntered += () => ShowFileDropOverlay();
         _terminal.ExternalFileDropReceived += paths =>
         {
             DismissFileDropOverlay();
@@ -368,14 +368,21 @@ public partial class WorkspacePaneView : UserControl
     /// 현재 패널 전체를 파일 드롭 선택 화면으로 전환한다.
     /// HwndHost(WebView2) 위에는 WPF가 그려지지 않으므로 세 콘텐츠 호스트를 Collapsed 처리한다.
     /// </summary>
-    public void ShowFileDropOverlay()
+    public void ShowFileDropOverlay(bool elevatedNotice = false)
     {
+        if (_fileDropOverlayActive)
+        {
+            // 실제 드래그 이벤트가 왔다면(탐색기도 관리자 권한) 안내 대신 드롭 존을 보여 준다.
+            if (!elevatedNotice && _elevatedDropNotice) SetElevatedDropNotice(false);
+            return;
+        }
         // 프로젝트 미선택(빈 패널)도 허용한다 — 드롭 시 경로로 프로젝트를 추론해 연다(EnsureProjectForPaths).
-        if (_fileDropOverlayActive || MainWindow.Current?.IsTerminalVisualTransitionBusy == true) return;
+        if (MainWindow.Current?.IsTerminalVisualTransitionBusy == true) return;
 
         _terminal.CancelPendingFocusTransfer();
         TerminalHostView.InvalidateGlobalFocusRequests();
         _fileDropOverlayActive = true;
+        SetElevatedDropNotice(elevatedNotice);
         // 파일 탭 활성 중엔 _activeSession 이 null 이라 터미널의 활성 방으로 판단한다(마지막 세션에 첨부).
         AddFileDropZone.IsEnabled = _activeSession is { IsExternal: false } session
             ? TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }
@@ -395,11 +402,31 @@ public partial class WorkspacePaneView : UserControl
         _fileDropOverlayCursorTimer.Stop();
         SetHighlightedFileDropZone(null);
         _fileDropOverlayActive = false;
+        _elevatedDropNotice = false;
         FileDropOverlay.Visibility = Visibility.Collapsed;
         if (restoreContent) UpdateEmptyState();
     }
 
     public void DismissFileDropOverlay() => HideFileDropOverlay();
+
+    private bool _elevatedDropNotice;
+
+    /// <summary>관리자 권한 실행 안내 모드 — 드롭 존 대신 끌어다 놓기 불가 사유와 대체 방법을 보여 준다.</summary>
+    private void SetElevatedDropNotice(bool on)
+    {
+        _elevatedDropNotice = on;
+        FileDropTitle.Text = on ? "관리자 권한으로 실행 중이라 끌어다 놓을 수 없습니다" : "파일을 놓을 위치를 선택하세요";
+        ElevatedDropNotice.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        FileDropZones.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>관리자 권한 안내로 띄운 오버레이만 닫는다(실제 드래그로 띄운 드롭 존은 건드리지 않음).</summary>
+    public void DismissElevatedDropNotice()
+    {
+        if (_elevatedDropNotice) HideFileDropOverlay();
+    }
+
+    public bool ContainsScreenPoint(int x, int y) => IsCursorInside(this, new CursorPoint { X = x, Y = y });
 
     private void CheckFileDropOverlayCursor()
     {
@@ -1199,6 +1226,7 @@ public partial class WorkspacePaneView : UserControl
             case "hideSession": if (_activeSession != null) HideSession(_activeSession); break;
             case "deleteSession": if (_activeSession != null) DeleteSession(_activeSession); break;
             case "renameSession": if (_activeSession != null) RenameSession(_activeSession); break;
+            case "openFile": if (_activeProject != null) OpenFileFromMenu(_activeProject); break;
             case "nextSession": CycleSession(+1); break;
             case "prevSession": CycleSession(-1); break;
             case "gotoSession": GotoSession(index); break;
@@ -2689,11 +2717,17 @@ public partial class WorkspacePaneView : UserControl
             Title = "텍스트, 이미지, PDF 열기",
             Filter = "지원 파일|*.pdf;*.txt;*.md;*.markdown;*.json;*.xml;*.yml;*.yaml;*.toml;*.csv;*.log;*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp;*.ico;*.tif;*.tiff|PDF 파일|*.pdf|텍스트 파일|*.txt;*.md;*.markdown;*.json;*.xml;*.yml;*.yaml;*.toml;*.csv;*.log|이미지 파일|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp;*.ico;*.tif;*.tiff",
             FilterIndex = 1,
+            Multiselect = true,
         };
         if (Directory.Exists(project.Path))
             dialog.InitialDirectory = project.Path;
-        if (dialog.ShowDialog() == true)
-            OpenFileAsTab(dialog.FileName);
+        if (dialog.ShowDialog() != true)
+        {
+            FocusActiveSessionTerminal(forceImeReattach: true);
+            return;
+        }
+        foreach (var path in dialog.FileNames)
+            OpenFileAsTab(path);
     }
 
     public BrowserTabItem? AddBrowserTab(ProjectItem proj, string? initialName = null, bool promptForName = true,
