@@ -105,7 +105,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.27.13", "2026-09-28", true, new[]
+          ("v1.27.14", "2026-09-30", true, new[]
+          {
+              "Ctrl+Shift+O로 파일 선택창을 열어 현재 프로젝트에 파일을 탭으로 여는 기능을 추가했습니다.",
+              "탭 추가 메뉴의 파일 열기에서 여러 파일을 한 번에 열 수 있도록 개선했습니다.",
+              "관리자 권한으로 실행 중일 때 파일을 끌어오면, 끌어다 놓을 수 없다는 안내와 대체 방법을 보여 주도록 추가했습니다.",
+          }),
+          ("v1.27.13", "2026-09-28", false, new[]
           {
               "설정 > 프로젝트에 프로젝트 카드를 접었을 때 경로를 표시할지 고르는 옵션을 추가했습니다.",
               "세션 완료기록에 검색 기능을 추가했습니다.",
