@@ -496,10 +496,11 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
     // 실제 동작은 탭 브라우저와 같은 공용 엔진이 맡는다. 미니 창은 가상 히스토리가 없어 뒤로 가기도
     // WebView2 자체 스택을 그대로 쓴다.
 
-    /// <summary>자동화 명령을 받을 미니 브라우저를 준비한다. 사용자가 닫아 둔 창은 다시 띄운다.
+    /// <summary>자동화 명령을 받을 미니 브라우저를 준비한다. 사용자가 숨겨 둔 창은 숨긴 채로 쓰고,
+    /// 화면 캡처(<paramref name="show"/>)일 때만 다시 띄운다 — 숨긴 창에서는 캡처가 끝나지 않는다.
     /// <para>창을 앞으로 끌어오지는 않는다(Activate 생략) — 세션 명령 때문에 사용자가 보던 창의
     /// 포커스를 뺏지 않기 위해서다.</para></summary>
-    public static async Task<MiniBrowserWindow> EnsureForAutomationAsync(Window? owner)
+    public static async Task<MiniBrowserWindow> EnsureForAutomationAsync(Window? owner, bool show = false)
     {
         var win = _instance;
         if (win is { IsLoaded: true })
@@ -509,8 +510,8 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
                 throw new InvalidOperationException(
                     "설정 창이 열려 있는 동안에는 미니 브라우저를 쓸 수 없습니다. 설정을 닫고 다시 시도하세요.");
             // 최소화된 창은 화면 캡처가 끝나지 않으므로 먼저 정상 크기로 되돌린다.
-            if (win.WindowState == WindowState.Minimized) win.WindowState = WindowState.Normal;
-            if (!win.IsVisible)
+            if (show && win.WindowState == WindowState.Minimized) win.WindowState = WindowState.Normal;
+            if (show && !win.IsVisible)
             {
                 win._hiddenByUser = false;
                 win.Show();

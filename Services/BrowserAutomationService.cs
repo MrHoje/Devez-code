@@ -46,7 +46,7 @@ public static class BrowserAutomationService
                     return "미니 브라우저 창을 이 세션에 연결했습니다. 이후 브라우저 도구는 모두 미니 창에 적용됩니다.";
             }
 
-            var browser = await OnUiAsync(() => window.EnsureAutomationBrowserAsync(roomId));
+            var browser = await OnUiAsync(() => window.EnsureAutomationBrowserAsync(roomId, showMini: command == "screenshot"));
 
             return await OnUiAsync(() => RunAsync(browser, command, args));
         }
