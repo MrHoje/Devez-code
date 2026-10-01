@@ -17,11 +17,11 @@ public partial class MainWindow
 
     /// <summary>roomId 세션에 연결된 자동화 대상을 반환한다. 미니 브라우저를 잡아 둔 세션은 그쪽이 우선이다.
     /// 일반 브라우저 탭이 남아 있으면 임의로 고르지 않고, 에이전트가 사용자에게 선택을 물어보게 한다.</summary>
-    public async Task<IAutomationBrowser> EnsureAutomationBrowserAsync(string roomId, bool showMini = false)
+    public async Task<IAutomationBrowser> EnsureAutomationBrowserAsync(string roomId)
     {
         RequireSession(roomId);
         if (_miniAutomationRoomId == roomId)
-            return await MiniBrowserWindow.EnsureForAutomationAsync(this, showMini);
+            return await MiniBrowserWindow.EnsureForAutomationAsync(this);
 
         var assigned = FindAutomationBrowserTab(roomId);
         if (assigned != null) return await PrepareAutomationBrowserAsync(assigned);

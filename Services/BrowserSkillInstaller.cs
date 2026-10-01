@@ -100,8 +100,8 @@ public static class BrowserSkillInstaller
 
         ## 순서
 
-        1. `browser_use_mini` 로 미니 브라우저를 이 세션에 연결한다. 숨겨 둔 창은 숨긴 채로 조작하고,
-           화면 캡처 때만 다시 보인다.
+        1. `browser_use_mini` 로 미니 브라우저를 이 세션에 연결한다. 숨겨 둔 창은 화면 캡처까지
+           숨긴 채로 조작한다.
         2. 연결 후에는 모든 브라우저 도구가 미니 창에 적용된다.
            - 페이지 내용 읽기: `browser_read`
            - 현재 주소와 제목: `browser_current`

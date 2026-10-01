@@ -62,6 +62,7 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
 
     /// <summary>사용자가 닫기(숨기기)를 눌렀는지. 소유 창 최소화→복원 때 다시 나타나는 것을 막는 데 쓴다.</summary>
     private bool _hiddenByUser;
+    private bool _capturingOffscreen;   // 숨긴 창을 화면 밖에 잠깐 띄워 캡처하는 중
 
     /// <summary>설정·MCP 오버레이 때문에 임시로 숨긴 상태인지(오버레이가 닫히면 되돌린다).</summary>
     private bool _hiddenForOverlay;
@@ -188,7 +189,7 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
         Toolbar.MouseEnter += (_, _) => UpdateFitState();
         Loaded += OnLoadedFirst;
         // 소유 창을 최소화했다 복원하면 WPF 가 소유 창들을 함께 되살린다 — 사용자가 숨긴 창은 계속 숨긴다.
-        IsVisibleChanged += (_, _) => { if (_hiddenByUser && IsVisible) Hide(); };
+        IsVisibleChanged += (_, _) => { if (_hiddenByUser && IsVisible && !_capturingOffscreen) Hide(); };
     }
 
     private void OnLoadedFirst(object sender, RoutedEventArgs e)
@@ -496,11 +497,10 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
     // 실제 동작은 탭 브라우저와 같은 공용 엔진이 맡는다. 미니 창은 가상 히스토리가 없어 뒤로 가기도
     // WebView2 자체 스택을 그대로 쓴다.
 
-    /// <summary>자동화 명령을 받을 미니 브라우저를 준비한다. 사용자가 숨겨 둔 창은 숨긴 채로 쓰고,
-    /// 화면 캡처(<paramref name="show"/>)일 때만 다시 띄운다 — 숨긴 창에서는 캡처가 끝나지 않는다.
+    /// <summary>자동화 명령을 받을 미니 브라우저를 준비한다. 사용자가 숨겨 둔 창은 숨긴 채로 쓴다.
     /// <para>창을 앞으로 끌어오지는 않는다(Activate 생략) — 세션 명령 때문에 사용자가 보던 창의
     /// 포커스를 뺏지 않기 위해서다.</para></summary>
-    public static async Task<MiniBrowserWindow> EnsureForAutomationAsync(Window? owner, bool show = false)
+    public static async Task<MiniBrowserWindow> EnsureForAutomationAsync(Window? owner)
     {
         var win = _instance;
         if (win is { IsLoaded: true })
@@ -509,14 +509,6 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
             if (win._hiddenForOverlay)
                 throw new InvalidOperationException(
                     "설정 창이 열려 있는 동안에는 미니 브라우저를 쓸 수 없습니다. 설정을 닫고 다시 시도하세요.");
-            // 최소화된 창은 화면 캡처가 끝나지 않으므로 먼저 정상 크기로 되돌린다.
-            if (show && win.WindowState == WindowState.Minimized) win.WindowState = WindowState.Normal;
-            if (show && !win.IsVisible)
-            {
-                win._hiddenByUser = false;
-                win.Show();
-                OpenStateChanged?.Invoke();
-            }
         }
         else win = CreateAndShow(owner);
 
@@ -553,7 +545,33 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
 
     public Task<string> AutomationEvalAsync(string script) => Automation.EvalAsync(script);
 
-    public Task<byte[]> AutomationCaptureAsync() => Automation.CaptureAsync();
+    /// <summary>숨기거나 최소화한 창은 캡처가 끝나지 않는다. 숨긴 창은 화면 밖 좌표에 포커스 없이
+    /// 잠깐 띄워 찍고 다시 숨긴다 — 사용자 눈에는 창이 나타나지 않는다.</summary>
+    public async Task<byte[]> AutomationCaptureAsync()
+    {
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        if (IsVisible) return await Automation.CaptureAsync();
+
+        var (left, top) = (Left, Top);
+        _capturingOffscreen = true;
+        ShowActivated = false;
+        try
+        {
+            Left = SystemParameters.VirtualScreenLeft - ActualWidth - 1000;
+            Top = SystemParameters.VirtualScreenTop - ActualHeight - 1000;
+            Show();
+            return await Automation.CaptureAsync();
+        }
+        finally
+        {
+            // 캡처 도중 사용자가 창을 다시 열었으면 숨기지 않고 원래 위치로만 되돌린다.
+            if (_hiddenByUser || _hiddenForOverlay) Hide();
+            Left = left;
+            Top = top;
+            ShowActivated = true;
+            _capturingOffscreen = false;
+        }
+    }
 
     public Task<string> AutomationBackAsync() => Automation.GoBackAsync();
 
@@ -611,7 +629,7 @@ public partial class MiniBrowserWindow : Window, IAutomationBrowser
 
     private void SavePlacement()
     {
-        if (WindowState != WindowState.Normal || Width <= 0 || Height <= 0) return;
+        if (_capturingOffscreen || WindowState != WindowState.Normal || Width <= 0 || Height <= 0) return;
         try { SettingsService.SaveMiniBrowserPlacement(Left, Top, Width, Height); } catch { }
     }
 

@@ -216,7 +216,7 @@ public static class BrowserMcpInstaller
             description: '사용자가 새 전용 브라우저 탭 생성을 선택했을 때 호출한다. 기존 탭이 있어도 사용자의 선택 없이 호출하지 마라.',
             inputSchema: S({}) },
           { name: 'browser_use_mini', cmd: 'use_mini',
-            description: 'DevezCode 미니 브라우저(메인 창 위에 떠 있는 작은 브라우저 창)를 이 세션의 제어 대상으로 연결한다. 사용자가 미니 브라우저에서 보고 있는 페이지를 다루라고 했을 때만 호출한다. 사용자가 숨겨 둔 창은 숨긴 채로 조작하고 화면 캡처 때만 다시 보인다. 미니 창은 하나뿐이라 다른 세션이 쓰는 중이면 거절된다. 연결 후에는 browser_open/read/click 등 모든 브라우저 도구가 미니 창에 적용된다.',
+            description: 'DevezCode 미니 브라우저(메인 창 위에 떠 있는 작은 브라우저 창)를 이 세션의 제어 대상으로 연결한다. 사용자가 미니 브라우저에서 보고 있는 페이지를 다루라고 했을 때만 호출한다. 사용자가 숨겨 둔 창은 화면 캡처까지 숨긴 채로 조작한다. 미니 창은 하나뿐이라 다른 세션이 쓰는 중이면 거절된다. 연결 후에는 browser_open/read/click 등 모든 브라우저 도구가 미니 창에 적용된다.',
             inputSchema: S({}) },
           { name: 'browser_open', cmd: 'open',
             description: 'DevezCode 내장 브라우저에서 URL을 열거나 검색어로 구글 검색한다. 아직 이 세션에 탭이 연결되지 않았는데 일반 브라우저 탭이 열려 있으면 선택 필요 목록이 반환된다. 그때는 탭을 임의로 고르지 말고 사용자에게 기존 탭 사용 또는 새 전용 탭 생성을 물어본 뒤 browser_use_tab 또는 browser_new_tab을 호출하고 다시 시도한다.',
