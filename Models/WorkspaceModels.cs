@@ -43,10 +43,18 @@ public abstract class TabItemBase : NotifyBase
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 
+    /// <summary>아직 보지 않은 완료·입력 대기가 있는지. 세션 탭만 의미가 있고 파일·브라우저 탭은 항상 false.
+    /// 탭 템플릿이 모든 탭 종류에 같은 바인딩을 걸어도 경로 오류가 나지 않게 기반 클래스에 둔다.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public virtual bool IsUnseen => false;
+
     /// <summary>세션 탭 전용 직접 숨김 상태. true면 탭 스트립에서 숨기고 터미널/기록은 보존한다.
     /// 부모/자식의 숨김은 서로 전파하지 않는다. 트리 전체가 숨김일 때만 사이드바 하단으로 이동한다.</summary>
     private bool _hidden;
-    public bool Hidden { get => _hidden; set => Set(ref _hidden, value); }
+    public bool Hidden { get => _hidden; set { if (Set(ref _hidden, value)) OnHiddenChanged(); } }
+
+    /// <summary>숨김 여부가 바뀐 뒤 호출 — 숨김에 따라 달라지는 계산값을 알릴 때 쓴다.</summary>
+    protected virtual void OnHiddenChanged() { }
 }
 
 /// <summary>좌측 트리의 세션(= 중앙 터미널 탭 1개). roomId 로 ConPTY 세션·xterm 인스턴스를 식별.</summary>
@@ -54,6 +62,9 @@ public sealed class SessionItem : TabItemBase
 {
     public override TabKind Kind => TabKind.Session;
     public override string Title => Name;
+
+    // IsUnseen 은 숨김 여부에 따라 달라지는 계산값이다.
+    protected override void OnHiddenChanged() => OnPropertyChanged(nameof(IsUnseen));
 
     private string _name = "세션";
     public string Name { get => _name; set { if (Set(ref _name, value)) OnPropertyChanged(nameof(Title)); } }
@@ -148,30 +159,46 @@ public sealed class SessionItem : TabItemBase
         set => Set(ref _isWaitingChoice, value);
     }
 
-    private bool _isUnseen;
+    private bool _hasUnreadRecord;
+    private bool _hasAnyUnreadRecord;
+    private bool _waitingUnseen;
 
     /// <summary>busy 완료 또는 입력 대기를 사용자가 아직 보지 못했는지. 탭·세션 행은 고정 배경으로,
-    /// 접힌 프로젝트·폴더 카드는 개수로 표시한다. 런타임 전용(재시작하면 사라진다).
-    /// 발생·해제 기준은 docs/세션미확인표시/결정서 DEC-001.</summary>
+    /// 접힌 프로젝트·폴더 카드는 개수로 표시한다. 따로 저장하지 않고 두 원천에서 계산한다:
+    /// 확인 안 된 완료기록 카드가 있음(MainWindow 가 카드 목록에서 채움) 또는 입력 대기 진입을 못 봄.
+    /// 숨긴 세션은 미확인이 아니다. 발생·해제 기준은 docs/세션미확인표시/결정서 DEC-001.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsUnseen
+    public override bool IsUnseen => !Hidden && (_hasUnreadRecord || _waitingUnseen);
+
+    /// <summary>이 세션의 완료기록 카드 상태 — MainWindow 가 카드 목록이 바뀔 때마다 넣는다.
+    /// <paramref name="countsAsUnseen"/> = 미확인으로 칠 카드가 있음, <paramref name="anyUnread"/> = 알림 없는 카드 포함
+    /// 확인 안 된 카드가 있음.</summary>
+    internal void SetRecordState(bool countsAsUnseen, bool anyUnread)
     {
-        get => _isUnseen;
-        private set => Set(ref _isUnseen, value);
+        _hasAnyUnreadRecord = anyUnread;
+        ChangeUnseenSource(ref _hasUnreadRecord, countsAsUnseen);
     }
 
-    /// <summary>미확인으로 표시한다. 사용자가 실제로 보고 있었는지는 호출하는 쪽(MainWindow)이 판정한다.
-    /// busy/waiting setter 원시 전이가 아니라 완료·대기 확정 지점(EmitSessionFinished/EmitSessionWaiting)에서만
-    /// 호출해야 한다 — 서브에이전트 드레인 flap 같은 가짜 idle 에 표시되지 않도록.</summary>
-    public void MarkUnseen()
-    {
-        // 숨긴 세션은 사용자가 치운 것이므로 표시하지 않는다(개수에도 넣지 않는다).
-        if (IsEffectivelyHidden) return;
-        IsUnseen = true;
-    }
+    /// <summary>사용자가 이 세션을 확인하면 정리할 것이 있는지(미확인 표시 또는 알림 없는 카드 포함 미확인 카드).
+    /// 화면 조작 신호처럼 자주 오는 경로가 할 일이 없을 때 바로 돌아가는 데 쓴다.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool NeedsAcknowledge => IsUnseen || _hasAnyUnreadRecord;
 
-    /// <summary>세션을 화면에 띄우거나, 떠 있는 패널을 조작하거나, 숨겼을 때 미확인 표시를 해제한다.</summary>
-    public void MarkSeen() => IsUnseen = false;
+    /// <summary>입력 대기 진입을 사용자가 보지 못함(카드가 생기지 않는 미확인). 확정 지점에서만 호출한다.</summary>
+    public void MarkWaitingUnseen() => ChangeUnseenSource(ref _waitingUnseen, true);
+
+    /// <summary>입력 대기 미확인 해제. 카드까지 함께 확인하려면 MainWindow.MarkSessionSeen 을 거친다.</summary>
+    public void ClearWaitingUnseen() => ChangeUnseenSource(ref _waitingUnseen, false);
+
+    /// <summary>미확인의 원천 하나를 바꾸고, 계산값(IsUnseen)이 실제로 바뀐 경우에만 알린다
+    /// (집계·폴더 합계 재계산이 원천이 바뀔 때마다 돌지 않게).</summary>
+    private void ChangeUnseenSource(ref bool source, bool value)
+    {
+        if (source == value) return;
+        bool before = IsUnseen;
+        source = value;
+        if (IsUnseen != before) OnPropertyChanged(nameof(IsUnseen));
+    }
 
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";
@@ -333,6 +360,9 @@ public sealed class SessionCompletionRecord : NotifyBase
     /// <summary>사용자가 이 기록을 확인했는지 여부. 카드 클릭 또는 해당 세션 직접 열기 시 true.</summary>
     private bool _isRead;
     public bool IsRead { get => _isRead; set => Set(ref _isRead, value); }
+
+    /// <summary>알림 없는 카드(압축 종료, 가재코드 목표 완료 백필). 응답 완료가 아니므로 사이드바 미확인을 만들지 않는다.</summary>
+    public bool IsSilent { get; set; }
 
     /// <summary>사용자가 이 기록을 체크(표시)했는지 여부. 우클릭 메뉴로 토글.
     /// true 면 카드의 에이전트 아이콘 왼쪽에 테마색 체크 아이콘을 표시한다.</summary>
@@ -989,8 +1019,8 @@ public sealed class ProjectItem : NotifyBase
     public bool HasAliveSession => AliveSessionCount > 0;
     /// <summary>요청 처리 중인 세션이 하나라도 있으면 true.</summary>
     public bool HasBusySession => Sessions.Any(s => s.IsBusy);
-    /// <summary>아직 보지 않은(미확인) 세션 수. 숨긴 세션은 제외. 접힌 카드의 숫자 배지용.</summary>
-    public int UnseenSessionCount => Sessions.Count(s => s.IsUnseen && !s.IsEffectivelyHidden);
+    /// <summary>아직 보지 않은(미확인) 세션 수. 접힌 카드의 숫자 배지용.</summary>
+    public int UnseenSessionCount => Sessions.Count(s => s.IsUnseen);
     /// <summary>미확인 세션이 하나라도 있으면 true.</summary>
     public bool HasUnseenSession => UnseenSessionCount > 0;
     /// <summary>헤더 표시용 "살아있음/전체" (세션 없으면 빈 문자열).</summary>
@@ -1056,6 +1086,7 @@ public sealed class ProjectItem : NotifyBase
                     ApplySidebarSearch(s);
                 }
             RaiseSessionStatus();
+            RaiseUnseenStatus();
             RefreshSessionTree();
         };
         HiddenSessions.CollectionChanged += (_, _) =>
@@ -1390,7 +1421,7 @@ public sealed class ProjectItem : NotifyBase
     {
         if (e.PropertyName is nameof(SessionItem.IsAlive) or nameof(SessionItem.IsBusy))
             RaiseSessionStatus();
-        if (e.PropertyName is nameof(SessionItem.IsUnseen) or nameof(SessionItem.IsEffectivelyHidden))
+        if (e.PropertyName == nameof(SessionItem.IsUnseen))
             RaiseUnseenStatus();
         if (e.PropertyName == nameof(SessionItem.Name) && sender is SessionItem session)
         {
@@ -1939,7 +1970,6 @@ public sealed class ProjectItem : NotifyBase
         OnPropertyChanged(nameof(HasAliveSession));
         OnPropertyChanged(nameof(HasBusySession));
         OnPropertyChanged(nameof(SessionStatusText));
-        RaiseUnseenStatus();
     }
 
     private void RaiseUnseenStatus()

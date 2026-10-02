@@ -3125,6 +3125,16 @@
   prompt.addEventListener("blur", () => post({ type: "composerFocus", focused: false }));
   document.addEventListener("keydown", blockComposerHanja, true);
   document.addEventListener("keyup", blockComposerHanja, true);
+  // 사용자의 실제 클릭·키 입력만 알린다. 입력창 focus 이벤트(interact)는 앱이 포커스를 돌려줄 때도 나므로
+  // 미확인 세션 표시 해제에는 이 신호를 쓴다(결정서 docs/세션미확인표시 DEC-001).
+  // 메시지는 비동기로 도착하므로 조작한 순간의 방을 실어 보낸다(호스트가 현재 세션과 같을 때만 확인).
+  // 호스트는 그 세션이 미확인일 때만 처리하므로 키마다 보내도 비용이 거의 없다.
+  const postUserIntent = event => {
+    if (!event.isTrusted || !roomId) return;
+    post({ type: "userIntent", roomId });
+  };
+  document.addEventListener("pointerdown", postUserIntent, true);
+  document.addEventListener("keydown", postUserIntent, true);
   conversation.addEventListener("scroll", () => {
     nearBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 120;
   }, { passive: true });

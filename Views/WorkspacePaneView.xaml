@@ -256,23 +256,12 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <!-- 미확인(완료·입력 대기를 아직 못 봄) 배경. 세션 행과 같은 고정색을 탭 안쪽 전체(패딩 포함)에
-                                         글자 뒤로 깐다. 파일·브라우저 탭은 IsUnseen 이 없어 바인딩이 실패하므로 기본 Collapsed. -->
-                                    <Border x:Name="TabUnseenBackground" Grid.ColumnSpan="3"
+                                         글자 뒤로 깐다. 파일·브라우저 탭은 IsUnseen 이 항상 false. -->
+                                    <Border Grid.ColumnSpan="3"
+                                            Style="{StaticResource SessionUnseenBackground}"
                                             Margin="-12,-6,-8,-6"
                                             CornerRadius="8,8,0,0"
-                                            Background="{DynamicResource SessionUnseenBrush}"
-                                            IsHitTestVisible="False">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsUnseen}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                    </Border>
+                                            Visibility="{Binding IsUnseen, Converter={x:Static models:BoolToVisibilityConverter.Instance}, FallbackValue=Collapsed}"/>
                                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,7,0">
                                         <Grid>
                                             <Image x:Name="TabAgentIcon" Width="14" Height="14"

@@ -72,6 +72,24 @@ public partial class WorkspacePaneView : UserControl
     public event Action<WorkspacePaneView>? NativeTerminalInteracted;
     /// <summary>이미 포커스된 터미널에서 실제 키 입력이 시작됨. 보류된 화면 전환 취소용.</summary>
     public event Action<WorkspacePaneView>? InputIntent;
+    /// <summary>사용자가 이 패널의 세션을 확인했다(탭 클릭, 터미널·채팅 화면 직접 클릭·키 입력).
+    /// MainWindow 가 미확인 표시와 완료기록 확인 상태를 함께 해제한다(결정서 DEC-001).
+    /// 앱이 세션을 띄우는 경로(ActivateSession)는 확인이 아니므로 여기서 알리지 않는다.</summary>
+    public event Action<SessionItem>? SessionSeen;
+
+    /// <summary>사용자가 이 패널에서 세션을 직접 확인했음을 셸에 알린다(유일한 진입점).
+    /// <paramref name="roomId"/> 는 웹 화면에서 조작한 순간의 방 — 메시지가 도착하기 전에 앱이 다른 세션으로
+    /// 바꿨다면 지금 떠 있는 세션은 사용자가 본 것이 아니므로 무시한다.</summary>
+    private void NotifySessionSeen(SessionItem? session, string? roomId = null)
+    {
+        if (session == null) return;
+        if (roomId != null)
+        {
+            // 화면 조작 신호(키마다 옴): 조작한 순간의 세션이 지금 세션과 같고, 확인할 것이 있을 때만.
+            if (!string.Equals(roomId, session.Id, StringComparison.Ordinal) || !session.NeedsAcknowledge) return;
+        }
+        SessionSeen?.Invoke(session);
+    }
     /// <summary>브라우저/PDF/Monaco 자식 HWND가 포커스를 얻음. 프로그램적 복원일 수 있어 클릭 명령과 구분.</summary>
     public event Action<WorkspacePaneView>? NativeSurfaceFocused;
     /// <summary>활성 프로젝트/세션/탭이 바뀜 → 셸이 파일탐색기·사이드바 하이라이트·last-active 저장을 갱신.</summary>
@@ -126,10 +144,12 @@ public partial class WorkspacePaneView : UserControl
         ClaudeChatHostContainer.Content = _claudeChat;
         _claudeChat.UserInteracted += () =>
         {
-            _activeSession?.MarkSeen(); // 떠 있는 세션 화면을 조작 = 확인
             FocusRequested?.Invoke(this);
             if (_activeSession != null) SessionActivity?.Invoke(_activeSession.Id);
         };
+        // 채팅 화면의 실제 클릭·키 입력만 확인으로 친다. UserInteracted 는 입력창이 프로그램적으로 포커스를
+        // 받을 때도(창 복귀 포커스 복원 등) 오므로 쓰지 않는다.
+        _claudeChat.UserIntent += roomId => NotifySessionSeen(_activeSession, roomId);
         _claudeChat.ResponseCompleted += FlushPendingModelEffort;
         _claudeChat.PromptSubmitted += (roomId, text) => SessionPromptSubmitted?.Invoke(roomId, text);
         _claudeChat.SessionActionRequested += OnClaudeChatSessionAction;
@@ -168,10 +188,10 @@ public partial class WorkspacePaneView : UserControl
             // TerminalHostView가 실제 표면 클릭을 최신 60ms 복구 요청으로 확정한다.
             NativeTerminalInteracted?.Invoke(this);
             FocusRequested?.Invoke(this);
-            _activeSession?.MarkSeen(); // 터미널 클릭 = 확인. 창을 비운 사이 끝난 세션은 여기서 해제된다.
         };
         _terminal.InputIntent += () => InputIntent?.Invoke(this);
-        _terminal.InputIntent += () => _activeSession?.MarkSeen(); // 터미널 키 입력 = 확인
+        // 터미널 표면 클릭·키 입력 = 확인. 창을 비운 사이 끝난 세션은 여기서 해제된다.
+        _terminal.UserIntentInRoom += roomId => NotifySessionSeen(_activeSession, roomId);
         _terminal.SessionActivity += id => SessionActivity?.Invoke(id);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
         _terminal.FontSizePxChanged += ApplyHeaderFontSize;
@@ -1230,29 +1250,35 @@ public partial class WorkspacePaneView : UserControl
             case "deleteSession": if (_activeSession != null) DeleteSession(_activeSession); break;
             case "renameSession": if (_activeSession != null) RenameSession(_activeSession); break;
             case "openFile": if (_activeProject != null) OpenFileFromMenu(_activeProject); break;
-            case "nextSession": CycleSession(+1); break;
-            case "prevSession": CycleSession(-1); break;
-            case "gotoSession": GotoSession(index); break;
+            // 단축키로 불러온 세션 = 확인(결정서 DEC-001). 못 옮겼으면 아무것도 확인하지 않는다.
+            case "nextSession": NotifySessionSeen(CycleSession(+1)); break;
+            case "prevSession": NotifySessionSeen(CycleSession(-1)); break;
+            case "gotoSession": NotifySessionSeen(GotoSession(index)); break;
         }
     }
 
-    private void GotoSession(int index)
+    /// <returns>연 세션(못 열었으면 null).</returns>
+    private SessionItem? GotoSession(int index)
     {
         var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.IsEffectivelyHidden).ToList();
-        if (sessionTabs == null || sessionTabs.Count == 0) return;
+        if (sessionTabs == null || sessionTabs.Count == 0) return null;
         int i = index < 0 ? sessionTabs.Count - 1 : index;
-        if (i < 0 || i >= sessionTabs.Count) return;
+        if (i < 0 || i >= sessionTabs.Count) return null;
         OpenSession(sessionTabs[i]);
+        return sessionTabs[i];
     }
 
-    private void CycleSession(int dir)
+    /// <returns>연 세션(못 옮겼으면 null).</returns>
+    private SessionItem? CycleSession(int dir)
     {
         var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.IsEffectivelyHidden).ToList();
-        if (_activeProject == null || _activeSession == null || sessionTabs == null || sessionTabs.Count < 2) return;
+        if (_activeProject == null || _activeSession == null || sessionTabs == null || sessionTabs.Count < 2) return null;
         int idx = sessionTabs.IndexOf(_activeSession);
-        if (idx < 0) return;
+        if (idx < 0) return null;
         int n = sessionTabs.Count;
-        OpenSession(sessionTabs[((idx + dir) % n + n) % n]);
+        var target = sessionTabs[((idx + dir) % n + n) % n];
+        OpenSession(target);
+        return target;
     }
 
     /// <summary>이 패널 탭바에 실제로 보이는 탭들(세션·파일·diff·브라우저 전부)을 표시 순서대로 반환.
@@ -1605,7 +1631,6 @@ public partial class WorkspacePaneView : UserControl
 
     private void ActivateSession(SessionItem session, bool unHide = true, bool forceImeReattach = false)
     {
-        session.MarkSeen(); // 화면에 띄우면 확인한 것으로 친다(결정서 DEC-001)
         if (session.IsExternal)
         {
             ActivateExternalSession(session, unHide);
@@ -3393,6 +3418,7 @@ public partial class WorkspacePaneView : UserControl
         // ActivateSession의 same-session 조기 반환으로 아무 일도 없어 IME 이상 상태를 복구할 수 없었다.
         if (tab is SessionItem s)
         {
+            NotifySessionSeen(s); // 탭 클릭(이미 떠 있는 탭 재클릭 포함) = 확인
             if (ReferenceEquals(_activeSession, s)) _terminal.FocusTerminal(forceImeReattach: true);
             else OpenSession(s, forceImeReattach: true);
         }

@@ -47,6 +47,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action? UserInteracted;
     /// <summary>이미 포커스된 네이티브 터미널에서 키 입력이 시작됨. 지연된 표면 전환 취소용.</summary>
     public event Action? InputIntent;
+    /// <summary>사용자가 터미널을 실제로 클릭하거나 키를 눌렀다(인자 = 조작한 순간의 방 ID). 미확인 세션 확인용.</summary>
+    public event Action<string>? UserIntentInRoom;
     /// <summary>사용자가 특정 방의 터미널을 실제로 조작함. 유휴 종료 타이머 갱신용.</summary>
     public event Action<string>? SessionActivity;
     /// <summary>터미널 출력의 파일 또는 폴더 경로 열기 요청. 파일은 에디터 탭, 폴더는 Explorer로 연다.
@@ -827,6 +829,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     break;
                 case "inputIntent":
                     InputIntent?.Invoke();
+                    break;
+                case "userIntent":
+                    if (root.TryGetProperty("roomId", out var intentRoom) && intentRoom.GetString() is { Length: > 0 } intentRoomId)
+                        UserIntentInRoom?.Invoke(intentRoomId);
                     break;
                 case "revealPrepared":
                     RevealPrepared?.Invoke();

@@ -264,6 +264,10 @@ public partial class MainWindow : Window
             {
                 if (string.Equals(r.AgentId, "grok", StringComparison.OrdinalIgnoreCase))
                     r.LastMessage = GrokHookService.NormalizeLastMessage(r.LastMessage);
+                // 알림 없는 카드 표시(IsSilent)가 생기기 전에 저장된 Devez Vibe 압축 종료 카드는 문구로 알아본다.
+                if (!r.IsSilent && string.Equals(r.AgentId, "devezvibe", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(r.LastMessage, CompactedRecordText, StringComparison.Ordinal))
+                    r.IsSilent = true;
                 _sessionDoneRecords.Add(r);
             }
         }
@@ -273,6 +277,14 @@ public partial class MainWindow : Window
 
         _projects = WorkspaceStore.Load(out var archived);
         _archivedProjects = archived;
+        // 사이드바·탭 미확인 표시는 완료기록 카드에서 계산한다(결정서 DEC-001 — 두 표시는 하나의 상태).
+        // 카드가 쌓이거나·지워지거나·확인되면 해당 세션만 다시 계산하므로 재시작·삭제·한도 초과에도 어긋나지 않는다.
+        // 세션이 로드된 뒤에 연결해야 한다(카드는 위에서 먼저 복원됨).
+        _sessionDoneRecords.CollectionChanged += OnSessionRecordsChanged;
+        // 숨긴 세션의 카드는 확인으로 정리한다(숨기기 = 확인). 이 기능 전에 숨겨 남은 카드도 여기서 정리된다.
+        var hiddenIds = AllWorkspaceSessions().Where(s => s.Hidden).Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        MarkRecordsRead(r => hiddenIds.Contains(r.SessionId), save: true);
+        RefreshUnseenFromRecords(); // 시작 시 전체 계산(위에서 바뀐 카드가 없어도)
         ReconcileExternalSessions();
         UpdateSessionBusyDisplay();
         // 워크스페이스에 더 이상 없는(활성+보관 통틀어) roomId 의 claude 추적/캐시 파일 정리(3일 유예, GC).
@@ -719,7 +731,7 @@ public partial class MainWindow : Window
                 // 압축 종료는 응답 완료가 아니라 알림 없이 전용 카드 1장만 남긴다 — 직전 프롬프트가
                 // 완료기록에 다시 찍히지 않게 문구를 고정한다(auto-compact 의 compacting→running 도 포함).
                 if (wasCompacting && !compacting && s != null)
-                    AddSilentCompletionRecord(s, "Context compacted", DateTime.Now);
+                    AddSilentCompletionRecord(s, CompactedRecordText, DateTime.Now);
                 // dvz 는 Claude Agent SDK(=~/.claude OAuth 동일 계정)를 쓰지만 statusLine 훅이 없어
                 // 사용량 실시간 소스가 없다. 턴 종료와 압축 종료에서만 갱신을 요청한다(복원 loading→idle 제외).
                 if (!busy && !quiet && (wasCompacting || (was && !wasQuiet))) _usageApi.RequestRefreshSoon();
@@ -908,8 +920,10 @@ public partial class MainWindow : Window
                     return;
                 }
                 SupersedePendingTerminalFocus();
-                MoveGlobalTabHotkey(next);
+                bool moved = MoveGlobalTabHotkey(next);
                 BringToForegroundFromHotkey();
+                // 단축키로 불러온 세션 = 확인. 못 옮겼거나 창을 앞으로 가져오지 못했으면(포그라운드 잠금) 확인이 아니다.
+                if (moved && IsOwnWindowForeground()) AcknowledgeFocusedSession();
             }, HandleGlobalSessionHotkey);
             StartElevatedDragWatch();
         };
@@ -2527,8 +2541,11 @@ public partial class MainWindow : Window
         {
             int steps = Math.Abs(delta);
             bool direction = delta > 0;
-            for (int i = 0; i < steps; i++) MoveGlobalTabHotkey(direction);
+            bool movedAny = false;
+            for (int i = 0; i < steps; i++) movedAny |= MoveGlobalTabHotkey(direction);
             BringToForegroundFromHotkey();
+            // 지나친 세션이 아니라 도착한 세션만, 창이 실제로 앞에 왔을 때만 확인한다.
+            if (movedAny && IsOwnWindowForeground()) AcknowledgeFocusedSession();
         };
         _pendingWorkspaceNavigationInputGeneration = inputGeneration;
         CloseRightOverlayForPendingWork();
@@ -2581,7 +2598,8 @@ public partial class MainWindow : Window
         }), System.Windows.Threading.DispatcherPriority.Input);
     }
 
-    private void MoveGlobalTabHotkey(bool next)
+    /// <returns>세션을 실제로 옮겼는지(경계라 못 옮기고 반대 패널도 없으면 false).</returns>
+    private bool MoveGlobalTabHotkey(bool next)
     {
         bool moved = _focusedPane?.CycleActiveSession(next) ?? false;
         // 포커스 패널 안에서 경계(맨 끝)라 못 옮겼으면, 분할 중일 때만 반대편 패널로 이동.
@@ -2594,11 +2612,12 @@ public partial class MainWindow : Window
             if (other != null)
             {
                 _focusedPane = other;
-                other.SelectEdgeSession(first: next);
+                moved = other.SelectEdgeSession(first: next);
                 SyncShellToFocusedPane();
                 UpdatePaneFocusVisual();
             }
         }
+        return moved;
     }
 
     private void ReleaseTerminalVisualTransition()
@@ -3223,6 +3242,14 @@ public partial class MainWindow : Window
     private const int VK_MENU = 0x12;
     private const uint KEYEVENTF_KEYUP = 0x0002;
 
+    /// <summary>우리 창이 실제 포그라운드(최소화 아님)인지.</summary>
+    private bool IsOwnWindowForeground()
+    {
+        var h = new WindowInteropHelper(this).Handle;
+        return h != IntPtr.Zero && WindowState != WindowState.Minimized
+               && GetAncestor(GetForegroundWindow(), GA_ROOT) == h;
+    }
+
     /// <summary>전역 단축키(한자+방향키)로 탭 전환 시 창을 앞으로. devez Alt 트릭으로 포그라운드 잠금 우회.</summary>
     private void BringToForegroundFromHotkey()
     {
@@ -3233,7 +3260,7 @@ public partial class MainWindow : Window
             // 이미 우리 창이 포그라운드면 아무것도 하지 않는다. Alt 트릭(VK_MENU 탭)이 "Alt 단독 누름"으로
             // 해석돼 메뉴 모드에 진입하면 이후 ↑/↓ 에 시스템 메뉴가 열리고, Activate() 가 WebView2(터미널)
             // 포커스를 빼앗아 한글 조합이 창 좌상단 기본 IME 위치에 뜬다.
-            if (WindowState != WindowState.Minimized && GetAncestor(GetForegroundWindow(), GA_ROOT) == h)
+            if (IsOwnWindowForeground())
                 return;
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             keybd_event(VK_MENU, 0, 0, UIntPtr.Zero);
@@ -3799,6 +3826,7 @@ public partial class MainWindow : Window
             MarkSessionActivity(id);
         };
         pane.SessionActivity += MarkSessionActivity;
+        pane.SessionSeen += seen => MarkSessionSeen(seen);
         pane.SessionPromptSubmitted += OnPaneSessionPromptSubmitted;
         pane.DevezVibeUpdateRequested += () => Sidebar.ToggleDevezVibeUpdateButton();
         TerminalSessionManager.Instance.AgentModelCatalogRefreshRequested += pane.NotifyAgentModelCatalogRefreshRequested;
@@ -4327,7 +4355,7 @@ public partial class MainWindow : Window
                 // 화이트리스트에 들어가 격리도 안 풀린다. 이 경우엔 방금 연 탭을 볼 수 있게 포커스를 대상으로 옮긴다.
                 if (target.ActiveTab == null)
                 {
-                    if (tab is SessionItem movedFirstS) target.OpenSession(movedFirstS);
+                    if (tab is SessionItem movedFirstS) { target.OpenSession(movedFirstS); MarkSessionSeen(movedFirstS); }
                     else if (tab is FileTabItem movedFirstF) target.OpenFileTab(movedFirstF);
                     else if (tab is BrowserTabItem movedFirstB) target.OpenBrowserTab(movedFirstB);
                     _focusedPane = target;
@@ -4338,7 +4366,7 @@ public partial class MainWindow : Window
             {
                 // 대상이 다른 프로젝트/빈 패널 → 그 프로젝트로 전환이 불가피하고 이동 탭이 활성화된다.
                 // 이동 탭만 격리해 대상엔 그 탭만 보이게 한다(전체 목록 복사 방지).
-                if (tab is SessionItem session) target.OpenSession(session);
+                if (tab is SessionItem session) { target.OpenSession(session); MarkSessionSeen(session); }
                 else if (tab is FileTabItem file) target.OpenFileTab(file);
                 else if (tab is BrowserTabItem browser) target.OpenBrowserTab(browser);
                 else return;
@@ -5322,23 +5350,31 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(msg)) s.LastMessage = msg!.Trim();
     }
 
-    private void AddSessionCompletionRecord(SessionItem s)
+    private void AddSessionCompletionRecord(SessionItem s, bool isRead)
     {
         BackfillDevezVibeLastMessage(s);
-        var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
-        var projName = proj?.Name ?? "";
-        var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
+        var lastMessage = string.Equals(s.AgentId, "grok", StringComparison.OrdinalIgnoreCase)
+            ? GrokHookService.NormalizeLastMessage(s.LastMessage ?? "")
+            : s.LastMessage?.Trim() ?? "";
+        InsertCompletionRecord(s, lastMessage, DateTime.Now, isRead, silent: false);
+    }
 
+    /// <summary>완료기록 카드 한 장을 맨 위에 넣고 한도를 지킨 뒤 한 번 저장한다. 카드 확인 상태가 곧
+    /// 사이드바 미확인 표시가 되므로(OnSessionRecordsChanged) 따로 맞출 필요가 없다.</summary>
+    private void InsertCompletionRecord(SessionItem s, string lastMessage, DateTime completedAt, bool isRead, bool silent)
+    {
+        var proj = ProjectFor(s);
+        // 넣기·한도 밀어내기마다 OnSessionRecordsChanged 가 해당 세션만 다시 계산한다(최대 200장이라 싸다).
         _sessionDoneRecords.Insert(0, new SessionCompletionRecord
         {
             SessionId = s.Id,
-            SessionName = sessName,
-            ProjectName = projName,
+            SessionName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name,
+            ProjectName = proj?.Name ?? "",
             AgentId = s.AgentId,
-            LastMessage = string.Equals(s.AgentId, "grok", StringComparison.OrdinalIgnoreCase)
-                ? GrokHookService.NormalizeLastMessage(s.LastMessage ?? "")
-                : s.LastMessage?.Trim() ?? "",
-            CompletedAt = DateTime.Now,
+            LastMessage = lastMessage,
+            CompletedAt = completedAt,
+            IsRead = isRead,
+            IsSilent = silent,
         });
 
         while (_sessionDoneRecords.Count > MaxSessionDoneRecords)
@@ -5352,27 +5388,10 @@ public partial class MainWindow : Window
     /// 아니라 전달받은 문구(goal 모드의 목표문, 압축 종료 표시 등)를 쓴다. 프롬프트 응답 완료가
     /// 아니므로 토스트/작업표시줄 알림은 내지 않는다.</summary>
     private void AddSilentCompletionRecord(SessionItem s, string objective, DateTime completedAt)
-    {
-        var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
-        var projName = proj?.Name ?? "";
-        var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
-
-        _sessionDoneRecords.Insert(0, new SessionCompletionRecord
-        {
-            SessionId = s.Id,
-            SessionName = sessName,
-            ProjectName = projName,
-            AgentId = s.AgentId,
-            LastMessage = objective,
-            CompletedAt = completedAt,
-        });
-
-        while (_sessionDoneRecords.Count > MaxSessionDoneRecords)
-            _sessionDoneRecords.RemoveAt(_sessionDoneRecords.Count - 1);
-        SettingsService.SaveSessionHistoryRecords(
-            new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
-        UpdateSessionHistoryEmpty();
-    }
+        // 압축 종료(턴 도중일 수 있음)·목표 완료 백필은 응답 완료 확정이 아니므로 사이드바 미확인을 만들지 않는다
+        // (결정서 DEC-001). 카드는 기존처럼 미확인으로 쌓이고, 세션을 확인하면 함께 확인된다.
+        => InsertCompletionRecord(s, objective, completedAt,
+            isRead: WasAttentionSeen(s, watchedEarlier: false), silent: true); // 보고 있었거나 숨긴 세션 = 확인
 
 
     /// <summary>시작 시 모든 세션의 IsBusy 를 false 로 초기화. 프로그램 종료 시 진행 중이던 상태는 취소됨.</summary>
@@ -5554,12 +5573,7 @@ public partial class MainWindow : Window
         if (s == null)
         {
             // 세션 삭제됨 → 열 수 없으니 클릭만으로 읽음 처리(하이라이트 제거)
-            if (!r.IsRead)
-            {
-                r.IsRead = true;
-                SettingsService.SaveSessionHistoryRecords(
-                    new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
-            }
+            MarkRecordsRead(x => ReferenceEquals(x, r), save: true);
             ScheduleTerminalFocusRestore(null, imeBoundary: true);
             return;
         }
@@ -5624,14 +5638,10 @@ public partial class MainWindow : Window
 
     private void MarkAllReadBtn_Click(object sender, RoutedEventArgs e)
     {
-        bool changed = false;
-        foreach (var r in _sessionDoneRecords)
-        {
-            if (!r.IsRead) { r.IsRead = true; changed = true; }
-        }
-        if (changed)
-            SettingsService.SaveSessionHistoryRecords(
-                new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+        // 완료기록 '모두 확인' = 사이드바·탭 미확인 표시도 모두 해제(같은 상태, 결정서 DEC-001).
+        // 카드에서 계산되는 미확인은 아래 카드 확인으로 풀리고, 카드가 없는 입력 대기 미확인만 직접 푼다.
+        foreach (var session in AllWorkspaceSessions()) session.ClearWaitingUnseen();
+        MarkRecordsRead(_ => true, save: true);
         UpdateSessionHistoryEmpty();
         ScheduleTerminalFocusRestore();
     }
@@ -5672,6 +5682,7 @@ public partial class MainWindow : Window
             return;
         }
         if (_finishDebounce.TryGetValue(s, out var ex)) ex.Stop();
+        bool watchedAtIdle = IsSessionWatched(s); // 확정은 1.2초 뒤 — 멈춘 순간에 보고 있었는지 기억한다
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FinishSettleMs) };
         timer.Tick += (_, __) =>
         {
@@ -5687,31 +5698,107 @@ public partial class MainWindow : Window
                 DevezCode.Services.DiagLog.Write($"busy[{s.Id}] 완료카드 스킵: 턴종료 마커 없음(서브 드레인 flap)");
                 return;
             }
-            EmitSessionFinished(s);
+            EmitSessionFinished(s, watchedAtIdle);
         };
         _finishDebounce[s] = timer;
         timer.Start();
     }
 
-    /// <summary>완료·입력 대기 확정 순간에 사용자가 그 세션을 실제로 보고 있지 않았으면 미확인으로 표시한다.
-    /// "보고 있음" = 메인 창이 활성(최소화 아님) + 포커스된 패널의 현재 화면이 그 세션.
-    /// 탭만 열어 둔 채 다른 창에 있거나, 분할의 반대 패널에 떠 있으면 미확인으로 남긴다(결정서 DEC-001).</summary>
-    private void MarkUnseenUnlessWatched(SessionItem s)
+    /// <summary>사용자가 지금 그 세션을 실제로 보고 있는지(결정서 DEC-001).
+    /// 메인 창이 활성(최소화 아님) + 창 안 오버레이(설정·MCP, 좁은 화면의 우측 서랍)가 터미널을 가리지 않음
+    /// + 포커스된 패널의 현재 화면이 그 세션.</summary>
+    private bool IsSessionWatched(SessionItem s)
+        => IsActive && WindowState != WindowState.Minimized
+           && !_overlaySuspended && !_rightOverlayTerminalSuspended
+           && _focusedPane.IsVisible && ReferenceEquals(_focusedPane.ActiveSession, s);
+
+    /// <summary>완료·입력 대기 확정 시 본 것으로 칠지. 멈춘 순간(<paramref name="watchedEarlier"/>)이나 확정 순간 중
+    /// 한 번이라도 보고 있었으면 본 것 — 확정은 정착 디바운스(1.2초) 뒤에 오므로, 멈추는 걸 보고 곧바로 다른
+    /// 세션으로 옮긴 경우를 구한다. 숨긴 세션은 사용자가 치운 것이므로 본 것으로 친다(카드를 미확인으로 남기지 않음).</summary>
+    private bool WasAttentionSeen(SessionItem s, bool watchedEarlier)
+        => s.Hidden || watchedEarlier || IsSessionWatched(s);
+
+    /// <summary>카드가 쌓이거나 지워지면(개별 삭제·모두 지우기·200장 한도) 해당 세션의 미확인을 다시 계산한다.</summary>
+    private void OnSessionRecordsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        bool watched = IsActive && WindowState != WindowState.Minimized
-            && _focusedPane.IsVisible && ReferenceEquals(_focusedPane.ActiveSession, s);
-        if (!watched) s.MarkUnseen();
+        if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+        {
+            RefreshUnseenFromRecords(); // Clear 는 지운 카드를 알려주지 않으므로 전체 계산
+            return;
+        }
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        if (e.OldItems != null) foreach (SessionCompletionRecord r in e.OldItems) ids.Add(r.SessionId);
+        if (e.NewItems != null) foreach (SessionCompletionRecord r in e.NewItems) ids.Add(r.SessionId);
+        RefreshUnseenFromRecords(ids);
     }
 
-    private void EmitSessionFinished(SessionItem s)
+    /// <summary>Devez Vibe 압축 종료 카드 문구. 알림 없는 카드 표시(IsSilent)가 생기기 전에 저장된 카드도 이 문구로 알아본다.</summary>
+    private const string CompactedRecordText = "Context compacted";
+
+
+    /// <summary>카드 목록에서 세션의 미확인 상태를 계산해 넣는다(단일 규칙). <paramref name="sessionIds"/> 가 null 이면 전체.
+    /// 미확인 = 알림 없는 카드가 아닌 확인 안 된 카드가 있음. 알림 없는 카드까지 포함한 미확인 여부도 함께 넣는다.</summary>
+    private void RefreshUnseenFromRecords(IReadOnlyCollection<string>? sessionIds = null)
+    {
+        var unseen = new HashSet<string>(StringComparer.Ordinal);
+        var anyUnread = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var r in _sessionDoneRecords)
+        {
+            if (r.IsRead || (sessionIds != null && !sessionIds.Contains(r.SessionId))) continue;
+            anyUnread.Add(r.SessionId);
+            if (!r.IsSilent) unseen.Add(r.SessionId);
+        }
+        // 세션 수만큼 FindSession 을 돌리지 않고 작업 공간을 한 번만 훑는다.
+        var targets = sessionIds == null
+            ? AllWorkspaceSessions()
+            : AllWorkspaceSessions().Where(s => sessionIds.Contains(s.Id));
+        foreach (var s in targets) s.SetRecordState(unseen.Contains(s.Id), anyUnread.Contains(s.Id));
+    }
+
+    /// <summary>조건에 맞는 미확인 카드를 확인 상태로 바꾼다 — 카드 확인 상태를 바꾸는 유일한 곳.
+    /// 바뀐 세션만 끝에 한 번 다시 계산하고, <paramref name="save"/> 면 바뀐 경우에만 한 번 저장한다.</summary>
+    private void MarkRecordsRead(Func<SessionCompletionRecord, bool> match, bool save)
+    {
+        var changedIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var r in _sessionDoneRecords)
+        {
+            if (r.IsRead || !match(r)) continue;
+            r.IsRead = true;
+            changedIds.Add(r.SessionId);
+        }
+        if (changedIds.Count == 0) return;
+        RefreshUnseenFromRecords(changedIds);
+        if (save)
+            SettingsService.SaveSessionHistoryRecords(
+                new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+    }
+
+    /// <summary>사용자가 세션을 화면으로 불러온 직후(프로젝트 카드 클릭·단축키 이동) 포커스된 패널에 뜬 세션을 확인 처리.</summary>
+    private void AcknowledgeFocusedSession()
+    {
+        if (_focusedPane?.ActiveSession is { } shown) MarkSessionSeen(shown);
+    }
+
+    /// <summary>세션 확인 — 사이드바·탭 미확인 표시와 그 세션의 완료기록 카드 확인 상태를 함께 해제한다.
+    /// 두 표시는 하나의 상태다(결정서 DEC-001).</summary>
+    private void MarkSessionSeen(SessionItem s, bool save = true)
+    {
+        s.ClearWaitingUnseen();
+        MarkSessionRead(s.Id, save); // 카드가 확인되면 사이드바 미확인은 카드에서 다시 계산된다
+    }
+
+    private void EmitSessionFinished(SessionItem s, bool watchedEarlier = false)
     {
         // Claude/Codex/OpenCode/Gajae/Grok/Antigravity 공통 busy→idle 확정 지점.
         // 응답 리페인트 경계에서 WebView2 compositionend 가 누락되면 다음 한글이 중복될 수 있으므로,
         // 현재 이 방의 터미널에 실제 포커스가 있는 패널만 JS 에서 blur→focus 초기화한다.
         foreach (var pane in _panes) pane.Terminal.ResetImeAfterResponse(s.Id);
-        AddSessionCompletionRecord(s);
-        MarkUnseenUnlessWatched(s); // 탭·세션 행 미확인 표시(완료기록과 동일 게이트 — 서브 드레인 flap 제외)
-        var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
+        // 미확인 표시와 완료기록 카드는 같은 상태 — 먼저 판정해 카드를 그 상태로 한 번만 저장한다
+        // (완료기록과 동일 게이트 — 서브 드레인 flap 제외).
+        bool seen = WasAttentionSeen(s, watchedEarlier);
+        if (seen) MarkSessionSeen(s, save: false); // 저장은 아래 새 카드와 함께 한 번
+        AddSessionCompletionRecord(s, isRead: seen); // 못 봤으면 미확인 카드 → 사이드바 미확인으로 계산된다
+        var proj = ProjectFor(s);
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
@@ -5744,6 +5831,7 @@ public partial class MainWindow : Window
         if (notificationDelayMs > 0)
         {
             if (_waitingNotificationDebounce.TryGetValue(s, out var existing)) existing.Stop();
+            bool watchedAtEntry = IsSessionWatched(s); // 확정이 지연되므로 대기에 들어간 순간을 기억한다
             var timer = new System.Windows.Threading.DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(notificationDelayMs),
@@ -5752,7 +5840,7 @@ public partial class MainWindow : Window
             {
                 timer.Stop();
                 _waitingNotificationDebounce.Remove(s);
-                if (s.IsWaitingChoice) EmitSessionWaiting(s);
+                if (s.IsWaitingChoice) EmitSessionWaiting(s, watchedAtEntry);
             };
             _waitingNotificationDebounce[s] = timer;
             timer.Start();
@@ -5761,9 +5849,11 @@ public partial class MainWindow : Window
         EmitSessionWaiting(s);
     }
 
-    private void EmitSessionWaiting(SessionItem s)
+    private void EmitSessionWaiting(SessionItem s, bool watchedEarlier = false)
     {
-        MarkUnseenUnlessWatched(s); // 입력 대기 진입 미확인 표시(확정 지점에서만 — setter 즉발 금지)
+        // 입력 대기 진입 미확인 표시(확정 지점에서만 — setter 즉발 금지). 입력 대기는 카드가 없어 세션에 직접 표시한다.
+        if (WasAttentionSeen(s, watchedEarlier)) MarkSessionSeen(s);
+        else s.MarkWaitingUnseen();
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
@@ -5851,7 +5941,9 @@ public partial class MainWindow : Window
 
     // ── 사이드바 액션 → 포커스 패널로 위임 ────────────────────────────
 
-    private void SelectProject(ProjectItem proj) => SelectProjectFromSidebar(proj);
+    // 사이드바 프로젝트 카드 클릭 — 그 결과 포커스된 패널에 뜬 세션을 확인 처리한다.
+    // SelectProjectFromSidebar 는 문서·브라우저 열기, 분할 열기 등 다른 경로에서도 쓰므로 거기서는 확인하지 않는다.
+    private void SelectProject(ProjectItem proj) => SelectProjectFromSidebar(proj, acknowledge: true);
 
     private void OpenGitRemote(ProjectItem project, string url)
     {
@@ -5885,10 +5977,10 @@ public partial class MainWindow : Window
         UpdatePaneFocusVisual();
     }
 
-    private void SelectProjectFromSidebar(ProjectItem proj)
+    private void SelectProjectFromSidebar(ProjectItem proj, bool acknowledge = false)
     {
         MarkWorkspaceInputSurface();
-        if (DeferWorkspaceNavigationIfBusy(() => SelectProjectFromSidebar(proj))) return;
+        if (DeferWorkspaceNavigationIfBusy(() => SelectProjectFromSidebar(proj, acknowledge))) return;
         if (!_projects.Contains(proj) && !_archivedProjects.Contains(proj)) return;
         // 포커스를 받지 않는 사이드바 카드에서 같은 Chromium HWND로 바로 돌아와도
         // WPF 조작→터미널 복귀 경계를 잃지 않게 현재 입력 큐 뒤에 재부착을 예약한다.
@@ -5899,6 +5991,8 @@ public partial class MainWindow : Window
         if (existingPane != null)
         {
             FocusPaneOnly(existingPane);
+            if (acknowledge && existingPane.ActiveSession is { } shownExisting)
+                MarkSessionSeen(shownExisting); // 프로젝트 카드 클릭으로 그 세션을 불러옴 = 확인
             ScheduleTerminalFocusRestore();
             return;
         }
@@ -5906,6 +6000,10 @@ public partial class MainWindow : Window
         // 새 프로젝트는 항상 메인(좌측) 패널에 연다. 분할 여부는 그 프로젝트의 SplitEnabled 로
         // SelectProjectIntoPane→ApplyProjectSplitForMainPane 이 결정한다(분할로 띄우거나 단일로).
         SelectProjectIntoPane(LeftPane, proj);
+        // 분할 프로젝트면 분할을 켜며 포커스가 오른쪽(파트너)으로 간다 — 앱이 띄운 오른쪽이 아니라
+        // 사용자가 연 왼쪽(메인) 세션만 확인한다(결정서 DEC-001: 분할 열기는 확인이 아님).
+        if (acknowledge && ReferenceEquals(LeftPane.ActiveProject, proj) && LeftPane.ActiveSession is { } shown)
+            MarkSessionSeen(shown);
     }
 
     /// <summary>사이드바에서 세션 클릭 → 이미 떠 있는 패널이면 그 패널에서 활성화, 아니면 그 세션의
@@ -5914,9 +6012,9 @@ public partial class MainWindow : Window
     {
         MarkWorkspaceInputSurface();
         if (DeferWorkspaceNavigationIfBusy(() => OpenSession(session))) return;
-        MarkSessionRead(session.Id);
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
         if (parent == null) return;
+        MarkSessionSeen(session); // 실제로 열 수 있을 때만 확인
         if (session.IsEffectivelyHidden && parent != null)
         {
             var newlyVisible = parent.UnhideSessionPath(session);
@@ -5969,6 +6067,7 @@ public partial class MainWindow : Window
             if (ReferenceEquals(RightPane.ActiveProject, parent)) RightPane.HideTabInPane(s);
             if (ReferenceEquals(LeftPane.ActiveProject, parent)) LeftPane.UnhideTabInPane(s);
             OpenSessionIntoPane(LeftPane, s, isNewProjectLoad: false);
+            MarkSessionSeen(s); // 사이드바 행 클릭 = 확인
             RefreshCardGroups();
             PersistSplitState();
             return;
@@ -6116,21 +6215,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>세션 ID 로 완료 기록 중 미확인 항목을 읽음 처리하고 저장.</summary>
-    private void MarkSessionRead(string sessionId)
-    {
-        bool changed = false;
-        foreach (var r in _sessionDoneRecords)
-        {
-            if (r.SessionId == sessionId && !r.IsRead)
-            {
-                r.IsRead = true;
-                changed = true;
-            }
-        }
-        if (changed)
-            SettingsService.SaveSessionHistoryRecords(
-                new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
-    }
+    private void MarkSessionRead(string sessionId, bool save = true)
+        => MarkRecordsRead(r => r.SessionId == sessionId, save);
 
     private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
     {
@@ -6404,7 +6490,7 @@ public partial class MainWindow : Window
         var owner = PaneFor(session);
 
         session.Hidden = true;
-        session.MarkSeen(); // 숨기기 = 사용자가 치운 것. 숨김 영역에 미확인 표시를 남기지 않는다.
+        MarkSessionSeen(session); // 숨기기 = 사용자가 치운 것. 숨김 영역·완료기록에 미확인을 남기지 않는다.
         project.PlaceNewlyHiddenSession(session, SettingsService.LoadHiddenSessionInsertionOnTop());
         foreach (var pane in _panes) pane.OnSessionsHidden(new[] { session });
         owner.ScheduleSessionHide(session);
@@ -6518,7 +6604,7 @@ public partial class MainWindow : Window
 
         // 응답 대기(❗) 중인 세션을 닫기/삭제하면 완료기록으로 내리고, 대기 플래그를 꺼 대기 카드도 즉시 제거한다.
         foreach (var item in subtree)
-            if (item.IsWaitingChoice) { AddSessionCompletionRecord(item); item.IsWaitingChoice = false; }
+            if (item.IsWaitingChoice) { AddSessionCompletionRecord(item, isRead: WasAttentionSeen(item, watchedEarlier: false)); item.IsWaitingChoice = false; } // 보고 있었거나 숨긴 세션 = 확인
 
         foreach (var pane in _panes)
             foreach (var item in subtree)

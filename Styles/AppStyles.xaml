@@ -92,6 +92,39 @@
     <SolidColorBrush x:Key="CountBadgeTextBrush" Color="White"/>
     <!-- 세션 미확인 배경(테마별 농도는 App.SetTheme 이 덮어쓴다) -->
     <SolidColorBrush x:Key="SessionUnseenBrush" Color="#472563EB"/>
+
+    <!-- 세션 미확인(완료·입력 대기를 아직 못 봄) 배경. 사이드바 세션 행·세션 탭의 글자 뒤에 고정으로 깐다.
+         모양(CornerRadius·Margin)과 표시(Visibility)는 쓰는 쪽이 정한다(결정서 docs/세션미확인표시 DEC-002). -->
+    <Style x:Key="SessionUnseenBackground" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SessionUnseenBrush}"/>
+        <Setter Property="IsHitTestVisible" Value="False"/>
+    </Style>
+
+    <!-- 접힌 프로젝트·폴더 카드의 미확인 세션 개수 배지. DataContext 의 UnseenSessionCount 를 표시한다.
+         기본 Collapsed — 쓰는 쪽 템플릿 트리거가 접힘·개수 조건으로 연다. -->
+    <Style x:Key="UnseenCountBadge" TargetType="ContentControl">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Visibility" Value="Collapsed"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContentControl">
+                    <Border MinWidth="16" Height="16" Padding="5,0" CornerRadius="8"
+                            Background="{DynamicResource CountBadgeBrush}"
+                            ToolTipService.InitialShowDelay="300">
+                        <Border.ToolTip>
+                            <TextBlock Text="{Binding UnseenSessionCount, StringFormat='확인하지 않은 세션 {0}개'}"/>
+                        </Border.ToolTip>
+                        <TextBlock Text="{Binding UnseenSessionCount}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource CountBadgeTextBrush}"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
     <SolidColorBrush x:Key="StarBrush"         Color="#f59e0b"/>
 
     <!-- ── ToolTip ─────────────────────────────────────────────────────── -->

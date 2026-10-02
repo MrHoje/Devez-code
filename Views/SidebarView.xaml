@@ -119,18 +119,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- 접힌 프로젝트·폴더 카드의 미확인 세션 개수 배지(결정서 DEC-002). 표시 여부는 각 템플릿 트리거가 정한다. -->
-        <Style x:Key="UnseenCountBadge" TargetType="Border">
-            <Setter Property="MinWidth" Value="16"/>
-            <Setter Property="Height" Value="16"/>
-            <Setter Property="Padding" Value="5,0"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Background" Value="{DynamicResource CountBadgeBrush}"/>
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Setter Property="ToolTipService.InitialShowDelay" Value="300"/>
-        </Style>
-
         <!-- ── 세션(하위 항목) 템플릿 — Claude 로고 + 상태 점 + 이름 + 호버 ⋯ 메뉴 ── -->
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
             <Border Visibility="Collapsed"
@@ -390,23 +378,11 @@
                     </Border>
                 </Grid>
                 <!-- 미확인(완료·입력 대기를 아직 못 봄) 배경. 깜빡이지 않고 고정으로, 글자 뒤(ZIndex -1)에 깔아
-                     행 배경(기본/호버/선택) 위에 겹친다. 기본 Collapsed — 바인딩이 실패해도 표시되지 않게. -->
-                <Border x:Name="SessionUnseenBackground"
-                        Background="{DynamicResource SessionUnseenBrush}"
+                     행 배경(기본/호버/선택) 위에 겹친다. -->
+                <Border Style="{StaticResource SessionUnseenBackground}"
                         CornerRadius="7"
-                        IsHitTestVisible="False"
-                        Panel.ZIndex="-1">
-                    <Border.Style>
-                        <Style TargetType="Border">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsUnseen}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                </Border>
+                        Panel.ZIndex="-1"
+                        Visibility="{Binding IsUnseen, Converter={x:Static models:BoolToVisibilityConverter.Instance}, FallbackValue=Collapsed}"/>
                 </Grid>
                 </Border>
             </Grid>
@@ -959,16 +935,8 @@
                             <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
                                         VerticalAlignment="Center" Margin="4,-4,0,0">
                             <!-- 접힘 + 미확인 세션 있음 → 개수 배지. 이름이 길어도 잘리지 않게 우측 액션 줄에 둔다. -->
-                            <Border x:Name="ProjectUnseenBadge" Style="{StaticResource UnseenCountBadge}"
-                                    Margin="0,0,6,0">
-                                <Border.ToolTip>
-                                    <TextBlock Text="{Binding UnseenSessionCount, StringFormat='확인하지 않은 세션 {0}개'}"/>
-                                </Border.ToolTip>
-                                <TextBlock Text="{Binding UnseenSessionCount}"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource CountBadgeTextBrush}"/>
-                            </Border>
+                            <ContentControl x:Name="ProjectUnseenBadge" Style="{StaticResource UnseenCountBadge}"
+                                            Margin="0,0,6,0"/>
                             <!-- 숨김 세션 보기/숨기기 토글 -->
                             <Button Tag="{Binding}"
                                     Click="HiddenToggle_Click" Cursor="Arrow"
@@ -1388,16 +1356,8 @@
                                        Foreground="{DynamicResource TextBrush}"/>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,6,0" VerticalAlignment="Center">
                                 <!-- 접힘 + 폴더 안 미확인 세션 있음 → 개수 배지(안 프로젝트들의 합계). -->
-                                <Border x:Name="FolderUnseenBadge" Style="{StaticResource UnseenCountBadge}"
-                                        Margin="0,0,6,0">
-                                    <Border.ToolTip>
-                                        <TextBlock Text="{Binding UnseenSessionCount, StringFormat='확인하지 않은 세션 {0}개'}"/>
-                                    </Border.ToolTip>
-                                    <TextBlock Text="{Binding UnseenSessionCount}"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource CountBadgeTextBrush}"/>
-                                </Border>
+                                <ContentControl x:Name="FolderUnseenBadge" Style="{StaticResource UnseenCountBadge}"
+                                                Margin="0,0,6,0"/>
                                 <TextBlock Text="{Binding ProjectCountText}" VerticalAlignment="Center"
                                            FontSize="{DynamicResource Fs11}"
                                            Foreground="{DynamicResource TextMutedBrush}"/>

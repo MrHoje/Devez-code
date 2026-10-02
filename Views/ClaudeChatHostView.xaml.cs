@@ -47,6 +47,9 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
     private string _trustedSource = "";
 
     public event Action? UserInteracted;
+    /// <summary>채팅 화면에서 사용자가 실제로 클릭하거나 키를 눌렀다(인자 = 조작한 순간의 방 ID).
+    /// 입력창 포커스(프로그램적 포함)로는 오지 않는다.</summary>
+    public event Action<string>? UserIntent;
     public event Action<string>? ResponseCompleted;
     public event Action<string, string>? PromptSubmitted;
     public event Action<double>? ZoomFactorChanged;
@@ -391,6 +394,10 @@ public partial class ClaudeChatHostView : UserControl, IDisposable
                     break;
                 case "interact":
                     UserInteracted?.Invoke();
+                    break;
+                case "userIntent":
+                    if (root.TryGetProperty("roomId", out var intentRoom) && intentRoom.GetString() is { Length: > 0 } intentRoomId)
+                        UserIntent?.Invoke(intentRoomId);
                     break;
                 case "composerFocus":
                     var composerFocused = root.TryGetProperty("focused", out var focusedValue)
