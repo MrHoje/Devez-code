@@ -148,31 +148,30 @@ public sealed class SessionItem : TabItemBase
         set => Set(ref _isWaitingChoice, value);
     }
 
-    private bool _isCompletionPulsing;
+    private bool _isUnseen;
 
-    /// <summary>입력 대기 또는 busy 완료를 사용자가 확인할 때까지 탭·세션 행 펄스를 표시한다.</summary>
+    /// <summary>busy 완료 또는 입력 대기를 사용자가 아직 보지 못했는지. 탭·세션 행은 고정 배경으로,
+    /// 접힌 프로젝트·폴더 카드는 개수로 표시한다. 런타임 전용(재시작하면 사라진다).
+    /// 발생·해제 기준은 docs/세션미확인표시/결정서 DEC-001.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsCompletionPulsing
+    public bool IsUnseen
     {
-        get => _isCompletionPulsing;
-        private set => Set(ref _isCompletionPulsing, value);
+        get => _isUnseen;
+        private set => Set(ref _isUnseen, value);
     }
 
-    /// <summary>탭·세션 행에 완료/대기 알림 펄스를 켠다. 이미 보고 있는 세션(IsActive)에는 표시하지 않는다.
+    /// <summary>미확인으로 표시한다. 사용자가 실제로 보고 있었는지는 호출하는 쪽(MainWindow)이 판정한다.
     /// busy/waiting setter 원시 전이가 아니라 완료·대기 확정 지점(EmitSessionFinished/EmitSessionWaiting)에서만
-    /// 호출해야 한다 — 서브에이전트 드레인 flap 같은 가짜 idle 에 깜빡이지 않도록.</summary>
-    public void TriggerAttentionPulse()
+    /// 호출해야 한다 — 서브에이전트 드레인 flap 같은 가짜 idle 에 표시되지 않도록.</summary>
+    public void MarkUnseen()
     {
-        // 이미 보고 있는 세션에는 표시하지 않는다.
-        if (IsActive) return;
-
-        // 펄스는 공용 위상 시계(Behaviors.AttentionPulse)가 재생하므로 재트리거용 false→true 토글이 필요 없다.
-        // 이미 켜져 있으면 그대로 이어가고(끊김 없음), 새로 켜질 땐 시계 위상에 스냅해 다른 펄스와 박자가 맞는다.
-        IsCompletionPulsing = true;
+        // 숨긴 세션은 사용자가 치운 것이므로 표시하지 않는다(개수에도 넣지 않는다).
+        if (IsEffectivelyHidden) return;
+        IsUnseen = true;
     }
 
-    /// <summary>탭을 열거나 다시 클릭했을 때 지속 중인 완료 펄스를 해제한다.</summary>
-    public void AcknowledgeCompletionPulse() => IsCompletionPulsing = false;
+    /// <summary>세션을 화면에 띄우거나, 떠 있는 패널을 조작하거나, 숨겼을 때 미확인 표시를 해제한다.</summary>
+    public void MarkSeen() => IsUnseen = false;
 
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";
@@ -613,6 +612,18 @@ public sealed class ProjectFolderItem : NotifyBase
         private set => Set(ref _hasBusySession, value);
     }
 
+    private int _unseenSessionCount;
+    /// <summary>폴더 안 프로젝트들의 미확인 세션 수 합계. 접힌 폴더 카드의 숫자 배지용.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int UnseenSessionCount
+    {
+        get => _unseenSessionCount;
+        private set { if (Set(ref _unseenSessionCount, value)) OnPropertyChanged(nameof(HasUnseenSession)); }
+    }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasUnseenSession => _unseenSessionCount > 0;
+
     private bool _hasSelectedProject;
     [System.Text.Json.Serialization.JsonIgnore]
     public bool HasSelectedProject
@@ -635,6 +646,7 @@ public sealed class ProjectFolderItem : NotifyBase
         bool hasQuery)
     {
         HasBusySession = allProjects.Any(project => project.HasBusySession);
+        UnseenSessionCount = allProjects.Sum(project => project.UnseenSessionCount);
         HasSelectedProject = allProjects.Any(project => project.IsSelected);
         ProjectCountText = hasQuery && visibleCount < allProjects.Count
             ? $"{visibleCount}/{allProjects.Count}개"
@@ -977,6 +989,10 @@ public sealed class ProjectItem : NotifyBase
     public bool HasAliveSession => AliveSessionCount > 0;
     /// <summary>요청 처리 중인 세션이 하나라도 있으면 true.</summary>
     public bool HasBusySession => Sessions.Any(s => s.IsBusy);
+    /// <summary>아직 보지 않은(미확인) 세션 수. 숨긴 세션은 제외. 접힌 카드의 숫자 배지용.</summary>
+    public int UnseenSessionCount => Sessions.Count(s => s.IsUnseen && !s.IsEffectivelyHidden);
+    /// <summary>미확인 세션이 하나라도 있으면 true.</summary>
+    public bool HasUnseenSession => UnseenSessionCount > 0;
     /// <summary>헤더 표시용 "살아있음/전체" (세션 없으면 빈 문자열).</summary>
     public string SessionStatusText => Sessions.Count == 0 ? "" : $"{AliveSessionCount}/{Sessions.Count}";
 
@@ -1374,6 +1390,8 @@ public sealed class ProjectItem : NotifyBase
     {
         if (e.PropertyName is nameof(SessionItem.IsAlive) or nameof(SessionItem.IsBusy))
             RaiseSessionStatus();
+        if (e.PropertyName is nameof(SessionItem.IsUnseen) or nameof(SessionItem.IsEffectivelyHidden))
+            RaiseUnseenStatus();
         if (e.PropertyName == nameof(SessionItem.Name) && sender is SessionItem session)
         {
             ApplySidebarSearch(session);
@@ -1921,6 +1939,13 @@ public sealed class ProjectItem : NotifyBase
         OnPropertyChanged(nameof(HasAliveSession));
         OnPropertyChanged(nameof(HasBusySession));
         OnPropertyChanged(nameof(SessionStatusText));
+        RaiseUnseenStatus();
+    }
+
+    private void RaiseUnseenStatus()
+    {
+        OnPropertyChanged(nameof(UnseenSessionCount));
+        OnPropertyChanged(nameof(HasUnseenSession));
     }
 
     /// <summary>세션을 세션 기준 새 인덱스(<paramref name="newSessionIndex"/>)로 이동.

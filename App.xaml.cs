@@ -935,6 +935,19 @@ public partial class App : Application
             : theme == "gray" ? Color.FromRgb(0xd9, 0xdd, 0xe3)
             : theme == "softpink" ? Color.FromRgb(0xf2, 0xc9, 0xd7)
             : Color.FromRgb(0xd9, 0xe8, 0xfc)); // minimal
+        // 세션 미확인(완료·입력 대기를 아직 못 봄) 배경 — 행·탭의 글자 뒤에 겹쳐 까는 반투명 강조색.
+        // minimal/softpink/midnight 는 SessionFocusBrush 자체가 강조색 계열이라 같은 농도면 선택과 구별되지 않는다.
+        // 테마마다 '기본 배경과 구별 + 선택 배경과 구별 + 본문 글자 대비 4.5:1 이상'을 만족하는 최소 농도(결정서 DEC-002).
+        byte unseenAlpha = theme switch
+        {
+            "dark" => 0x3D,      // 24%
+            "midnight" => 0x4D,  // 30%
+            "soft" => 0x57,      // 34%
+            "gray" => 0x4D,      // 30%
+            "softpink" => 0x70,  // 44%
+            _ => 0x47,           // minimal 28%
+        };
+        res["SessionUnseenBrush"] = new SolidColorBrush(Color.FromArgb(unseenAlpha, primary.R, primary.G, primary.B));
         res["DangerBrush"]            = new SolidColorBrush(danger);
         var successGreen = isDarkTheme
             ? (theme == "midnight" ? Color.FromRgb(0x34, 0xd3, 0x99) : Color.FromRgb(0x22, 0xc5, 0x5e))

@@ -5693,6 +5693,16 @@ public partial class MainWindow : Window
         timer.Start();
     }
 
+    /// <summary>완료·입력 대기 확정 순간에 사용자가 그 세션을 실제로 보고 있지 않았으면 미확인으로 표시한다.
+    /// "보고 있음" = 메인 창이 활성(최소화 아님) + 포커스된 패널의 현재 화면이 그 세션.
+    /// 탭만 열어 둔 채 다른 창에 있거나, 분할의 반대 패널에 떠 있으면 미확인으로 남긴다(결정서 DEC-001).</summary>
+    private void MarkUnseenUnlessWatched(SessionItem s)
+    {
+        bool watched = IsActive && WindowState != WindowState.Minimized
+            && _focusedPane.IsVisible && ReferenceEquals(_focusedPane.ActiveSession, s);
+        if (!watched) s.MarkUnseen();
+    }
+
     private void EmitSessionFinished(SessionItem s)
     {
         // Claude/Codex/OpenCode/Gajae/Grok/Antigravity 공통 busy→idle 확정 지점.
@@ -5700,7 +5710,7 @@ public partial class MainWindow : Window
         // 현재 이 방의 터미널에 실제 포커스가 있는 패널만 JS 에서 blur→focus 초기화한다.
         foreach (var pane in _panes) pane.Terminal.ResetImeAfterResponse(s.Id);
         AddSessionCompletionRecord(s);
-        s.TriggerAttentionPulse(); // 탭·세션 행 완료 펄스(완료기록과 동일 게이트 — 서브 드레인 flap 제외)
+        MarkUnseenUnlessWatched(s); // 탭·세션 행 미확인 표시(완료기록과 동일 게이트 — 서브 드레인 flap 제외)
         var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
@@ -5753,7 +5763,7 @@ public partial class MainWindow : Window
 
     private void EmitSessionWaiting(SessionItem s)
     {
-        s.TriggerAttentionPulse(); // 입력 대기 진입 펄스(확정 지점에서만 — setter 즉발 금지)
+        MarkUnseenUnlessWatched(s); // 입력 대기 진입 미확인 표시(확정 지점에서만 — setter 즉발 금지)
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
@@ -6394,6 +6404,7 @@ public partial class MainWindow : Window
         var owner = PaneFor(session);
 
         session.Hidden = true;
+        session.MarkSeen(); // 숨기기 = 사용자가 치운 것. 숨김 영역에 미확인 표시를 남기지 않는다.
         project.PlaceNewlyHiddenSession(session, SettingsService.LoadHiddenSessionInsertionOnTop());
         foreach (var pane in _panes) pane.OnSessionsHidden(new[] { session });
         owner.ScheduleSessionHide(session);

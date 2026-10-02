@@ -119,6 +119,18 @@
             </Style.Triggers>
         </Style>
 
+        <!-- 접힌 프로젝트·폴더 카드의 미확인 세션 개수 배지(결정서 DEC-002). 표시 여부는 각 템플릿 트리거가 정한다. -->
+        <Style x:Key="UnseenCountBadge" TargetType="Border">
+            <Setter Property="MinWidth" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Padding" Value="5,0"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource CountBadgeBrush}"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="ToolTipService.InitialShowDelay" Value="300"/>
+        </Style>
+
         <!-- ── 세션(하위 항목) 템플릿 — Claude 로고 + 상태 점 + 이름 + 호버 ⋯ 메뉴 ── -->
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
             <Border Visibility="Collapsed"
@@ -377,15 +389,24 @@
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Border>
                 </Grid>
-                <!-- 완료·입력대기 펄스. 공용 위상 시계(AttentionPulse)에 스냅해 다른 행·탭과 같은 박자로 뛴다. -->
-                <Border x:Name="SessionCompletionPulse"
-                        Background="{DynamicResource PrimaryBrush}"
+                <!-- 미확인(완료·입력 대기를 아직 못 봄) 배경. 깜빡이지 않고 고정으로, 글자 뒤(ZIndex -1)에 깔아
+                     행 배경(기본/호버/선택) 위에 겹친다. 기본 Collapsed — 바인딩이 실패해도 표시되지 않게. -->
+                <Border x:Name="SessionUnseenBackground"
+                        Background="{DynamicResource SessionUnseenBrush}"
                         CornerRadius="7"
-                        Opacity="0"
                         IsHitTestVisible="False"
-                        Panel.ZIndex="1"
-                        b:AttentionPulse.PeakOpacity="0.10"
-                        b:AttentionPulse.IsPulsing="{Binding IsCompletionPulsing}"/>
+                        Panel.ZIndex="-1">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsUnseen}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
                 </Grid>
                 </Border>
             </Grid>
@@ -937,6 +958,17 @@
                             <!-- 우상단 액션: [chevron 등]. (분할은 이제 프로젝트 단위 토글로 관리 — 카드 패널 배지 제거) -->
                             <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
                                         VerticalAlignment="Center" Margin="4,-4,0,0">
+                            <!-- 접힘 + 미확인 세션 있음 → 개수 배지. 이름이 길어도 잘리지 않게 우측 액션 줄에 둔다. -->
+                            <Border x:Name="ProjectUnseenBadge" Style="{StaticResource UnseenCountBadge}"
+                                    Margin="0,0,6,0">
+                                <Border.ToolTip>
+                                    <TextBlock Text="{Binding UnseenSessionCount, StringFormat='확인하지 않은 세션 {0}개'}"/>
+                                </Border.ToolTip>
+                                <TextBlock Text="{Binding UnseenSessionCount}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource CountBadgeTextBrush}"/>
+                            </Border>
                             <!-- 숨김 세션 보기/숨기기 토글 -->
                             <Button Tag="{Binding}"
                                     Click="HiddenToggle_Click" Cursor="Arrow"
@@ -1225,6 +1257,14 @@
                     <Setter TargetName="ProjectMarker" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="ProjectBusySpinner" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
+                <!-- 접힘 + 미확인 세션 있음 → 우상단 개수 배지(스피너와 동시 표시 가능). -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsExpanded}" Value="False"/>
+                        <Condition Binding="{Binding HasUnseenSession}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="ProjectUnseenBadge" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
                 <!-- 접힘 + 설정 "접힌 상태에서 경로 보기" 끔 → 경로 줄 제거(카드 높이 축소). -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
@@ -1346,9 +1386,22 @@
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                        FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
-                            <TextBlock Grid.Column="2" Text="{Binding ProjectCountText}" Margin="8,0,6,0" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,6,0" VerticalAlignment="Center">
+                                <!-- 접힘 + 폴더 안 미확인 세션 있음 → 개수 배지(안 프로젝트들의 합계). -->
+                                <Border x:Name="FolderUnseenBadge" Style="{StaticResource UnseenCountBadge}"
+                                        Margin="0,0,6,0">
+                                    <Border.ToolTip>
+                                        <TextBlock Text="{Binding UnseenSessionCount, StringFormat='확인하지 않은 세션 {0}개'}"/>
+                                    </Border.ToolTip>
+                                    <TextBlock Text="{Binding UnseenSessionCount}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource CountBadgeTextBrush}"/>
+                                </Border>
+                                <TextBlock Text="{Binding ProjectCountText}" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                            </StackPanel>
                             <!-- 폴더 내부 목록 1열/2열 전환. 전역 "프로젝트 목록 열 수"가 2일 때만 노출. -->
                             <Button Grid.Column="3" Tag="{Binding}"
                                     Click="FolderColumnToggle_Click" Cursor="Arrow"
@@ -1426,6 +1479,13 @@
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="FolderIcon" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="FolderBusySpinner" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsExpanded}" Value="False"/>
+                        <Condition Binding="{Binding HasUnseenSession}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="FolderUnseenBadge" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
 
                 <DataTrigger Binding="{Binding IsExpanded}" Value="True">

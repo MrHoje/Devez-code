@@ -218,6 +218,7 @@ public partial class SidebarView : UserControl
         }
 
         if ((e.PropertyName == nameof(ProjectItem.HasBusySession) ||
+             e.PropertyName == nameof(ProjectItem.UnseenSessionCount) ||
              e.PropertyName == nameof(ProjectItem.IsSelected)) &&
             sender is ProjectItem project)
             UpdateProjectFolderSummary(project);

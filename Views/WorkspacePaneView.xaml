@@ -3,7 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:DevezCode.Models"
              xmlns:v="clr-namespace:DevezCode.Views"
-             xmlns:b="clr-namespace:DevezCode.Behaviors"
              FontFamily="{StaticResource PretendardFont}">
 
     <!-- Center: tabs + content (좌·우 보더로 채널 형성).
@@ -256,6 +255,24 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
+                                    <!-- 미확인(완료·입력 대기를 아직 못 봄) 배경. 세션 행과 같은 고정색을 탭 안쪽 전체(패딩 포함)에
+                                         글자 뒤로 깐다. 파일·브라우저 탭은 IsUnseen 이 없어 바인딩이 실패하므로 기본 Collapsed. -->
+                                    <Border x:Name="TabUnseenBackground" Grid.ColumnSpan="3"
+                                            Margin="-12,-6,-8,-6"
+                                            CornerRadius="8,8,0,0"
+                                            Background="{DynamicResource SessionUnseenBrush}"
+                                            IsHitTestVisible="False">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsUnseen}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                    </Border>
                                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,7,0">
                                         <Grid>
                                             <Image x:Name="TabAgentIcon" Width="14" Height="14"
@@ -348,20 +365,6 @@
                                     </Button>
                                 </Grid>
                             </Border>
-
-                            <!-- 입력 대기 진입 또는 busy 완료: 확인할 때까지 이어지는 연한 펄스.
-                                 공용 위상 시계(AttentionPulse)에 스냅해 사이드바 행·다른 탭과 같은 박자로 뛴다. -->
-                            <Border x:Name="TabCompletionPulse"
-                                    Margin="0,0,0,-1"
-                                    Height="{Binding ActualHeight, ElementName=TabBd}"
-                                    VerticalAlignment="Bottom"
-                                    CornerRadius="9,9,0,0"
-                                    Background="{DynamicResource PrimaryBrush}"
-                                    Opacity="0"
-                                    IsHitTestVisible="False"
-                                    Panel.ZIndex="1"
-                                    b:AttentionPulse.PeakOpacity="0.12"
-                                    b:AttentionPulse.IsPulsing="{Binding IsCompletionPulsing}"/>
 
                             <Path x:Name="TabFootLeftFill"
                                   HorizontalAlignment="Left" VerticalAlignment="Bottom"

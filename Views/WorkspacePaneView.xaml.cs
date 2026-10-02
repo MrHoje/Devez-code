@@ -126,6 +126,7 @@ public partial class WorkspacePaneView : UserControl
         ClaudeChatHostContainer.Content = _claudeChat;
         _claudeChat.UserInteracted += () =>
         {
+            _activeSession?.MarkSeen(); // 떠 있는 세션 화면을 조작 = 확인
             FocusRequested?.Invoke(this);
             if (_activeSession != null) SessionActivity?.Invoke(_activeSession.Id);
         };
@@ -167,8 +168,10 @@ public partial class WorkspacePaneView : UserControl
             // TerminalHostView가 실제 표면 클릭을 최신 60ms 복구 요청으로 확정한다.
             NativeTerminalInteracted?.Invoke(this);
             FocusRequested?.Invoke(this);
+            _activeSession?.MarkSeen(); // 터미널 클릭 = 확인. 창을 비운 사이 끝난 세션은 여기서 해제된다.
         };
         _terminal.InputIntent += () => InputIntent?.Invoke(this);
+        _terminal.InputIntent += () => _activeSession?.MarkSeen(); // 터미널 키 입력 = 확인
         _terminal.SessionActivity += id => SessionActivity?.Invoke(id);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
         _terminal.FontSizePxChanged += ApplyHeaderFontSize;
@@ -1602,7 +1605,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void ActivateSession(SessionItem session, bool unHide = true, bool forceImeReattach = false)
     {
-        session.AcknowledgeCompletionPulse();
+        session.MarkSeen(); // 화면에 띄우면 확인한 것으로 친다(결정서 DEC-001)
         if (session.IsExternal)
         {
             ActivateExternalSession(session, unHide);

@@ -90,6 +90,8 @@
     <sys:Double x:Key="HdrBtnSize">28</sys:Double>
     <SolidColorBrush x:Key="CountBadgeBrush"   Color="#5b8af0"/>
     <SolidColorBrush x:Key="CountBadgeTextBrush" Color="White"/>
+    <!-- 세션 미확인 배경(테마별 농도는 App.SetTheme 이 덮어쓴다) -->
+    <SolidColorBrush x:Key="SessionUnseenBrush" Color="#472563EB"/>
     <SolidColorBrush x:Key="StarBrush"         Color="#f59e0b"/>
 
     <!-- ── ToolTip ─────────────────────────────────────────────────────── -->
